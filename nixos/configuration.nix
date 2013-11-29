@@ -326,6 +326,8 @@
       TERMINAL = "wezterm";
     };
 
+    home.shellAliases = { top = "btm"; };
+
     home.packages = [
       pkgs.killall
       pkgs.ripgrep
