@@ -12,6 +12,7 @@ function cd() {
 export EDITOR=/usr/local/bin/vim
 
 alias dirs="dirs -v"
+alias g++14="g++ -std=c++14"
 
 tmux has-session -t dsk
 if [ $? != 0 ]
