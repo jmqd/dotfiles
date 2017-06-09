@@ -1,5 +1,23 @@
-# end of ohmyzsh default configs
-# THIS_FILE >> ~/.zshrc
+export ZSH=/Users/jmq/.oh-my-zsh
+
+ZSH_THEME="mcqueen"
+
+HIST_STAMPS="yyyy/mm/dd"
+
+plugins=(git colored-man-pages colorize command-not-found compleat cp extract
+history-substring-search tmux)
+
+source $ZSH/oh-my-zsh.sh
+
+# Preferred editor for local and remote sessions
+if [[ -n $SSH_CONNECTION ]]; then
+  export EDITOR='vim'
+else
+  export EDITOR='mvim'
+fi
+
+# ssh -- do I want this? Need to look into it.
+# export SSH_KEY_PATH="~/.ssh/rsa_id"
 
 # TODO: Investigate if this is better than `bindkey -v` or equivalent.
 # to edit the current command in your $EDITOR
