@@ -1,4 +1,10 @@
-export ZSH=/Users/$USER/.oh-my-zsh
+if [[ "$(uname)" == "Darwin" ]]; then
+	ZSH_ROOT="/Users/$USER/.oh-my-zsh"
+elif [[ "$(expr substr $(uname -s) 1 5)" == "Linux" ]]; then
+	ZSH_ROOT="/home/$USER/.oh-my-zsh"
+fi
+
+export ZSH=$ZSH_ROOT
 
 ZSH_THEME="mcqueen"
 
@@ -36,7 +42,7 @@ function cd() {
 }
 
 # The only correct setting.
-export EDITOR=/usr/local/bin/vim
+export EDITOR=vim
 
 # Aliases
 alias dirs="dirs -v"
