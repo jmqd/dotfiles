@@ -5,6 +5,7 @@ elif [[ "$(expr substr $(uname -s) 1 5)" == "Linux" ]]; then
 fi
 
 export ZSH=$ZSH_ROOT
+export TERM="xterm-256color"
 
 ZSH_THEME="mcqueen"
 
