@@ -50,9 +50,7 @@ alias dirs="dirs -v"
 alias g++14="g++ -std=c++14"
 
 # Permanent tmux `dsk` session. TODO: address nesting warning.
-tmux has-session -t dsk
-if [ $? != 0 ]
+if [ -z "$TMUX" ]
 then
-  tmux new-session -s dsk
+    tmux attach -t dsk || tmux new -s dsk;
 fi
-tmux attach -t dsk  
