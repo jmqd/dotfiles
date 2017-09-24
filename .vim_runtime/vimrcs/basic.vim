@@ -197,9 +197,9 @@ map <c-space> ?
 map <silent> <leader><cr> :noh<cr>
 
 " Smart way to move between windows
-map <C-j> <C-W>j
-map <C-k> <C-W>k
-map <C-h> <C-W>h
+map <C-j> <C-W>h
+map <C-k> <C-W>j
+map <C-i> <C-W>k
 map <C-l> <C-W>l
 
 " Close the current buffer
