@@ -33,6 +33,13 @@ autoload -z edit-command-line
 zle -N edit-command-line
 bindkey "\e" edit-command-line
 
+# The only correct setting.
+export EDITOR=vim
+
+# Aliases
+alias dirs="dirs -v"
+alias g++14="g++ -std=c++14"
+
 # make cd do cd and ls, because that's pretty much always what I do anyway
 function cd() {
     new_directory="$*";
@@ -42,12 +49,12 @@ function cd() {
     builtin cd "${new_directory}" && ls
 }
 
-# The only correct setting.
-export EDITOR=vim
-
-# Aliases
-alias dirs="dirs -v"
-alias g++14="g++ -std=c++14"
+function lb() {
+    mkdir -p ~/logbook &&
+    log_filename=$(date '+%Y-%m-%dT%H:%M:%S%z') &&
+    vim ~/logbook/$log_filename &&
+    chmod -w ~/logbook/$log_filename
+}
 
 # Permanent tmux `dsk` session. TODO: address nesting warning.
 if [ -z "$TMUX" ]
