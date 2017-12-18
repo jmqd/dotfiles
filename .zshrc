@@ -8,8 +8,8 @@ export ZSH=$ZSH_ROOT
 export TERM="xterm-256color"
 
 ZSH_THEME="mcqueen"
-
 HIST_STAMPS="yyyy/mm/dd"
+export PERSONAL_AWS_BUCKET='mcqueen.jordan'
 
 plugins=(git colored-man-pages colorize command-not-found compleat cp extract
 history-substring-search tmux)
