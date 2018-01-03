@@ -37,6 +37,7 @@ hide_edge_borders both
 bindsym $mod+space exec dmenu_run
 
 # change focus
+focus_follows_mouse no
 bindsym $mod+j focus left
 bindsym $mod+k focus down
 bindsym $mod+i focus up
