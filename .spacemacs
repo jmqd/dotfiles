@@ -64,7 +64,9 @@ values."
    ;; A list of packages that cannot be updated.
    dotspacemacs-frozen-packages '()
    ;; A list of packages that will not be installed and loaded.
-   dotspacemacs-excluded-packages '()
+   dotspacemacs-excluded-packages '(
+     fill-column-indicator
+   )
    ;; Defines the behaviour of Spacemacs when installing packages.
    ;; Possible values are `used-only', `used-but-keep-unused' and `all'.
    ;; `used-only' installs only explicitly used packages and uninstall any
@@ -139,7 +141,7 @@ values."
    ;; Default font, or prioritized list of fonts. `powerline-scale' allows to
    ;; quickly tweak the mode-line size to make separators look not too crappy.
    dotspacemacs-default-font '("Hack"
-                               :size 13
+                               :size 22
                                :weight normal
                                :width normal
                                :powerline-scale 1.1)
@@ -296,6 +298,11 @@ executes.
  This function is mostly useful for variables that need to be set
 before packages are loaded. If you are unsure, you should try in setting them in
 `dotspacemacs/user-config' first."
+  (spacemacs/set-leader-keys
+    "wi" 'evil-window-up
+    "wk" 'evil-window-down
+    "wj" 'evil-window-left
+    )
   )
 
 (defun dotspacemacs/user-config ()
@@ -310,10 +317,6 @@ you should place your code here."
     (define-key evil-normal-state-map "j" 'evil-backward-char)
     (define-key evil-normal-state-map "k" 'evil-next-line)
     (setenv "ESHELL" ("/home/jordanmq/bin/eshell"))
-
-    ;; Make linums relative by default
-    (global-linum-mode nil)
-    (linum-relative-toggle)
   )
 
 ;; Do not write anything past this comment. This is where Emacs will
