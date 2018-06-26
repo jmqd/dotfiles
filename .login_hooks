@@ -1,0 +1,2 @@
+# mount my personal s3 bucket locally
+goofys --region=us-west-2 mcqueen.jordan ~/s3/mcqueen.jordan

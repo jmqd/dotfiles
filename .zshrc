@@ -94,19 +94,13 @@ source $ZSH/oh-my-zsh.sh
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
 export TERM='xterm-256color'
-export EDITOR='vim'
+export EDITOR='emacs'
 HIST_STAMPS='yyyy-mm-dd'
 
 # Allows me to press escape to edit the command line in $EDITOR.
 autoload -z edit-command-line
 zle -N edit-command-line
 bindkey "\e" edit-command-line
-
-# Permanent tmux session named `dsk`
-if [ -z "$TMUX" ]
-then
-    tmux attach -t dsk || tmux new -s dsk;
-fi
 
 # Prompt timeout and hook to reset it (useful to update time in prompt).
 TMOUT=1
@@ -116,4 +110,4 @@ TRAPALRM() {
 
 source ~/.zsh_aliases
 source ~/.zsh_functions
-
+source ~/.login_hooks
