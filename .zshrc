@@ -111,3 +111,4 @@ TRAPALRM() {
 source ~/.zsh_aliases
 source ~/.zsh_functions
 source ~/.login_hooks
+. ~/.env
