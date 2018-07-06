@@ -14,6 +14,11 @@ EOF
 sleep 3s
 
 # ******************************************************************************
+# Set system-dependent variables
+# ******************************************************************************
+PYTHON_EXECUTABLE_PATH=`which python3`
+
+# ******************************************************************************
 # Create directories
 # ******************************************************************************
 echo "Creating common directories in ~/ ..."
@@ -52,6 +57,6 @@ git clone https://github.com/mcqueenjordan/cloudhome.git ~/src/cloudhome
 # setup cron stuff
 # ******************************************************************************
 echo "Setting up crontab stuff..."
-echo "* * * * * /usr/local/bin/python3 ~/src/cloudhome/cloudhome/cloudhome.py &> /tmp/cloudhome.debug" >> /tmp/cronstate
+echo "* * * * * ${PYTHON_EXECUTABLE_PATH} ~/src/cloudhome/cloudhome/cloudhome.py &> /tmp/cloudhome.debug" >> /tmp/cronstate
 crontab /tmp/cronstate
 rm /tmp/cronstate
