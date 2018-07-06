@@ -52,6 +52,6 @@ git clone https://github.com/mcqueenjordan/cloudhome.git ~/src/cloudhome
 # setup cron stuff
 # ******************************************************************************
 echo "Setting up crontab stuff..."
-echo "* * * * * ~/src/cloudhome/cloudhome/cloudhome.py" >> /tmp/cronstate
+echo "* * * * * /usr/local/bin/python3 ~/src/cloudhome/cloudhome/cloudhome.py &> /tmp/cloudhome.debug" >> /tmp/cronstate
 crontab /tmp/cronstate
 rm /tmp/cronstate
