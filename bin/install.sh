@@ -57,6 +57,6 @@ git clone https://github.com/mcqueenjordan/cloudhome.git ~/src/cloudhome
 # setup cron stuff
 # ******************************************************************************
 echo "Setting up crontab stuff..."
-echo "* * * * * ${PYTHON_EXECUTABLE_PATH} ~/src/cloudhome/cloudhome/cloudhome.py &> /tmp/cloudhome.debug" >> /tmp/cronstate
+echo "* * * * * ~/src/cloudhome/bin/ensure-cloudhome-running.sh ${PYTHON_EXECUTABLE_PATH} &> /tmp/cloudhome.debug" >> /tmp/cronstate
 crontab /tmp/cronstate
 rm /tmp/cronstate
