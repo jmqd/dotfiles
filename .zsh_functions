@@ -18,3 +18,9 @@ function lb() {
     fi
 }
 
+function daemonize() {
+    kill -20 $1 # SIGSTP (suspend process)
+    kill -18 $1 # SIGCONT (resume process, in background)
+    echo "daemonized $1, $(ps ax | grep $1 | grep -v grep)"
+}
+
