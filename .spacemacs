@@ -31,30 +31,37 @@ values."
    ;; List of configuration layers to load.
    dotspacemacs-configuration-layers
    '(
+     ;; language/syntax
+     erc
+     haskell
+     c-c++
+     yaml
+     java
+     markdown
      html
      ruby
      javascript
      python
-     java
-     markdown
-     ;; ----------------------------------------------------------------
-     ;; Example of useful layers you may want to use right away.
-     ;; Uncomment some layer names and press <SPC f e R> (Vim style) or
-     ;; <M-m f e R> (Emacs style) to install them.
-     ;; ----------------------------------------------------------------
+     emacs-lisp
+     org
+
+     ;; utility
+     dash
+     semantic
+     ranger
      helm
      auto-completion
-     ;; better-defaults
-     emacs-lisp
      git
-     markdown
-     org
-     ;; (shell :variables
-     ;;        shell-default-height 30
-     ;;        shell-default-position 'bottom)
-     ;; spell-checking
-     ;; syntax-checking
-     ;; version-control
+     spell-checking
+     syntax-checking
+     (shell :variables shell-default-shell 'eshell)
+     themes-megapack
+     ;; github
+
+     ;; non-essential
+     games
+     spotify
+     xkcd
      )
    ;; List of additional packages that will be installed without being
    ;; wrapped in a layer. If you need some configuration for these
@@ -134,8 +141,7 @@ values."
    ;; List of themes, the first of the list is loaded when spacemacs starts.
    ;; Press <SPC> T n to cycle to the next theme in the list (works great
    ;; with 2 themes variants, one dark and one light)
-   dotspacemacs-themes '(spacemacs-dark
-                         spacemacs-light)
+   dotspacemacs-themes '(tao-yang)
    ;; If non nil the cursor color matches the state color in GUI Emacs.
    dotspacemacs-colorize-cursor-according-to-state t
    ;; Default font, or prioritized list of fonts. `powerline-scale' allows to
@@ -298,11 +304,6 @@ executes.
  This function is mostly useful for variables that need to be set
 before packages are loaded. If you are unsure, you should try in setting them in
 `dotspacemacs/user-config' first."
-  (spacemacs/set-leader-keys
-    "wi" 'evil-window-up
-    "wk" 'evil-window-down
-    "wj" 'evil-window-left
-    )
   )
 
 (defun dotspacemacs/user-config ()
@@ -313,10 +314,26 @@ This is the place where most of your configurations should be done. Unless it is
 explicitly specified that a variable should be set before a package is loaded,
 you should place your code here."
     (define-key evil-normal-state-map "i" 'evil-previous-line)
-    (define-key evil-normal-state-map "h" 'evil-insert)
     (define-key evil-normal-state-map "j" 'evil-backward-char)
     (define-key evil-normal-state-map "k" 'evil-next-line)
-    (setenv "ESHELL" ("/home/jordanmq/bin/eshell"))
+    (define-key evil-normal-state-map "h" 'evil-insert)
+
+    (define-key evil-evilified-state-map "i" 'evil-previous-line)
+    (define-key evil-evilified-state-map "j" 'evil-backward-char)
+    (define-key evil-evilified-state-map "k" 'evil-next-line)
+
+    (define-key evil-motion-state-map "i" 'evil-previous-line)
+    (define-key evil-motion-state-map "j" 'evil-backward-char)
+    (define-key evil-motion-state-map "k" 'evil-next-line)
+
+    (define-key evil-visual-state-map "i" 'evil-previous-visual-line)
+    (define-key evil-visual-state-map "k" 'evil-next-visual-line)
+
+    (evil-leader/set-key
+      "wi" 'evil-window-up
+      "wk" 'evil-window-down
+      "wj" 'evil-window-left
+      )
   )
 
 ;; Do not write anything past this comment. This is where Emacs will
