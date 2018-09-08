@@ -66,6 +66,8 @@ ln -sf ~/src/dotfiles/.zshrc ~/.zshrc
 ln -sf ~/src/dotfiles/.spacemacs ~/.spacemacs
 ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
+ln -sf ~/src/dotfiles/.config/i3 ~/.config/i3
+ln -sf ~/src/dotfiles/.config/i3status ~/.config/i3status
 
 # ******************************************************************************
 echo "Setting up crontab stuff..."
