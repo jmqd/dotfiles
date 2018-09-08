@@ -52,6 +52,13 @@ echo "Sourcing environment variables..."
 # ******************************************************************************
 echo "Cloning git repos..."
 git clone https://github.com/mcqueenjordan/cloudhome.git ~/src/cloudhome
+git clone https://github.com/mcqueenjordan/dotfiles.git ~/src/dotfiles
+git clone https://github.com/mcqueenjordan/learning.git ~/src/learning
+
+echo "Ensuring repos are up-to-date..."
+git -C ~/src/cloudhome pull --rebase
+git -C ~/src/dotfiles pull --rebase
+git -C ~/src/learning pull --rebase
 
 # ******************************************************************************
 # setup cron stuff
