@@ -2,6 +2,7 @@ alias dirs="dirs -v"
 alias g++14="g++ -std=c++14"
 alias whoiam="aws sts get-caller-identity"
 alias dotrefresh='~/src/dotfiles/bin/install.sh'
+alias ack='/usr/bin/python3 ~/src/actualizer/cli.py'
 
 if [[ "$(expr substr $(uname -s) 1 5)" == "Linux" ]]; then
     # pipe to clipboard. make sure `xclip` is installed
