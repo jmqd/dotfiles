@@ -57,6 +57,7 @@ echo "Symbolically link custom dotfiles to ~/src/dotfiles/."
 ln -sf ~/src/dotfiles/.zsh_aliases ~/.zsh_aliases
 ln -sf ~/src/dotfiles/.zsh_functions ~/.zsh_functions
 ln -sf ~/src/dotfiles/.zshrc ~/.zshrc
+ln -sf ~/src/dotfiles/.spacemacs ~/.spacemacs
 
 # ******************************************************************************
 echo "Setting up crontab stuff..."
