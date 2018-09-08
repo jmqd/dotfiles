@@ -34,6 +34,7 @@ echo "Symbolically linking dotfiles not in source control..."
 # ******************************************************************************
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.aws/credentials ~/.aws/credentials
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.env ~/.env
+ln -s ~/cloud/mcqueen.jordan/dotfiles/.git-credentials ~/.git-credentials
 
 # ******************************************************************************
 echo "Sourcing environment variables..."
@@ -58,6 +59,7 @@ ln -sf ~/src/dotfiles/.zsh_aliases ~/.zsh_aliases
 ln -sf ~/src/dotfiles/.zsh_functions ~/.zsh_functions
 ln -sf ~/src/dotfiles/.zshrc ~/.zshrc
 ln -sf ~/src/dotfiles/.spacemacs ~/.spacemacs
+ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 
 # ******************************************************************************
 echo "Setting up crontab stuff..."
