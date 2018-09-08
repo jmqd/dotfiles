@@ -11,6 +11,11 @@ aws (w/ credentials configured)
 EOF
 
 # ******************************************************************************
+echo "Installing system dependencies"
+# ******************************************************************************
+sudo pip3 install click boto3
+
+# ******************************************************************************
 # Set system-dependent variables
 # ******************************************************************************
 PYTHON_EXECUTABLE_PATH=`which python3`
@@ -60,6 +65,7 @@ ln -sf ~/src/dotfiles/.zsh_functions ~/.zsh_functions
 ln -sf ~/src/dotfiles/.zshrc ~/.zshrc
 ln -sf ~/src/dotfiles/.spacemacs ~/.spacemacs
 ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
+ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
 
 # ******************************************************************************
 echo "Setting up crontab stuff..."
