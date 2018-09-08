@@ -61,6 +61,13 @@ git -C ~/src/dotfiles pull --rebase
 git -C ~/src/learning pull --rebase
 
 # ******************************************************************************
+echo "Symbolically link custom dotfiles to ~/src/dotfiles/."
+# ******************************************************************************
+ln -sf ~/src/dotfiles/.zsh_aliases ~/.zsh_aliases
+ln -sf ~/src/dotfiles/.zsh_functions ~/.zsh_functions
+ln -sf ~/src/dotfiles/.zshrc ~/.zshrc
+
+# ******************************************************************************
 # setup cron stuff
 # ******************************************************************************
 echo "Setting up crontab stuff..."
