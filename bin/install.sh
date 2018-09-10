@@ -26,6 +26,7 @@ sudo pip3 install click boto3
 
 if [ $is_mac_os = false ]; then
     sudo pip install i3-workspace-names
+    sudo pip3 install py3status
     cpan Linux::Inotify2
     cpan AnyEvent
     cpan AnyEvent::I3
