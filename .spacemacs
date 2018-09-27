@@ -45,6 +45,7 @@ values."
      emacs-lisp
      org
      latex
+     plantuml
 
      ;; utility
      dash
