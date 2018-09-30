@@ -34,7 +34,7 @@ values."
      ;; language/syntax
      erc
      haskell
-     c-c++
+     (c-c++ :variables c-c++-enable-clang-support t)
      yaml
      java
      markdown
@@ -52,7 +52,7 @@ values."
      semantic
      ranger
      helm
-     auto-completion
+     (auto-completion :variables auto-completion-enable-help-tooltip t)
      git
      spell-checking
      syntax-checking
@@ -153,7 +153,7 @@ values."
                                :size 22
                                :weight normal
                                :width normal
-                               :powerline-scale 1.1)
+                               :powerline-scale 1.3)
    ;; The leader key
    dotspacemacs-leader-key "SPC"
    ;; The key used for Emacs commands (M-x) (after pressing on the leader key).
@@ -337,6 +337,8 @@ you should place your code here."
       "wk" 'evil-window-down
       "wj" 'evil-window-left
       )
+
+    (setq-default flycheck-gcc-language-standard "c++17")
   )
 
 ;; Do not write anything past this comment. This is where Emacs will
