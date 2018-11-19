@@ -32,8 +32,13 @@ if [ $is_mac_os = false ]; then
     cpan AnyEvent::I3
 fi;
 
+# TODO
+# if linux
+# sudo apt-get install mu4e
+# fi
+
 # ******************************************************************************
-# Set system-dependent variables
+echo "Setting system-dependent variables"
 # ******************************************************************************
 PYTHON_EXECUTABLE_PATH=`which python3`
 
