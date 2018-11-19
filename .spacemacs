@@ -339,6 +339,23 @@ you should place your code here."
       )
 
     (setq-default flycheck-gcc-language-standard "c++17")
+
+    ;; org-mode GTD
+
+    (setq org-todo-keywords '((sequence "TODO(t)" "WAITING(w)" "|" "DONE(d)" "CANCELLED(c)")))
+    (setq org-capture-templates '(("t" "Todo [inbox]" entry
+                                   (file+headline "~/cloud/mcqueen.jordan/inbox.org" "Tasks")
+                                   "* TODO %i%?")))
+
+    (setq org-agenda-files '("~/cloud/mcqueen.jordan/inbox.org"
+                             "~/cloud/mcqueen.jordan/gtd.org"))
+
+    (setq org-agenda-custom-commands
+          '(
+            ("w" "Work" tags-todo "@work" ((org-agenda-overriding-header "Work")))
+            ("h" "Home" tags-todo "@home" ((org-agenda-overriding-header "Home")))
+          )
+        )
   )
 
 ;; Do not write anything past this comment. This is where Emacs will
