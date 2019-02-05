@@ -22,7 +22,12 @@ EOF
 # ******************************************************************************
 echo "Installing system dependencies"
 # ******************************************************************************
-sudo pip3 install click boto3
+
+# TODO install i3pystatus
+# TODO install mpd (music player daemon): pacman -S mpd, apt-get install mpd
+
+sudo pip3 install click boto3 netifaces colour httplib2 oauth2client pytz
+sudo pip3 install google-api-python-client
 
 if [ $is_mac_os = false ]; then
     sudo pip install i3-workspace-names
