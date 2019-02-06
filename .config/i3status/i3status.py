@@ -71,7 +71,7 @@ status.register("runwatch",
 status.register("network",
     interface="enp0s31f6",
     on_leftclick="ip addr show dev {interface} | xmessage -file -",
-    format_up = "\[{interface}\]\[{v4cidr}\]: {bytes_recv:0>3}KiB {bytes_sent:0>3}KiB",
+    format_up = "\[{interface}\]\[{v4cidr}\]: ⇣: {bytes_recv:0>4}KiB/s ⇡: {bytes_sent:0>4}KiB/s",
     format_down = "",
 )
 
@@ -85,7 +85,7 @@ status.register("network",
 # 42/128G [86G]
 status.register("disk",
     path="/",
-    format="{used}/{total}G",)
+    format="💾: {used}/{total}G",)
 
 # Shows pulseaudio default sink volume
 #
