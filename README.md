@@ -10,5 +10,5 @@ find ~ -name ".*" -maxdepth 1
 # only recommended if your name is "Jordan McQueen" ;)
 mkdir -p ~/src
 git clone https://github.com/mcqueenjordan/dotfiles.git ~/src/dotfiles
-sudo ./bin/install.sh
+sudo sh ~/src/dotfiles/bin/install.sh
 ```
