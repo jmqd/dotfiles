@@ -1,13 +1,14 @@
 # dotfiles
 
-`find ~ -name ".*" -maxdepth 1`
+```bash
+find ~ -name ".*" -maxdepth 1
+```
 
-## Troubleshooting
+## install
 
-### Zsh errors on autocomplete
-
-- `rm ~/.zcompdump*` and restart all shells
-
-### TODO
-
-- create "new system build" install script
+```bash
+# only recommeneded if your name is "Jordan McQueen" ;)
+mkdir -p ~/src
+git clone https://github.com/mcqueenjordan/dotfiles.git ~/src/dotfiles
+sudo ./bin/install.sh
+```
