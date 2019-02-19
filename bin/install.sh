@@ -40,6 +40,8 @@ fi;
 # TODO
 # if linux
 # sudo apt-get install mu4e
+# sudo apt-get install w3m --install-suggests
+# sudo apt-get install wine --install-suggests
 # fi
 
 # ******************************************************************************
@@ -93,8 +95,8 @@ ln -sf ~/src/dotfiles/.zshrc ~/.zshrc
 ln -sf ~/src/dotfiles/.spacemacs ~/.spacemacs
 ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
-ln -sf ~/src/dotfiles/.config/i3 ~/.config/i3
-ln -sf ~/src/dotfiles/.config/i3status ~/.config/i3status
+ln -sf ~/src/dotfiles/.config/i3/config ~/.config/i3/config
+ln -sf ~/src/dotfiles/.config/i3status/i3status.py ~/.config/i3status/i3status.py
 
 # ******************************************************************************
 echo "Setting up crontab stuff..."
