@@ -98,6 +98,7 @@ ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
 ln -sf ~/src/dotfiles/.config/i3/config ~/.config/i3/config
 ln -sf ~/src/dotfiles/.config/i3status/i3status.py ~/.config/i3status/i3status.py
+ln -sf ~/src/dotfiles/.Xmodmap ~/.Xmodmap
 
 # ******************************************************************************
 echo "Setting up crontab stuff..."

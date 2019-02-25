@@ -309,6 +309,7 @@ before packages are loaded. If you are unsure, you should try in setting them in
 `dotspacemacs/user-config' first."
   (require 'google)
   (require 'google-ycmd)
+  (server-start)
   )
 
 (defun dotspacemacs/user-config ()
