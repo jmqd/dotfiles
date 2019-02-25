@@ -23,26 +23,26 @@ EOF
 echo "Installing system dependencies"
 # ******************************************************************************
 
-# TODO install i3pystatus
-# TODO install mpd (music player daemon): pacman -S mpd, apt-get install mpd
-
 sudo pip3 install click boto3 netifaces colour httplib2 oauth2client pytz
 sudo pip3 install google-api-python-client
 
-if [ $is_mac_os = false ]; then
+if [$is_mac_os = false ]; then
+    sudo apt-get install mu4e;
+    sudo apt-get install w3m --install-suggests;
+    sudo apt-get install wine --install-suggests;
+    sudo apt-get install xutils-dev
+
+    # python deps
     sudo pip install i3-workspace-names
     sudo pip3 install py3status
+    pip3 install git+https://github.com/enkore/i3pystatus.git
+
+    # perl deps
     cpan Linux::Inotify2
     cpan AnyEvent
     cpan AnyEvent::I3
 fi;
 
-# TODO
-# if linux
-# sudo apt-get install mu4e
-# sudo apt-get install w3m --install-suggests
-# sudo apt-get install wine --install-suggests
-# fi
 
 # ******************************************************************************
 echo "Setting system-dependent variables"
@@ -69,6 +69,7 @@ echo "Symbolically linking dotfiles not in source control..."
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.aws/credentials ~/.aws/credentials
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.env ~/.env
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.git-credentials ~/.git-credentials
+ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.password-store ~/.password-store
 
 # ******************************************************************************
 echo "Sourcing environment variables..."
