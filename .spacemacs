@@ -364,21 +364,31 @@ you should place your code here."
           )
         )
 
-    ;; work-related settings - Jordan McQueen <jqq@google.com>
-    ;; (spacemacs/declare-prefix "G" "google-command")
-    ;; (evil-leader/set-key "Gf" #'clang-format)
-    ;; (evil-leader/set-key "GF" #'clang-format-buffer)
-    ;; (evil-leader/set-key "Gb" #'google3-build)
-    ;; (evil-leader/set-key "Gc" #'google3-build-cleaner)
-    ;; (evil-leader/set-key "GC" #'google3-build-cleaner-autogen)
-    ;; (evil-leader/set-key "Gt" #'google3-test)
-    ;; (evil-leader/set-key "GT" #'google3-run-test-at-point)
-    ;; (evil-leader/set-key "Gl" #'google-lint)
-    ;; (evil-leader/set-key "Gg" #'autogen)
+    ;; (defconst jordan-employer "google")
+    (defconst jordan-employer "aws")
+    (pcase jordan-employer
+      ("google"
+       ;; work-related settings - jqq@google.com
+       (spacemacs/declare-prefix "G" "google-command")
+       (evil-leader/set-key "Gf" #'clang-format)
+       (evil-leader/set-key "GF" #'clang-format-buffer)
+       (evil-leader/set-key "Gb" #'google3-build)
+       (evil-leader/set-key "Gc" #'google3-build-cleaner)
+       (evil-leader/set-key "GC" #'google3-build-cleaner-autogen)
+       (evil-leader/set-key "Gt" #'google3-test)
+       (evil-leader/set-key "GT" #'google3-run-test-at-point)
+       (evil-leader/set-key "Gl" #'google-lint)
+       (evil-leader/set-key "Gg" #'autogen)
 
-    ;; (require 'google-imports)
-    ;; (evil-leader/set-key "Gi" #'google-imports-iwyu) ;; (C++ unstaffed go/iwyu)
-    ;; (evil-leader/set-key "Go" #'google-imports-organize-imports)  ;; C++/Java
+       (require 'google-imports)
+       (evil-leader/set-key "Gi" #'google-imports-iwyu) ;; (C++ unstaffed go/iwyu)
+       (evil-leader/set-key "Go" #'google-imports-organize-imports)  ;; C++/Java
+       )
+      ("aws"
+       ;; work-related settings - jordanmq@amazon.com
+        (spacemacs/declare-prefix "G" "amazon-go")
+      )
+    )
   )
 
 ;; Do not write anything past this comment. This is where Emacs will
