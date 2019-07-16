@@ -417,6 +417,30 @@ you should place your code here."
     (evil-leader/set-key "Gv" #'amz-workspace-use-version-set)
     (evil-leader/set-key "Gp" #'amz-workspace-add-package)
     (evil-leader/set-key "Gw" #'amz-workspace-create-workspace))
+    (use-package tramp
+      :ensure t
+      :config
+      (add-to-list 'tramp-remote-path "/apollo/env/RemoteCommand/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/envImprovement/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/EnvImprovement/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/JavaSE8/jdk1.8/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/AmazonAwsCli/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/ApolloCommandLine/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/BarkCLI/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/OctaneBrazilTools/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/OdinTools/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/LiveWatchProxy/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/SDETools/bin")
+      (add-to-list 'tramp-remote-path "/apollo/env/JavaSE11/jdk-11/bin")
+      (add-to-list 'tramp-remote-path 'tramp-own-remote-path)
+
+      (setq tramp-copy-failed-regexp
+          (concat "\\(s?cp:.+: "
+            (regexp-opt '("Permission denied"
+                          "not a regular file"
+                          "is a directory"
+                          "No such file or directory") t)
+             "\\)\\s-*")))
   (when (string= employer "google")
     (spacemacs/declare-prefix "G" "google-command")
     (evil-leader/set-key "Gf" #'clang-format)
