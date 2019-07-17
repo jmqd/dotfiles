@@ -67,6 +67,7 @@ echo "Symbolically linking dotfiles not in source control..."
 # TODO: Make this recursively ln -s all of them. It's a tad bit tricky...
 # ******************************************************************************
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.aws/credentials ~/.aws/credentials
+ln -s ~/cloud/mcqueen.jordan/dotfiles/.cloudhome.json ~/.cloudhome.json
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.env ~/.env
 ln -s ~/cloud/mcqueen.jordan/secrets/dotfiles/.git-credentials ~/.git-credentials
 ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.password-store ~/.password-store
