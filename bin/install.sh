@@ -33,7 +33,7 @@ if [$is_mac_os = false ]; then
     sudo apt-get install xutils-dev
 
     # python deps
-    sudo pip install i3-workspace-names
+    sudo pip install i3-workspace-names i3pystatus
     sudo pip3 install py3status
     pip3 install git+https://github.com/enkore/i3pystatus.git
 
@@ -68,8 +68,9 @@ echo "Symbolically linking dotfiles not in source control..."
 # ******************************************************************************
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.aws/credentials ~/.aws/credentials
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.env ~/.env
-ln -s ~/cloud/mcqueen.jordan/dotfiles/.git-credentials ~/.git-credentials
+ln -s ~/cloud/mcqueen.jordan/secrets/dotfiles/.git-credentials ~/.git-credentials
 ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.password-store ~/.password-store
+ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.gpg-id ~/.gpg-id
 
 # ******************************************************************************
 echo "Sourcing environment variables..."
