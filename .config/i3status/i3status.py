@@ -1,5 +1,4 @@
 from i3pystatus import Status
-from i3pystatus.calendar import google
 from i3pystatus.core import color
 import os
 
@@ -97,15 +96,5 @@ status.register("pulseaudio",
 # Format:
 # Cloud connected▶Reroute to Remain
 status.register("spotify")
-
-status.register("calendar",
-                format="\[{status}\] {title} {remaining}",
-                update_interval=10,
-                on_leftclick='xdg-open http://c/',
-                urgent_blink=True,
-                backend=google.Google(
-                    credential_path=os.path.expanduser("~/token.pickle"),
-                    credentials_json=os.path.expanduser("~/secret/client_id.json"))
-)
 
 status.run()
