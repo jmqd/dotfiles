@@ -66,12 +66,14 @@ aws s3 sync s3://mcqueen.jordan ~/cloud/mcqueen.jordan/
 echo "Symbolically linking dotfiles not in source control..."
 # TODO: Make this recursively ln -s all of them. It's a tad bit tricky...
 # ******************************************************************************
+ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.password-store ~/.password-store
+ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.gpg-id ~/.gpg-id
+
+# We don't want to override something important. No force flag.
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.aws/credentials ~/.aws/credentials
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.cloudhome.json ~/.cloudhome.json
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.env ~/.env
 ln -s ~/cloud/mcqueen.jordan/secrets/dotfiles/.git-credentials ~/.git-credentials
-ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.password-store ~/.password-store
-ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.gpg-id ~/.gpg-id
 
 # ******************************************************************************
 echo "Sourcing environment variables..."
