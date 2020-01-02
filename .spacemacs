@@ -33,6 +33,8 @@ values."
    ;; List of configuration layers to load.
    dotspacemacs-configuration-layers
    '(typescript
+     sql
+     rust
      ;; language/syntax erc
      haskell
      (c-c++ :variables c-c++-enable-clang-support
