@@ -1,6 +1,6 @@
 [user]
-    email = jordan@whoami.sh
-    name = Jordan McQueen 
+	email = j@jm.dev
+	name = j@jm.dev
 
 [commit]
     template = ~/.gitmessage
