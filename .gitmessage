@@ -2,10 +2,39 @@
 
 # 50-character subject line
 #
-# 72-character wrapped longer description. This should answer:
+# Recommended verbs to use, if the shoe fits.
 #
-# * Why was this change necessary?
-# * How does it address the problem?
-# * Are there any side effects?
+# | Verb     | Usage                                                  |
+# |----------|--------------------------------------------------------|
+# | Add      | Add new functionality                                  |
+# | Drop     | Remove functionality                                   |
+# | Fix      | Fix bug or functionality                               |
+# | Reformat | Strictly whitespace changes                            |
+# | Refactor | Internal structure change (no behavior change)         |
+# | Optimize | Performance improvements, scalability, etc.            |
+# | Enable   | Start doing something (e.g. flag flip, whitelist)      |
+# | Disable  | Stop doing something (e.g. flag flip, blacklist)       |
+# | Reword   | Strictly changing the wording of comments/docs/strings |
+# | Tweak    | Change the value of a configuration setting, tuning    |
+# | Doc      | Document something, e.g. a function or module          |
 #
-# Include a link to specific resources, if available.
+# 72-character wrapped longer description:
+#
+# What is this change?
+# ===
+#
+# Why make this change?
+# ===
+#
+# Who has context?
+# ===
+#
+# Where will the behavior change when this is deployed?
+# ===
+#
+# When should we deploy this?
+# ===
+#
+# Whare are useful resources to understand this change?
+# ===
+#
