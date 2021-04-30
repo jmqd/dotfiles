@@ -1,13 +1,4 @@
 # ******************************************************************************
-# Variables
-# ******************************************************************************
-if [ "$(uname)" = "Darwin" ]; then
-    is_mac_os=true;
-else
-    is_mac_os=false;
-fi;
-
-# ******************************************************************************
 # Pre-requisites
 # ******************************************************************************
 cat <<"EOF"
@@ -19,35 +10,17 @@ git
 aws (w/ credentials configured)
 EOF
 
-# ******************************************************************************
-echo "Installing system dependencies"
-# ******************************************************************************
+sleep 2
 
-sudo pip3 install click boto3 netifaces colour httplib2 oauth2client pytz
-sudo pip3 install google-api-python-client
-
-if [$is_mac_os = false ]; then
-    sudo apt-get install mu4e;
-    sudo apt-get install w3m --install-suggests;
-    sudo apt-get install wine --install-suggests;
-    sudo apt-get install xutils-dev
-
-    # python deps
-    sudo pip install i3-workspace-names i3pystatus
-    sudo pip3 install py3status
-    pip3 install git+https://github.com/enkore/i3pystatus.git
-
-    # perl deps
-    cpan Linux::Inotify2
-    cpan AnyEvent
-    cpan AnyEvent::I3
-fi;
-
+sudo emerge net-mail/mu www-client/w3m sys-fs/inotify-tools dev-perl/AnyEvent \
+            dev-perl/AnyEvent-I3 app-editors/vim app-editors/emacs \
+            media-video/vlc
 
 # ******************************************************************************
-echo "Setting system-dependent variables"
+echo "Installing emacs configuration base"
 # ******************************************************************************
-PYTHON_EXECUTABLE_PATH=`which python3`
+git clone --depth 1 https://github.com/hlissner/doom-emacs ~/.emacs.d
+~/.emacs.d/bin/doom install
 
 # ******************************************************************************
 echo "Creating common directories in ~/ ..."
@@ -70,8 +43,6 @@ ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.password-store ~/.password-store
 ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.gpg-id ~/.gpg-id
 
 # We don't want to override something important. No force flag.
-ln -s ~/cloud/mcqueen.jordan/dotfiles/.aws/credentials ~/.aws/credentials
-ln -s ~/cloud/mcqueen.jordan/dotfiles/.cloudhome.json ~/.cloudhome.json
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.env ~/.env
 ln -s ~/cloud/mcqueen.jordan/secrets/dotfiles/.git-credentials ~/.git-credentials
 
@@ -94,24 +65,13 @@ git -C ~/src/learning pull --rebase
 # ******************************************************************************
 echo "Symbolically link custom dotfiles to ~/src/dotfiles/."
 # ******************************************************************************
-ln -sf ~/src/dotfiles/.zsh_aliases ~/.zsh_aliases
-ln -sf ~/src/dotfiles/.zsh_functions ~/.zsh_functions
-ln -sf ~/src/dotfiles/.zshrc ~/.zshrc
-ln -sf ~/src/dotfiles/.spacemacs ~/.spacemacs
 ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
-ln -sf ~/src/dotfiles/.config/i3/config ~/.config/i3/config
-ln -sf ~/src/dotfiles/.config/i3status/i3status.py ~/.config/i3status/i3status.py
 ln -sf ~/src/dotfiles/.Xmodmap ~/.Xmodmap
 
 # ******************************************************************************
-echo "Setting up crontab stuff..."
+echo "rsyncing /etc"
 # ******************************************************************************
-echo "* * * * * ~/src/cloudhome/bin/ensure-cloudhome-running.sh ${PYTHON_EXECUTABLE_PATH} &> /tmp/cloudhome.debug" >> /tmp/cronstate
-crontab /tmp/cronstate
+rsync -r ~/src/dotfiles/etc/ /etc/
 
-# ******************************************************************************
-echo "Cleaning up..."
-# ******************************************************************************
-rm /tmp/cronstate
 echo "You'll have to restart your shell for things to take effect."
