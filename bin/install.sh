@@ -41,6 +41,7 @@ ln -sf ~/cloud/mcqueen.jordan/secrets/dotfiles/.gpg-id ~/.gpg-id
 # We don't want to override something important. No force flag.
 ln -s ~/cloud/mcqueen.jordan/dotfiles/.env ~/.env
 ln -s ~/cloud/mcqueen.jordan/secrets/dotfiles/.git-credentials ~/.git-credentials
+ln -s ~/cloud/mcqueen.jordan/dotfiles/.cloudhome.json ~/.cloudhome.json
 
 # ******************************************************************************
 echo "Sourcing environment variables..."
