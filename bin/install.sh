@@ -63,5 +63,7 @@ ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
 ln -sf ~/src/dotfiles/.Xmodmap ~/.Xmodmap
 
+ln -sf ~/src/dotfiles/.sqliterc ~/.sqliterc
+mkdir -p ~/.i3 && ln -sf ~/src/dotfiles/.i3/config ~/.i3/config
 
 echo "You'll have to restart your shell for things to take effect."
