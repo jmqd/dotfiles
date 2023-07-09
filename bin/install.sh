@@ -63,6 +63,9 @@ echo "Symbolically link custom dotfiles to ~/src/dotfiles/."
 ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
 ln -sf ~/src/dotfiles/.Xmodmap ~/.Xmodmap
+ln -sf ~/src/dotfiles/.doom.d/config.el ~/.doom.d/config.el
+ln -sf ~/src/dotfiles/.doom.d/init.el ~/.doom.d/init.el
+ln -sf ~/src/dotfiles/.doom.d/packages.el ~/.doom.d/packages.el
 
 ln -sf ~/src/dotfiles/.sqliterc ~/.sqliterc
 mkdir -p ~/.i3 && ln -sf ~/src/dotfiles/.i3/config ~/.i3/config
