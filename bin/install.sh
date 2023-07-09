@@ -12,10 +12,6 @@ EOF
 
 sleep 2
 
-sudo emerge net-mail/mu www-client/w3m sys-fs/inotify-tools dev-perl/AnyEvent \
-            dev-perl/AnyEvent-I3 app-editors/vim app-editors/emacs \
-            media-video/vlc
-
 # ******************************************************************************
 echo "Installing emacs configuration base"
 # ******************************************************************************
