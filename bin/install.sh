@@ -65,9 +65,5 @@ ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
 ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
 ln -sf ~/src/dotfiles/.Xmodmap ~/.Xmodmap
 
-# ******************************************************************************
-echo "rsyncing /etc"
-# ******************************************************************************
-rsync -r ~/src/dotfiles/etc/ /etc/
 
 echo "You'll have to restart your shell for things to take effect."
