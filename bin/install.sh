@@ -52,11 +52,9 @@ echo "Cloning & pulling latest for git repos..."
 # ******************************************************************************
 git clone https://github.com/mcqueenjordan/cloudhome.git ~/src/cloudhome
 git clone https://github.com/mcqueenjordan/dotfiles.git ~/src/dotfiles
-git clone https://github.com/mcqueenjordan/learning.git ~/src/learning
 
 git -C ~/src/cloudhome pull --rebase
 git -C ~/src/dotfiles pull --rebase
-git -C ~/src/learning pull --rebase
 
 # ******************************************************************************
 echo "Symbolically link custom dotfiles to ~/src/dotfiles/."
