@@ -1,6 +1,6 @@
 [user]
 	email = j@jm.dev
-	name = j@jm.dev
+	name = Jordan McQueen
 
 [commit]
   template = ~/.gitmessage
