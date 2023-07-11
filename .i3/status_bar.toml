@@ -1,0 +1,41 @@
+[[block]]
+alert = 10.0
+block = "disk_space"
+info_type = "available"
+interval = 60
+path = "/"
+warning = 20.0
+
+[[block]]
+block = "memory"
+format = " $icon $mem_used_percents "
+format_alt = " $icon $swap_used_percents "
+
+[[block]]
+block = "cpu"
+interval = 1
+
+[[block]]
+block = "load"
+format = " LOAD $1m "
+interval = 1
+
+[[block]]
+block = "time"
+format = " $timestamp.datetime(f:'[%B] [%a] %Y-%m-%d %r')    "
+interval = 60
+
+[icons]
+icons = "material"
+
+[theme]
+theme = "srcery"
+
+[theme.overrides]
+idle_bg = "#FFFFFC"
+idle_fg = "#000000"
+info_bg = "#FFFFFC"
+good_bg = "#FFFFFC"
+warning_bg = "#FFE5B4"
+separator = "⁂"
+critical_bg = "#F8BABA"
