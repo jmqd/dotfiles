@@ -45,7 +45,7 @@
     noto-fonts-cjk
     noto-fonts-emoji
     corefonts
-    nerdfonts
+    jetbrains-mono
   ];
 
   # Enable the X11 windowing system.
