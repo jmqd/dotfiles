@@ -153,7 +153,7 @@ bindsym $mod+r mode "resize"
 # finds out, if available)
 bar {
     status_command    i3status-rs ~/.config/i3status-rust/config-default.toml
-    position          top
+    position          bottom
     workspace_buttons yes
     colors {
         background #FFFFFF
