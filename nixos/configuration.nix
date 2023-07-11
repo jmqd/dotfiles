@@ -213,6 +213,7 @@
 
       pkgs.lutris
       pkgs.discord
+      pkgs.spotify
     ];
 
     programs = {
