@@ -95,34 +95,66 @@
   # List packages installed in system profile. To search, run:
   # $ nix search wget
   environment.systemPackages = with pkgs; [
+    # system admin / linux core
+    doas
     vim
     wget
     git
     fd
-    (python3.withPackages (ps: with ps; [ openai requests boto3 ]))
+    read-edid
+    ipmitool
+    openssl
+    isync
+    offlineimap
+
+    # wine and gaming deps
     wine
     wineWowPackages.stable
     winetricks
+
+    # personal software
+    # TODO: relocate this file somewhere better, maybe fetchFromGit?
+    (import /home/jmq/src/cloudhome)
+
+    # X tools for emacs everywhere
+    xorg.xwininfo
+    xdotool
+    xclip
+
+    # automating xrandr profile
+    autorandr
+
+    # development toolchain
+    cargo
+    rustc
+    gnumake42
+    cmake
+    gcc
+    clang
+    nodejs_20
+    black
+    pkg-config
+    pipenv
+    (python3.withPackages (ps:
+      with ps; [
+        openai
+        requests
+        boto3
+        pyflakes
+        black
+        isort
+        pipenv
+        pytest
+      ]))
+    plantuml
+    graphviz
+
+    # others
+    zola
+    languagetool
   ];
 
-  # Some programs need SUID wrappers, can be configured further or are
-  # started in user sessions.
-  # programs.mtr.enable = true;
-  # programs.gnupg.agent = {
-  #   enable = true;
-  #   enableSSHSupport = true;
-  # };
-
   programs.steam.enable = true;
-
-  # nvidia
-  hardware.opengl = {
-    enable = true;
-    driSupport = true;
-    driSupport32Bit = true;
-  };
-
-  services.xserver.videoDrivers = [ "nvidia" ];
 
   hardware.nvidia = {
     modesetting.enable = true;
@@ -130,10 +162,13 @@
     package = config.boot.kernelPackages.nvidiaPackages.stable;
   };
 
-  # List services that you want to enable:
-
-  # Enable the OpenSSH daemon.
-  # services.openssh.enable = true;
+  # nvidia
+  hardware.opengl = {
+    enable = true;
+    driSupport = true;
+    driSupport32Bit = true;
+  };
+  services.xserver.videoDrivers = [ "nvidia" ];
 
   # Open ports in the firewall.
   # networking.firewall.allowedTCPPorts = [ ... ];
