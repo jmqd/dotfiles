@@ -156,7 +156,7 @@ bar {
     position          bottom
     workspace_buttons yes
     colors {
-        background #FFFFFF
+        background #FFFFF0
         statusline #000000
         focused_workspace  #000000 #d3d3d3 #000000
         active_workspace   #000000 #7e7e7e #000000
