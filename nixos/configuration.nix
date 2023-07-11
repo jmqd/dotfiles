@@ -202,6 +202,7 @@
       pkgs.imagemagick
       pkgs.nixfmt
       pkgs.pandoc
+      pkgs.flameshot
 
       # shell editing tools
       pkgs.shfmt
