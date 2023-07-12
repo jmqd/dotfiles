@@ -1,4 +1,23 @@
 [[block]]
+block = "custom"
+command = "sed 's/  //' <(curl 'https://wttr.in/?format=1' -s)"
+interval = 600
+
+[[block]]
+block = "custom"
+command = "echo `uname` `uname -r | tr - . | cut -d. -f1-2`"
+interval = "once"
+
+[[block]]
+block = "custom"
+json = true
+command = ''' echo "{\"icon\":\"ping\",\"text\":\"`ping -c4 1.1.1.1 | tail -n1 | cut -d'/' -f5`\"}" '''
+interval = 60
+[[block.click]]
+button = "left"
+cmd = "<command>"
+
+[[block]]
 alert = 10.0
 block = "disk_space"
 info_type = "available"
@@ -23,7 +42,7 @@ interval = 1
 [[block]]
 block = "time"
 format = " $timestamp.datetime(f:'[%B] [%a] %Y-%m-%d %r')    "
-interval = 60
+interval = 1
 
 [icons]
 icons = "material"
