@@ -126,10 +126,10 @@
 
     # development toolchain
     rustup
-
     gnumake42
     cmake
     gcc
+    gdb
     clang
     nodejs_20
     black
