@@ -193,6 +193,12 @@
   home-manager.users.jmq = { pkgs, ... }: {
     home.stateVersion = "23.05";
 
+    home.sessionVariables = {
+      EDITOR = "emacsclient -n";
+      VISUAL = "emacsclient -c";
+      TERMINAL = "alacritty";
+    };
+
     home.packages = [
       pkgs.killall
       pkgs.ripgrep
