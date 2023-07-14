@@ -1,6 +1,12 @@
 # i3 config file (v4)
-#
 # Please see http://i3wm.org/docs/userguide.html for a complete reference!
+
+# always run these executables when (re)starting i3
+# enable default autorandr xrandr configuration
+exec_always --no-startup-id autorandr --load default
+# name workspaces dynamically according to open application
+exec_always --no-startup-id i3wsr
+
 
 set $mod Mod4
 
@@ -74,8 +80,6 @@ bindsym $mod+a focus parent
 # focus the child container
 #bindsym $mod+d focus child
 
-# name workspaces dynamically according to open application
-exec_always --no-startup-id ~/src/dotfiles/bin/i3-renameworkspaces.pl
 
 bindsym $mod+Tab workspace next
 bindsym $mod+Shift+Tab workspace prev
