@@ -121,6 +121,9 @@
     xdotool
     xclip
 
+    # i3 re-name workspaces dependency
+    inotify-tools
+
     # automating xrandr profile
     autorandr
 
