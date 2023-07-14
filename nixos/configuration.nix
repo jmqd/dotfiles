@@ -90,7 +90,6 @@
   users.users.jmq = {
     isNormalUser = true;
     extraGroups = [ "wheel" ];
-    shell = pkgs.alacritty;
   };
 
   # List packages installed in system profile. To search, run:
