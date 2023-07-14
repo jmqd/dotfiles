@@ -69,7 +69,7 @@
     displayManager = { defaultSession = "none+i3"; };
     windowManager.i3 = {
       enable = true;
-      extraPackages = with pkgs; [ dmenu i3status i3lock ];
+      extraPackages = with pkgs; [ dmenu i3status i3lock i3wsr ];
     };
   };
 
@@ -120,9 +120,6 @@
     xorg.xwininfo
     xdotool
     xclip
-
-    # i3 re-name workspaces dependency
-    inotify-tools
 
     # automating xrandr profile
     autorandr
