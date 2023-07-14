@@ -128,8 +128,8 @@
     autorandr
 
     # development toolchain
-    cargo
-    rustc
+    rustup
+
     gnumake42
     cmake
     gcc
