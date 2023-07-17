@@ -67,6 +67,7 @@ ln -sf ~/src/dotfiles/.doom.d/config.el ~/.doom.d/config.el
 ln -sf ~/src/dotfiles/.doom.d/init.el ~/.doom.d/init.el
 ln -sf ~/src/dotfiles/.doom.d/packages.el ~/.doom.d/packages.el
 ln -sf ~/src/dotfiles/.sqliterc ~/.sqliterc
+ln -sf ~/src/dotfiles/.gdbinit ~/.gdbinit
 
 mkdir -p ~/.i3
 ln -sf ~/src/dotfiles/.i3/config ~/.i3/config
