@@ -129,6 +129,7 @@
     gnumake42
     cmake
     udev
+    systemd
     gcc
     gdb
     clang
@@ -226,6 +227,7 @@
     programs = {
       alacritty = { enable = true; };
       chromium = { enable = true; };
+      rofi = { enable = true; };
       nix-index = {
         enable = true;
         enableBashIntegration = true;
