@@ -128,6 +128,7 @@
     rustup
     gnumake42
     cmake
+    udev
     gcc
     gdb
     clang
