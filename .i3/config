@@ -34,6 +34,7 @@ hide_edge_borders both
 
 # start dmenu (a program launcher)
 bindsym $mod+space exec --no-startup-id rofi -show combi -theme Paper -font "JetBrains Mono 16"
+bindsym $mod+d exec --no-startup-id dmenu_run
 
 # change focus
 focus_follows_mouse no
