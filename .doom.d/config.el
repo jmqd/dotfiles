@@ -63,9 +63,153 @@
   (define-key company-search-map (kbd "C-k") 'company-select-next)
   )
 
+;; ijkl for grep-mode
 (map! :after evil :map grep-mode-map
       :g "C-k" #'next-error-no-select
       :g (kbd "H-i") #'previous-error-no-select)
+
+(with-eval-after-load 'magit
+  (define-key magit-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-mode-map (kbd "H-i") 'magit-section-backward)
+  (define-key magit-commit-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-commit-section-map (kbd "H-i") 'magit-section-backward)
+  (define-key magit-status-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-status-mode-map (kbd "H-i") 'magit-section-backward)
+  (define-key magit-section-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-section-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-commit-message-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-commit-message-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-blame-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-blame-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-blame-read-only-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-blame-read-only-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-blob-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-blob-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-branch-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-branch-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-cherry-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-cherry-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-diff-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-diff-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-diff-section-base-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-diff-section-base-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-diff-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-diff-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-file-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-file-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-hunk-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-hunk-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-log-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-log-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-minibuffer-local-ns-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-minibuffer-local-ns-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-staged-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-staged-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-error-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-error-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-log-read-revs-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-log-read-revs-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-log-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-log-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-log-select-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-log-select-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-merge-preview-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-merge-preview-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-mode-line-process-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-mode-line-process-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-module-commit-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-module-commit-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-modules-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-modules-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-process-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-process-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-reflog-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-reflog-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-refs-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-refs-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-remote-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-remote-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-repolist-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-repolist-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-revision-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-revision-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-section-heading-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-section-heading-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-staged-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-staged-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-stash-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-stash-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-stash-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-stash-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-stashes-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-stashes-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-stashes-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-stashes-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-submodule-list-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-submodule-list-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-tag-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-tag-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-todos-item-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-todos-item-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-todos-list-mode-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-todos-list-mode-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-todos-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-todos-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-unmerged-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-unmerged-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-unpulled-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-unpulled-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-unpushed-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-unpushed-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-unstaged-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-unstaged-section-map (kbd "H-i") 'magit-section-backward)
+
+  (define-key magit-untracked-section-map (kbd "C-k") 'magit-section-forward)
+  (define-key magit-untracked-section-map (kbd "H-i") 'magit-section-backward)
+  )
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
