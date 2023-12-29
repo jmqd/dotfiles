@@ -37,7 +37,6 @@
 
   nix.settings.allowed-users = [ "@wheel" ];
   nix.settings.experimental-features = "nix-command flakes";
-
   nixpkgs.config.allowUnfree = true;
 
   fonts.fonts = with pkgs; [
@@ -47,6 +46,13 @@
     corefonts
     jetbrains-mono
   ];
+
+  security.pam.loginLimits = [{
+    domain = "*";
+    type = "soft";
+    item = "nofile";
+    value = "16384";
+  }];
 
   # Services
   services.openssh.enable = true;
@@ -73,6 +79,30 @@
     };
   };
 
+  virtualisation = {
+    libvirtd = {
+      enable = true;
+      qemu = {
+        swtpm.enable = true;
+        ovmf.enable = true;
+        ovmf.packages = [ pkgs.OVMFFull.fd ];
+      };
+    };
+    spiceUSBRedirection.enable = true;
+  };
+  services.spice-vdagentd.enable = true;
+
+  boot.kernelModules = [ "v4l2loopback" ];
+  boot.extraModulePackages = with config.boot.kernelPackages;
+    [ v4l2loopback.out ];
+
+  boot.extraModprobeConfig = ''
+    options kvm_intel nested=1
+    options kvm_intel emulate_invalid_guest_state=0
+    options kvm ignore_msrs=1
+    options v4l2loopback exclusive_caps=1 card_label="Virtual Camera"
+  '';
+
   # Configure keymap in X11
   # services.xserver.layout = "us";
   # services.xserver.xkbOptions = "eurosign:e,caps:escape";
@@ -83,13 +113,15 @@
   # Enable sound.
   # sound.enable = true;
   hardware.pulseaudio.enable = true;
+  hardware.pulseaudio.package = pkgs.pulseaudioFull;
 
   # Enable touchpad support (enabled default in most desktopManager).
   # services.xserver.libinput.enable = true;
 
   users.users.jmq = {
     isNormalUser = true;
-    extraGroups = [ "wheel" ];
+    extraGroups = [ "wheel" "libvirtd" "audio" ];
+    shell = pkgs.zsh;
   };
 
   # List packages installed in system profile. To search, run:
@@ -100,17 +132,45 @@
     vim
     wget
     git
+    git-lfs
     fd
     read-edid
     ipmitool
     openssl
+    openssl.dev
+    protobuf
     isync
     offlineimap
+    atuin # shell history
+    bandwhich # bandwidth sniffer
+    bottom # top replacement
+    broot # tree replacement
+    difftastic # semantic diffs
+    fd # better find
+    lemmeknow # string analyzer
+    procs
+    tealdeer
 
     # wine and gaming deps
     wine
     wineWowPackages.stable
     winetricks
+    quickemu
+    socat
+    virt-manager
+    virt-viewer
+    spice
+    spice-gtk
+    spice-protocol
+    win-virtio
+    win-spice
+    gnome.adwaita-icon-theme
+    libgudev
+    libvdpau
+    libsoup
+    dxvk
+    kerberos
+    obs-studio
 
     # personal software
     # TODO: relocate this file somewhere better, maybe fetchFromGit?
@@ -134,6 +194,8 @@
     gdb
     clang
     nodejs_20
+    nodejs
+    yarn
     black
     pkg-config
     pipenv
@@ -154,9 +216,13 @@
     # others
     zola
     languagetool
+    pavucontrol
+    jq
   ];
 
   programs.steam.enable = true;
+  programs.dconf.enable = true;
+  programs.zsh.enable = true;
 
   hardware.nvidia = {
     modesetting.enable = true;
@@ -230,7 +296,7 @@
       rofi = { enable = true; };
       nix-index = {
         enable = true;
-        enableBashIntegration = true;
+        enableZshIntegration = true;
       };
       emacs = {
         enable = true;
