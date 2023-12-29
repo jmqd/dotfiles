@@ -40,6 +40,7 @@
 (define-key evil-visual-state-map "k" 'evil-next-visual-line)
 (define-key evil-visual-state-map "k" 'evil-next-visual-line)
 
+;; ijkl for minibuffer
 (define-key minibuffer-mode-map (kbd "C-k") 'next-line)
 (define-key minibuffer-mode-map (kbd "H-i") 'previous-line)
 (define-key minibuffer-mode-map (kbd "C-j") 'backward-char)
@@ -48,11 +49,13 @@
 (define-key minibuffer-local-map (kbd "H-i") 'previous-line)
 
 
+;; ijkl for vertico / search / find files etc.
 (with-eval-after-load 'vertico
   (define-key vertico-map (kbd "H-i") 'vertico-previous)
   (define-key vertico-map (kbd "C-k") 'vertico-next)
-)
+  )
 
+;; ijkl for company autocomplete
 (with-eval-after-load 'company
   (define-key company-active-map (kbd "H-i") 'company-select-previous)
   (define-key company-active-map (kbd "C-k") 'company-select-next)
@@ -101,6 +104,10 @@
   (setq dap-default-terminal-kind "integrated") ;; Make sure that
   terminal programs open a term for I/O in an Emacs buffer
   (dap-auto-configure-mode +1))
+
+(require 'ox-reveal)
+(after! org
+  (load-library "ox-reveal"))
 
 (defun from-org-to-textile-buffer ()
   "Converts the contents of the buffer from org to textile."
