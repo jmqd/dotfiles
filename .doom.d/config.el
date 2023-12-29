@@ -40,6 +40,12 @@
 (define-key evil-visual-state-map "k" 'evil-next-visual-line)
 (define-key evil-visual-state-map "k" 'evil-next-visual-line)
 
+;; ijkl for window navigation
+(map! :leader "wi" #'evil-window-up)
+(map! :leader "wj" #'evil-window-left)
+(map! :leader "wk" #'evil-window-down)
+(map! :leader "wl" #'evil-window-right)
+
 ;; ijkl for minibuffer
 (define-key minibuffer-mode-map (kbd "C-k") 'next-line)
 (define-key minibuffer-mode-map (kbd "H-i") 'previous-line)
