@@ -46,6 +46,7 @@
 (define-key minibuffer-mode-map (kbd "C-l") 'forward-char)
 (define-key minibuffer-local-map (kbd "C-k") 'next-line)
 (define-key minibuffer-local-map (kbd "H-i") 'previous-line)
+
 (define-key vertico-map (kbd "H-i") 'vertico-previous)
 (define-key vertico-map (kbd "C-k") 'vertico-next)
 
