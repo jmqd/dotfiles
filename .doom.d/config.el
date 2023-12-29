@@ -1,14 +1,8 @@
 ;;; $DOOMDIR/config.el -*- lexical-binding: t; -*-
 
-;; Place your private configuration here! Remember, you do not need to run 'doom
-;; sync' after modifying this file!
-
-
 ;; Some functionality uses this to identify you, e.g. GPG configuration, email
 ;; clients, file templates and snippets.
-(
-
-setq user-full-name "Jordan McQueen"
+(setq user-full-name "Jordan McQueen"
       user-mail-address "j@jm.dev")
 
 ;; Because Ctrl-I and <TAB> are actually the same control character,
@@ -60,11 +54,15 @@ setq user-full-name "Jordan McQueen"
   (define-key company-active-map (kbd "C-k") 'company-select-next)
   (define-key company-search-map (kbd "H-i") 'company-select-previous)
   (define-key company-search-map (kbd "C-k") 'company-select-next)
-)
+  )
 
 (map! :after evil :map grep-mode-map
       :g "C-k" #'next-error-no-select
       :g (kbd "H-i") #'previous-error-no-select)
+
+;; This determines the style of line numbers in effect. If set to `nil', line
+;; numbers are disabled. For relative line numbers, set this to `relative'.
+(setq display-line-numbers-type 'relative)
 
 ;; major-mode leader key
 (setq doom-localleader-key ",")
@@ -73,9 +71,47 @@ setq user-full-name "Jordan McQueen"
 ;; change `org-directory'. It must be set before org loads!
 (setq org-directory "~/cloud/mcqueen.jordan/")
 
-;; This determines the style of line numbers in effect. If set to `nil', line
-;; numbers are disabled. For relative line numbers, set this to `relative'.
-(setq display-line-numbers-type 'relative)
+(setq plantuml-output-type "png")
+
+(with-eval-after-load 'lsp-rust
+  (require 'dap-cpptools))
+
+(with-eval-after-load 'dap-cpptools
+  ;; Add a template specific for debugging Rust programs.
+  ;; It is used for new projects, where I can M-x dap-edit-debug-template
+  (dap-register-debug-template "Rust::CppTools Run Configuration"
+                               (list :type "cppdbg"
+                                     :request "launch"
+                                     :name "Rust::Run"
+                                     :MIMode "gdb"
+                                     :miDebuggerPath "rust-gdb"
+                                     :environment []
+                                     :program
+                                     "${workspaceFolder}/target/debug/hello / replace with binary"
+                                     :cwd "${workspaceFolder}"
+                                     :console "external"
+                                     :dap-compilation "cargo build"
+                                     :dap-compilation-dir "${workspaceFolder}")))
+
+(with-eval-after-load 'dap-mode
+  (setq dap-default-terminal-kind "integrated") ;; Make sure that
+  terminal programs open a term for I/O in an Emacs buffer
+  (dap-auto-configure-mode +1))
+
+(after! org
+  (load-library "ox-reveal"))
+
+(defun from-org-to-textile-buffer ()
+  "Converts the contents of the buffer from org to textile."
+  (interactive)
+  (shell-command-on-region
+   (point-min) (point-max)
+   "pandoc -f org -t jira" t t))
+
+(add-hook 'org-babel-after-execute-hook
+          (lambda ()
+            (when org-inline-image-overlays
+              (org-redisplay-inline-images))))
 
 ;; Here are some additional functions/macros that could help you configure Doom:
 ;;
