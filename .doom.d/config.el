@@ -54,7 +54,6 @@
 (define-key minibuffer-local-map (kbd "C-k") 'next-line)
 (define-key minibuffer-local-map (kbd "H-i") 'previous-line)
 
-
 ;; ijkl for vertico / search / find files etc.
 (with-eval-after-load 'vertico
   (define-key vertico-map (kbd "H-i") 'vertico-previous)
