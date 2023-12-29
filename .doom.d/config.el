@@ -47,8 +47,11 @@
 (define-key minibuffer-local-map (kbd "C-k") 'next-line)
 (define-key minibuffer-local-map (kbd "H-i") 'previous-line)
 
-(define-key vertico-map (kbd "H-i") 'vertico-previous)
-(define-key vertico-map (kbd "C-k") 'vertico-next)
+
+(with-eval-after-load 'vertico
+  (define-key vertico-map (kbd "H-i") 'vertico-previous)
+  (define-key vertico-map (kbd "C-k") 'vertico-next)
+)
 
 (with-eval-after-load 'company
   (define-key company-active-map (kbd "H-i") 'company-select-previous)
@@ -98,9 +101,6 @@
   (setq dap-default-terminal-kind "integrated") ;; Make sure that
   terminal programs open a term for I/O in an Emacs buffer
   (dap-auto-configure-mode +1))
-
-(after! org
-  (load-library "ox-reveal"))
 
 (defun from-org-to-textile-buffer ()
   "Converts the contents of the buffer from org to textile."
