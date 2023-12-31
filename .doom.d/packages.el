@@ -57,3 +57,5 @@
 
 ;; Do not escape out of evil mode with 'jk'
 (package! evil-escape :disable t)
+
+(package! gptel)
