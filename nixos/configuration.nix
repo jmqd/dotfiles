@@ -191,6 +191,8 @@
     udev
     systemd
     gcc
+    bazel
+    flyctl
     gdb
     clang
     nodejs_20
