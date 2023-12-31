@@ -54,6 +54,12 @@
 (define-key minibuffer-local-map (kbd "C-k") 'next-line)
 (define-key minibuffer-local-map (kbd "H-i") 'previous-line)
 
+(use-package! gptel
+  :config
+  (setq! gptel-api-key (insert-file-contents "~/.openai-credential"))
+  (setq! gptel-model "gpt-4-1106-preview")
+  )
+
 ;; ijkl for vertico / search / find files etc.
 (with-eval-after-load 'vertico
   (define-key vertico-map (kbd "H-i") 'vertico-previous)
@@ -250,8 +256,8 @@
                                      :dap-compilation-dir "${workspaceFolder}")))
 
 (with-eval-after-load 'dap-mode
-  (setq dap-default-terminal-kind "integrated") ;; Make sure that
-  terminal programs open a term for I/O in an Emacs buffer
+  (setq dap-default-terminal-kind "integrated")
+  ;; Make sure that terminal programs open a term for I/O in an Emacs buffer
   (dap-auto-configure-mode +1))
 
 (require 'ox-reveal)
