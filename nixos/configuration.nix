@@ -293,7 +293,18 @@
     ];
 
     programs = {
-      alacritty = { enable = true; };
+      alacritty = {
+        enable = true;
+        settings = {
+          font = { size = 16.0; };
+          colors = {
+            primary = {
+              background = "#FAF9F6";
+              foreground = "#212427";
+            };
+          };
+        };
+      };
       chromium = { enable = true; };
       rofi = { enable = true; };
       nix-index = {
