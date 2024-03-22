@@ -150,6 +150,7 @@
     lemmeknow # string analyzer
     procs
     tealdeer
+    texlive.combined.scheme-full
 
     # wine and gaming deps
     wine
@@ -186,11 +187,13 @@
 
     # development toolchain
     rustup
+    efibootmgr
     gnumake42
     cmake
     udev
     systemd
     gcc
+    gccgo13
     bazel
     flyctl
     gdb
