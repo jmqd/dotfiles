@@ -135,6 +135,10 @@
     git-lfs
     fd
     read-edid
+    fontconfig
+    freetype
+    expat
+    gnuplot
     ipmitool
     openssl
     openssl.dev
@@ -309,6 +313,7 @@
         };
       };
       chromium = { enable = true; };
+      google-chrome = { enable = true; };
       rofi = { enable = true; };
       nix-index = {
         enable = true;
