@@ -220,6 +220,8 @@
 
   (define-key magit-untracked-section-map (kbd "C-k") 'magit-section-forward)
   (define-key magit-untracked-section-map (kbd "H-i") 'magit-section-backward)
+
+  (setq magit-list-refs-sortby "-committerdate")
   )
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
