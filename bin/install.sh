@@ -68,6 +68,7 @@ ln -sf ~/src/dotfiles/.doom.d/init.el ~/.doom.d/init.el
 ln -sf ~/src/dotfiles/.doom.d/packages.el ~/.doom.d/packages.el
 ln -sf ~/src/dotfiles/.sqliterc ~/.sqliterc
 ln -sf ~/src/dotfiles/.gdbinit ~/.gdbinit
+ln -sf ~/src/dotfiles/.wezterm.lua ~/.wezterm.lua
 sudo ln -sf ~/src/dotfiles/nixos/configuration.nix /etc/nixos/configuration.nix
 
 mkdir -p ~/.i3
