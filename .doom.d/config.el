@@ -206,15 +206,6 @@
   (define-key magit-todos-section-map (kbd "C-k") 'magit-section-forward)
   (define-key magit-todos-section-map (kbd "H-i") 'magit-section-backward)
 
-  (define-key magit-unmerged-section-map (kbd "C-k") 'magit-section-forward)
-  (define-key magit-unmerged-section-map (kbd "H-i") 'magit-section-backward)
-
-  (define-key magit-unpulled-section-map (kbd "C-k") 'magit-section-forward)
-  (define-key magit-unpulled-section-map (kbd "H-i") 'magit-section-backward)
-
-  (define-key magit-unpushed-section-map (kbd "C-k") 'magit-section-forward)
-  (define-key magit-unpushed-section-map (kbd "H-i") 'magit-section-backward)
-
   (define-key magit-unstaged-section-map (kbd "C-k") 'magit-section-forward)
   (define-key magit-unstaged-section-map (kbd "H-i") 'magit-section-backward)
 
