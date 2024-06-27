@@ -129,6 +129,8 @@
   environment.systemPackages = with pkgs; [
     # system admin / linux core
     doas
+    lshw
+    pciutils
     vim
     wget
     git
@@ -138,6 +140,7 @@
     fontconfig
     freetype
     expat
+    glxinfo
     gnuplot
     ipmitool
     openssl
@@ -155,6 +158,7 @@
     procs
     tealdeer
     texlive.combined.scheme-full
+    terraform
 
     # wine and gaming deps
     wine
@@ -190,8 +194,10 @@
     autorandr
 
     # development toolchain
+    emscripten
     rustup
     efibootmgr
+    certbot
     gnumake42
     cmake
     udev
@@ -199,15 +205,26 @@
     gcc
     gccgo13
     bazel
+    sqlite
     flyctl
     gdb
+    poetry
     clang
     nodejs_20
+    nodejs_18
     nodejs
+    nodePackages.yarn
     yarn
     black
     pkg-config
     pipenv
+    tree-sitter
+    trunk # for wasm
+    vultr-cli
+
+    libGLU
+    libGL
+
     (python3.withPackages (ps:
       with ps; [
         openai
@@ -227,6 +244,15 @@
     languagetool
     pavucontrol
     jq
+  ];
+
+  programs.nix-ld.enable = true;
+  programs.nix-ld.libraries = with pkgs; [
+    gcc.cc.libgcc
+    stdenv.cc.cc.lib
+    # that's where the shared libs go, you can find which one you need using
+    # nix-locate --top-level libstdc++.so.6  (replace this with your lib)
+    # ^ this requires `nix-index` pkg
   ];
 
   programs.steam.enable = true;
@@ -264,7 +290,7 @@
   # this value at the release version of the first install of this system.
   # Before changing this value read the documentation for this option
   # (e.g. man configuration.nix or on https://nixos.org/nixos/options.html).
-  system.stateVersion = "23.05"; # Did you read the comment?
+  system.stateVersion = "24.05"; # Did you read the comment?
 
   home-manager.useGlobalPkgs = true;
   home-manager.users.jmq = { pkgs, ... }: {
@@ -273,7 +299,7 @@
     home.sessionVariables = {
       EDITOR = "emacsclient -n";
       VISUAL = "emacsclient -c";
-      TERMINAL = "alacritty";
+      TERMINAL = "wezterm";
     };
 
     home.packages = [
@@ -286,6 +312,7 @@
       pkgs.nixfmt
       pkgs.pandoc
       pkgs.flameshot
+      pkgs.slack
 
       # shell editing tools
       pkgs.shfmt
@@ -300,18 +327,7 @@
     ];
 
     programs = {
-      alacritty = {
-        enable = true;
-        settings = {
-          font = { size = 16.0; };
-          colors = {
-            primary = {
-              background = "#FAF9F6";
-              foreground = "#212427";
-            };
-          };
-        };
-      };
+      wezterm = { enable = true; };
       chromium = { enable = true; };
       google-chrome = { enable = true; };
       rofi = { enable = true; };
