@@ -4,13 +4,12 @@ local wezterm = require 'wezterm'
 -- This will hold the configuration.
 local config = wezterm.config_builder()
 
--- This is where you actually apply your config choices
+-- Custom config below --
 
--- For example, changing the color scheme:
 config.color_scheme = 'PencilLight'
-
 config.font = wezterm.font('Berkeley Mono')
 config.font_size = 24.0
+config.tab_bar_at_bottom = true
+config.use_fancy_tab_bar = false
 
--- and finally, return the configuration to wezterm
 return config
