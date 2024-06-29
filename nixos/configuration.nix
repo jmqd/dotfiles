@@ -143,14 +143,15 @@
     glxinfo
     gnuplot
     ipmitool
+    inetutils
+    inxi
     openssl
     openssl.dev
     protobuf
     isync
     offlineimap
-    atuin # shell history
     bandwhich # bandwidth sniffer
-    bottom # top replacement
+    bottom
     broot # tree replacement
     difftastic # semantic diffs
     fd # better find
