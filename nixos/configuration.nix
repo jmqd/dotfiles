@@ -183,10 +183,11 @@
     terraform
 
     # wine and gaming deps
-    wine
-    wineWowPackages.stable
-    winetricks
+    #wine
+    #wineWowPackages.stable
+    #winetricks
     quickemu
+    gimp
     socat
     virt-manager
     virt-viewer
