@@ -152,6 +152,9 @@
     git-lfs
     fd
     read-edid
+    nmap
+    arp-scan
+    cloc
     fontconfig
     freetype
     expat
