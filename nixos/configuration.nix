@@ -32,6 +32,12 @@
   #   useXkbConfig = true; # use xkbOptions in tty.
   # };
 
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 90d";
+  };
+
   # something required for i3
   environment.pathsToLink = [ "/libexec" ];
 
