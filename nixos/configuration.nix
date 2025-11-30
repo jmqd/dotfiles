@@ -196,17 +196,17 @@
     spice-protocol
     win-virtio
     win-spice
-    gnome.adwaita-icon-theme
+    adwaita-icon-theme
     libgudev
     libvdpau
     libsoup
     dxvk
-    kerberos
+    krb5
     obs-studio
 
     # personal software
     # TODO: relocate this file somewhere better, maybe fetchFromGit?
-    (import /home/jmq/src/cloudhome)
+    #(import /home/jmq/src/cloudhome)
 
     # X tools for emacs everywhere
     xorg.xwininfo
