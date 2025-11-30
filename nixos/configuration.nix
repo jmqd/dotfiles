@@ -162,10 +162,13 @@
     gnuplot
     ipmitool
     inetutils
+    nixos-anywhere
     inxi
     openssl
     openssl.dev
     protobuf
+    p7zip
+    vlc
     isync
     offlineimap
     bandwhich # bandwidth sniffer
