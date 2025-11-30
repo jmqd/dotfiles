@@ -62,17 +62,24 @@
 
   # Services
   services.openssh.enable = true;
-  services.tailscale.enable = true;
+  #services.openssh.X11Forwarding = true;
+  services.tailscale = {
+    enable = true;
+    useRoutingFeatures = "both";
+    #extraUpFlags = [
+    #"--advertise-exit-node"
+    #];
+  };
   services.timesyncd.enable = true;
 
   # my services
-  systemd.user.services.cloudhome = {
-    description = "cloudhome";
-    after = [ "network.target" ];
-    unitConfig = { Type = "Simple"; };
-    serviceConfig = { ExecStart = "/run/current-system/sw/bin/cloudhome"; };
-    wantedBy = [ "default.target" ];
-  };
+  #systemd.user.services.cloudhome = {
+  #description = "cloudhome";
+  #after = [ "network.target" ];
+  #unitConfig = { Type = "Simple"; };
+  #serviceConfig = { ExecStart = "/run/current-system/sw/bin/cloudhome"; };
+  #wantedBy = [ "default.target" ];
+  #};
 
   # Enable the X11 windowing system.
   services.xserver = {
