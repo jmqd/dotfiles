@@ -223,6 +223,7 @@
     certbot
     gnumake42
     cmake
+    dig
     udev
     systemd
     gcc
