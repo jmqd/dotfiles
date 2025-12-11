@@ -59,3 +59,4 @@
 (package! evil-escape :disable t)
 
 (package! gptel)
+(package! my-whisper)
