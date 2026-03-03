@@ -57,7 +57,29 @@ while IFS= read -r -d '' file; do
 done < <(git ls-files -z)
 
 failed=0
-shellcheck_missing=0
+
+run_shellcheck() {
+  local shell_name="$1"
+  local file="$2"
+
+  if command -v shellcheck >/dev/null 2>&1; then
+    shellcheck -x -s "$shell_name" "$file"
+    return $?
+  fi
+
+  if command -v nix >/dev/null 2>&1 && [ -f "$repo_root/flake.nix" ]; then
+    local tmp_cache_dir
+    tmp_cache_dir="$(mktemp -d)"
+    if XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command shellcheck -x -s "$shell_name" "$file"; then
+      rm -rf "$tmp_cache_dir"
+      return 0
+    fi
+    rm -rf "$tmp_cache_dir"
+    return 2
+  fi
+
+  return 3
+}
 
 if [ "${#shell_files[@]}" -eq 0 ]; then
   echo "pre-push: no shell files found; skipping shell checks"
@@ -94,13 +116,15 @@ else
         ;;
     esac
 
-    if command -v shellcheck >/dev/null 2>&1; then
-      if ! shellcheck -x -s "$shell_name" "$file"; then
+    shellcheck_status=0
+    if ! run_shellcheck "$shell_name" "$file"; then
+      shellcheck_status=$?
+      if [ "$shellcheck_status" -eq 1 ]; then
         echo "pre-push: shellcheck failed for $file" >&2
+      else
+        echo "pre-push: shellcheck unavailable for $file (install or enable nix)" >&2
         failed=1
       fi
-    else
-      shellcheck_missing=1
     fi
 
     case "$file" in
@@ -112,10 +136,6 @@ else
         ;;
     esac
   done
-fi
-
-if [ "$shellcheck_missing" -eq 1 ]; then
-  echo "pre-push: WARN shellcheck not installed; skipping lint phase"
 fi
 
 echo "pre-push: running secret scan"
