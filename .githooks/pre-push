@@ -56,71 +56,77 @@ while IFS= read -r -d '' file; do
   esac
 done < <(git ls-files -z)
 
-if [ "${#shell_files[@]}" -eq 0 ]; then
-  exit 0
-fi
-
-echo "pre-push: running shell checks"
-
 failed=0
 shellcheck_missing=0
 
-for file in "${shell_files[@]}"; do
-  [ -f "$file" ] || continue
+if [ "${#shell_files[@]}" -eq 0 ]; then
+  echo "pre-push: no shell files found; skipping shell checks"
+else
+  echo "pre-push: running shell checks"
 
-  shell_name="$(detect_shell "$file")"
+  for file in "${shell_files[@]}"; do
+    [ -f "$file" ] || continue
 
-  case "$shell_name" in
-    bash)
-      if ! bash -n "$file"; then
-        echo "pre-push: syntax check failed for $file (bash)" >&2
-        failed=1
-      fi
-      ;;
-    zsh)
-      if command -v zsh >/dev/null 2>&1; then
-        if ! zsh -n "$file"; then
-          echo "pre-push: syntax check failed for $file (zsh)" >&2
+    shell_name="$(detect_shell "$file")"
+
+    case "$shell_name" in
+      bash)
+        if ! bash -n "$file"; then
+          echo "pre-push: syntax check failed for $file (bash)" >&2
           failed=1
         fi
-      else
-        echo "pre-push: WARN zsh not found; skipped syntax check for $file"
-      fi
-      ;;
-    *)
-      if ! sh -n "$file"; then
-        echo "pre-push: syntax check failed for $file (sh)" >&2
+        ;;
+      zsh)
+        if command -v zsh >/dev/null 2>&1; then
+          if ! zsh -n "$file"; then
+            echo "pre-push: syntax check failed for $file (zsh)" >&2
+            failed=1
+          fi
+        else
+          echo "pre-push: WARN zsh not found; skipped syntax check for $file"
+        fi
+        ;;
+      *)
+        if ! sh -n "$file"; then
+          echo "pre-push: syntax check failed for $file (sh)" >&2
+          failed=1
+        fi
+        ;;
+    esac
+
+    if command -v shellcheck >/dev/null 2>&1; then
+      if ! shellcheck -x -s "$shell_name" "$file"; then
+        echo "pre-push: shellcheck failed for $file" >&2
         failed=1
       fi
-      ;;
-  esac
-
-  if command -v shellcheck >/dev/null 2>&1; then
-    if ! shellcheck -x -s "$shell_name" "$file"; then
-      echo "pre-push: shellcheck failed for $file" >&2
-      failed=1
+    else
+      shellcheck_missing=1
     fi
-  else
-    shellcheck_missing=1
-  fi
 
-  case "$file" in
-    bin/*.sh)
-      if ! has_strict_mode "$file"; then
-        echo "pre-push: $file missing strict mode (set -euo pipefail)" >&2
-        failed=1
-      fi
-      ;;
-  esac
-done
+    case "$file" in
+      bin/*.sh)
+        if ! has_strict_mode "$file"; then
+          echo "pre-push: $file missing strict mode (set -euo pipefail)" >&2
+          failed=1
+        fi
+        ;;
+    esac
+  done
+fi
 
 if [ "$shellcheck_missing" -eq 1 ]; then
   echo "pre-push: WARN shellcheck not installed; skipping lint phase"
 fi
 
+echo "pre-push: running secret scan"
+if ! bin/lint-secrets.sh; then
+  echo "pre-push: secret scan failed" >&2
+  failed=1
+fi
+
 if [ "$failed" -ne 0 ]; then
-  echo "pre-push: shell checks failed" >&2
+  echo "pre-push: checks failed" >&2
   exit 1
 fi
 
-echo "pre-push: shell checks passed"
+echo "pre-push: all checks passed"

@@ -18,3 +18,13 @@ sudo bash ~/src/dotfiles/bin/install.sh
 ```bash
 bash ~/src/dotfiles/bin/setup-git-hooks.sh
 ```
+
+## nix tooling
+
+```bash
+# Enter a dev shell with gitleaks/shellcheck/shfmt
+nix develop
+
+# Run credential-pattern lint manually
+nix run .#secrets-lint
+```
