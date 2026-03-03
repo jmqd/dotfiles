@@ -31,7 +31,10 @@
 
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
+            awscli2
+            git
             gitleaks
+            python3
             shellcheck
             shfmt
           ];

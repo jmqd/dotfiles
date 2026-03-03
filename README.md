@@ -10,7 +10,7 @@ find ~ -name ".*" -maxdepth 1
 # only recommended if your name is "Jordan McQueen" ;)
 mkdir -p ~/src
 git clone https://github.com/mcqueenjordan/dotfiles.git ~/src/dotfiles
-sudo bash ~/src/dotfiles/bin/install.sh
+nix develop ~/src/dotfiles -c bash ~/src/dotfiles/bin/install.sh
 ```
 
 ## git hooks
@@ -22,7 +22,8 @@ bash ~/src/dotfiles/bin/setup-git-hooks.sh
 ## nix tooling
 
 ```bash
-# Enter a dev shell with gitleaks/shellcheck/shfmt
+# Enter a dev shell with gitleaks/shellcheck/shfmt and bootstrap deps
+# (git/python3/awscli2)
 nix develop
 
 # Run credential-pattern lint manually
