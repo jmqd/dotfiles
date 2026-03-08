@@ -29,3 +29,13 @@ nix develop
 # Run credential-pattern lint manually
 nix run .#secrets-lint
 ```
+
+## home manager (macOS)
+
+```bash
+# Apple Silicon
+nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@macos-aarch64
+
+# Intel macOS
+nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@macos-x86_64
+```
