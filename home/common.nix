@@ -1,6 +1,7 @@
 { pkgs, ... }:
 {
   imports = [
+    ./direnv.nix
     ./git.nix
     ./tmux.nix
     ./wezterm.nix
