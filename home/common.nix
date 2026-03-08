@@ -3,6 +3,7 @@
   imports = [
     ./git.nix
     ./tmux.nix
+    ./wezterm.nix
   ];
 
   home.stateVersion = "25.05";
