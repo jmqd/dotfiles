@@ -1,6 +1,9 @@
 { pkgs, ... }:
 {
-  imports = [ ./git.nix ];
+  imports = [
+    ./git.nix
+    ./tmux.nix
+  ];
 
   home.stateVersion = "25.05";
   programs.home-manager.enable = true;
