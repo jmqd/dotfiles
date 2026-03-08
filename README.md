@@ -30,6 +30,16 @@ nix develop
 nix run .#secrets-lint
 ```
 
+## direnv
+
+```bash
+# After Home Manager enables direnv + nix-direnv:
+cd ~/src/dotfiles
+direnv allow
+
+# After that, entering this repo should auto-load the flake dev environment.
+```
+
 ## home manager (macOS)
 
 ```bash
