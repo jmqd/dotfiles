@@ -5,6 +5,7 @@
     ./git.nix
     ./tmux.nix
     ./wezterm.nix
+    ./zsh.nix
   ];
 
   home.stateVersion = "25.05";
