@@ -49,3 +49,18 @@ nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@m
 # Intel macOS
 nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@macos-x86_64
 ```
+
+## home manager backup mode
+
+```bash
+# Default path: auto-detects this Mac and backs up conflicting files with
+# the suffix ".hm-backup"
+bash ~/src/dotfiles/bin/hm-switch.sh
+
+# Override the suffix if you want a different backup extension
+HM_BACKUP_EXT=pre-hm bash ~/src/dotfiles/bin/hm-switch.sh
+```
+
+For standalone Home Manager, the backup behavior is a command-line flag
+(`-b <extension>`), not a persistent flake option. This wrapper makes it the
+default entrypoint for switching on this repo.

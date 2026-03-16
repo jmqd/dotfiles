@@ -28,7 +28,7 @@
       gst = "git status";
     };
 
-    initExtra = ''
+    initContent = ''
       bindkey -v
 
       # Allows me to press escape to edit the command line in $EDITOR.
