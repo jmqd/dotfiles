@@ -61,17 +61,12 @@ git -C ~/src/cloudhome pull --rebase
 git -C ~/src/dotfiles pull --rebase
 
 # ******************************************************************************
-echo "Symbolically link custom dotfiles to ~/src/dotfiles/."
+echo "Symbolically link custom dotfiles not yet managed by Home Manager."
 # ******************************************************************************
-ln -sf ~/src/dotfiles/.gitconfig ~/.gitconfig
-ln -sf ~/src/dotfiles/.gitmessage ~/.gitmessage
 ln -sf ~/src/dotfiles/.Xmodmap ~/.Xmodmap
 ln -sf ~/src/dotfiles/.doom.d/config.el ~/.doom.d/config.el
 ln -sf ~/src/dotfiles/.doom.d/init.el ~/.doom.d/init.el
 ln -sf ~/src/dotfiles/.doom.d/packages.el ~/.doom.d/packages.el
-ln -sf ~/src/dotfiles/.sqliterc ~/.sqliterc
-ln -sf ~/src/dotfiles/.gdbinit ~/.gdbinit
-ln -sf ~/src/dotfiles/.wezterm.lua ~/.wezterm.lua
 sudo ln -sf ~/src/dotfiles/nixos/configuration.nix /etc/nixos/configuration.nix
 
 mkdir -p ~/.i3
