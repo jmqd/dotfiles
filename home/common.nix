@@ -2,6 +2,7 @@
 {
   imports = [
     ./direnv.nix
+    ./gpg.nix
     ./git.nix
     ./ssh.nix
     ./tmux.nix
