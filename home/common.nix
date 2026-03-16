@@ -3,6 +3,7 @@
   imports = [
     ./direnv.nix
     ./git.nix
+    ./ssh.nix
     ./tmux.nix
     ./wezterm.nix
     ./zsh.nix
