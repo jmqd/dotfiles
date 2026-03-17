@@ -5,6 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.3.5";
+    trueflow.url = "git+file:///Users/jmq/src/trueflow";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -16,6 +17,7 @@
       nixpkgs,
       flake-utils,
       googleworkspace-cli,
+      trueflow,
       home-manager,
       ...
     }:
@@ -44,11 +46,19 @@
           };
         };
 
+      mkTrueflowPkg =
+        system:
+        let
+          packages = trueflow.packages.${system};
+        in
+        if packages ? native then packages.native else packages.default;
+
       perSystem = flake-utils.lib.eachDefaultSystem (
         system:
         let
           pkgs = import nixpkgs { inherit system; };
           googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
+          trueflowPkg = mkTrueflowPkg system;
 
           secretsLint = pkgs.writeShellApplication {
             name = "secrets-lint";
@@ -72,7 +82,10 @@
                 shellcheck
                 shfmt
               ])
-              ++ (if googleworkspaceCliPkg != null then [ googleworkspaceCliPkg ] else [ ]);
+              ++ [
+                googleworkspaceCliPkg
+                trueflowPkg
+              ];
           };
 
           packages.secrets-lint = secretsLint;
@@ -88,6 +101,7 @@
         let
           pkgs = import nixpkgs { inherit system; };
           googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
+          trueflowPkg = mkTrueflowPkg system;
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
@@ -96,7 +110,10 @@
             (
               { ... }:
               {
-                home.packages = if googleworkspaceCliPkg != null then [ googleworkspaceCliPkg ] else [ ];
+                home.packages = [
+                  googleworkspaceCliPkg
+                  trueflowPkg
+                ];
               }
             )
           ];
