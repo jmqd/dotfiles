@@ -26,6 +26,13 @@ bash ~/src/dotfiles/bin/setup-git-hooks.sh
 # (git/python3/awscli2)
 nix develop
 
+# Regenerate the pi package lockfile with flake-pinned Node/npm
+nix develop .#pi-packaging -c bash -lc 'cd pkgs/pi && npm install --package-lock-only --ignore-scripts'
+
+# Build or run the locally packaged pi coding agent
+nix build .#pi
+nix run .#pi
+
 # Run credential-pattern lint manually
 nix run .#secrets-lint
 ```
