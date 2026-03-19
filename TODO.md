@@ -20,3 +20,5 @@
 - [ ] Modernize install/bootstrap docs and workflows.
 - [ ] Add quality checks where useful (`shellcheck`, formatting, Nix checks).
 - [ ] Refresh aging configs (tmux, terminal, WM, git) against current defaults.
+
+## 4) Add style settings for pi
