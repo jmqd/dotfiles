@@ -280,11 +280,11 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1773729131,
-        "narHash": "sha256-twQY6+UAeHI6ubztrPOhEfjJnjILmEzmA1NOcJ/UBAA=",
+        "lastModified": 1773731802,
+        "narHash": "sha256-bZaUaB3tizEiQwl3ExRVZmuFbvSDJ1/ZxuEolMZk0rw=",
         "ref": "refs/heads/main",
-        "rev": "fcce206924ad9324142b6fb5ab01926356148457",
-        "revCount": 175,
+        "rev": "504fbed92e685cfaab0cd9974535b36e839eb408",
+        "revCount": 176,
         "type": "git",
         "url": "file:///Users/jmq/src/trueflow"
       },

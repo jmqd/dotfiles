@@ -12,6 +12,12 @@ detect_flake_ref() {
     Darwin:x86_64)
       printf '%s\n' "${repo_root}#jmq@macos-x86_64"
       ;;
+    Linux:aarch64)
+      printf '%s\n' "${repo_root}#jmq@linux-aarch64"
+      ;;
+    Linux:x86_64)
+      printf '%s\n' "${repo_root}#jmq@linux-x86_64"
+      ;;
     *)
       cat >&2 <<'EOF'
 Unable to infer a Home Manager flake target for this machine.
