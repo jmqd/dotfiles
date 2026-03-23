@@ -22,3 +22,12 @@
 - [ ] Refresh aging configs (tmux, terminal, WM, git) against current defaults.
 
 ## 4) Add style settings for pi
+
+## 5) Agent sandboxes / fleet runner
+- [ ] Design a reproducible multi-agent sandbox runner for pi on Linux.
+- [ ] Use per-agent worktrees cloned from a local bare mirror, not the live repo checkout.
+- [ ] Provide an isolated shared Nix daemon/store for agents that does not touch the host `/nix/store`.
+- [ ] Make the repo dev environment available inside each sandbox so tools "just work" (`nix develop` / `devenv`).
+- [ ] Support running N agents in N sandboxes with permission gates disabled inside the sandbox boundary.
+- [ ] Support both headless orchestration and optional interactive attach/debug for a specific agent.
+- [ ] Write down the target design and rollout plan.
