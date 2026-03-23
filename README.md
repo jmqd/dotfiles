@@ -47,7 +47,7 @@ direnv allow
 # After that, entering this repo should auto-load the flake dev environment.
 ```
 
-## home manager (macOS)
+## home manager
 
 ```bash
 # Apple Silicon
@@ -55,12 +55,18 @@ nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@m
 
 # Intel macOS
 nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@macos-x86_64
+
+# Linux x86_64
+nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@linux-x86_64
+
+# Linux aarch64
+nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@linux-aarch64
 ```
 
 ## home manager backup mode
 
 ```bash
-# Default path: auto-detects this Mac and backs up conflicting files with
+# Default path: auto-detects this machine and backs up conflicting files with
 # the suffix ".hm-backup"
 bash ~/src/dotfiles/bin/hm-switch.sh
 

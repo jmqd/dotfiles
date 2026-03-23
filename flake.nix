@@ -152,6 +152,8 @@
       homeConfigurations = {
         "jmq@macos-aarch64" = mkHome "aarch64-darwin" ./home/hosts/jmq-macos.nix;
         "jmq@macos-x86_64" = mkHome "x86_64-darwin" ./home/hosts/jmq-macos.nix;
+        "jmq@linux-aarch64" = mkHome "aarch64-linux" ./home/hosts/jmq-linux.nix;
+        "jmq@linux-x86_64" = mkHome "x86_64-linux" ./home/hosts/jmq-linux.nix;
       };
     };
 }
