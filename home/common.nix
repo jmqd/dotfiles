@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, lib, pkgs, ... }:
 {
   imports = [
     ./direnv.nix
@@ -19,5 +19,17 @@
     fd
     git
     ripgrep
+    rustup
   ];
+
+  home.sessionPath = [
+    "${config.home.homeDirectory}/.cargo/bin"
+  ];
+
+  home.activation.bootstrapRust = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    export HOME=${lib.escapeShellArg config.home.homeDirectory}
+    export PATH=${lib.escapeShellArg "${config.home.profileDirectory}/bin"}:$PATH
+    export RUSTUP_BIN=${lib.escapeShellArg "${pkgs.rustup}/bin/rustup"}
+    ${../bin/bootstrap-rust.sh} stable
+  '';
 }
