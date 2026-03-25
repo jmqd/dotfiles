@@ -1,6 +1,9 @@
 { lib, pkgs, ... }:
 {
-  imports = [ ./common.nix ];
+  imports = [
+    ./common.nix
+    ./linux-desktop.nix
+  ];
 
   nixpkgs.config.allowUnfree = true;
 
@@ -15,9 +18,13 @@
 
   home.packages =
     (with pkgs; [
+      autorandr
       awscli2
       bottom
+      dmenu
       flameshot
+      i3lock
+      i3wsr
       imagemagick
       killall
       nixfmt
