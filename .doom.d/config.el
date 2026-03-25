@@ -54,11 +54,19 @@
 (define-key minibuffer-local-map (kbd "C-k") 'next-line)
 (define-key minibuffer-local-map (kbd "H-i") 'previous-line)
 
+(require 'subr-x)
+
+(defun jmq-read-file-string (file)
+  (let ((path (expand-file-name file)))
+    (when (file-readable-p path)
+      (with-temp-buffer
+        (insert-file-contents path)
+        (string-trim (buffer-string))))))
+
 (use-package! gptel
   :config
-  (setq! gptel-api-key (insert-file-contents "~/.openai-credential"))
-  (setq! gptel-model "gpt-4-1106-preview")
-  )
+  (setq! gptel-api-key (jmq-read-file-string "~/.openai-credential"))
+  (setq! gptel-model "gpt-4-1106-preview"))
 
 ;; ijkl for vertico / search / find files etc.
 (with-eval-after-load 'vertico
