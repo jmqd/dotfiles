@@ -15,7 +15,6 @@
 
       commit.template = "~/.gitmessage";
       core.editor = "emacsclient";
-      credential.helper = "store";
       init.defaultBranch = "main";
       pull.rebase = true;
       rebase.autoStash = true;
