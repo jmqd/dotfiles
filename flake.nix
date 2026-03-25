@@ -60,6 +60,24 @@
         in
         pkgs.callPackage ./pkgs/pi { };
 
+      mkHomePackagesModule =
+        system:
+        let
+          googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
+          trueflowPkg = mkTrueflowPkg system;
+          piPkg = mkPiPkg system;
+        in
+        {
+          ...
+        }:
+        {
+          home.packages = [
+            googleworkspaceCliPkg
+            piPkg
+            trueflowPkg
+          ];
+        };
+
       perSystem = flake-utils.lib.eachDefaultSystem (
         system:
         let
@@ -126,24 +144,38 @@
       mkHome = system: module:
         let
           pkgs = import nixpkgs { inherit system; };
-          googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
-          trueflowPkg = mkTrueflowPkg system;
-          piPkg = mkPiPkg system;
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           modules = [
             module
-            (
-              { ... }:
+            (mkHomePackagesModule system)
+          ];
+        };
+
+      mkNixosHost =
+        {
+          system,
+          hostModule,
+          homeModule,
+        }:
+        nixpkgs.lib.nixosSystem {
+          inherit system;
+          modules = [
+            hostModule
+            home-manager.nixosModules.home-manager
+            {
+              home-manager.useGlobalPkgs = true;
+              home-manager.users.jmq = {
+                ...
+              }:
               {
-                home.packages = [
-                  googleworkspaceCliPkg
-                  piPkg
-                  trueflowPkg
+                imports = [
+                  homeModule
+                  (mkHomePackagesModule system)
                 ];
-              }
-            )
+              };
+            }
           ];
         };
     in
@@ -154,6 +186,14 @@
         "jmq@macos-x86_64" = mkHome "x86_64-darwin" ./home/hosts/jmq-macos.nix;
         "jmq@linux-aarch64" = mkHome "aarch64-linux" ./home/hosts/jmq-linux.nix;
         "jmq@linux-x86_64" = mkHome "x86_64-linux" ./home/hosts/jmq-linux.nix;
+      };
+
+      nixosConfigurations = {
+        jmws = mkNixosHost {
+          system = "x86_64-linux";
+          hostModule = ./nixos/hosts/jmws.nix;
+          homeModule = ./home/hosts/jmq-linux.nix;
+        };
       };
     };
 }
