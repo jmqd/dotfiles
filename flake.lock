@@ -282,15 +282,15 @@
       "locked": {
         "lastModified": 1774450428,
         "narHash": "sha256-v4SxxSb60hwX8RW3SQZ8RKEGAMZuOBV1OvYigGjTDCY=",
-        "ref": "refs/heads/main",
+        "owner": "trueflow-dev",
+        "repo": "trueflow",
         "rev": "ba9911f4a327ba684ad2e3367f820e31fb23be64",
-        "revCount": 178,
-        "type": "git",
-        "url": "file:///Users/jmq/src/trueflow"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "file:///Users/jmq/src/trueflow"
+        "owner": "trueflow-dev",
+        "repo": "trueflow",
+        "type": "github"
       }
     }
   },
