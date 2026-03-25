@@ -13,8 +13,9 @@
 - Prefer correctness first, then speed, then safety-preserving simplicity.
 - Managed in code is strongly preferred over ad-hoc local mutation.
 - When something is managed declaratively, edit the source of truth, not the generated artifact.
+- For straightforward file edits, edit the file directly instead of using ad hoc tool-driven rewrites.
+- Use scripted or programmatic edit tooling only when the change is genuinely mechanical, repetitive, or otherwise materially easier to do correctly that way.
 - Do not use ad hoc Python scripts to read or write files unless simpler edit mechanisms are materially worse.
-- Prefer `apply_patch`, `git apply`, `perl -0pi`, `sed`, or direct patch-style edits.
 - If Python is used for an edit, explain briefly why non-Python editing was not practical.
 - Prefer proactive refactoring when it materially improves the code, but keep refactors separate from functional changes when possible.
 - Prefer test-driven development where practical: start from or describe the expected behavior, then implement.
