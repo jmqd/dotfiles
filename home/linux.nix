@@ -20,7 +20,6 @@
     (with pkgs; [
       autorandr
       awscli2
-      bottom
       dmenu
       flameshot
       i3lock

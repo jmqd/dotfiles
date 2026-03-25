@@ -101,38 +101,25 @@
     lshw
     pciutils
     vim
-    wget
     git
-    git-lfs
-    fd
     read-edid
     nmap
     arp-scan
-    cloc
     fontconfig
     freetype
     expat
     glxinfo
-    gnuplot
     ipmitool
     inetutils
     nixos-anywhere
     inxi
     openssl
     openssl.dev
-    protobuf
-    p7zip
     vlc
     isync
     offlineimap
     bandwhich
-    bottom
-    broot
-    difftastic
-    fd
     lemmeknow
-    procs
-    tealdeer
     texlive.combined.scheme-full
     terraform
 
@@ -165,18 +152,15 @@
 
     # development toolchain
     emscripten
-    rustup
     efibootmgr
     certbot
     gnumake42
-    cmake
     dig
     udev
     systemd
     gcc
     gccgo13
     bazel
-    sqlite
     flyctl
     gdb
     poetry
@@ -187,9 +171,7 @@
     nodePackages.yarn
     yarn
     black
-    pkg-config
     pipenv
-    tree-sitter
     trunk
     vultr-cli
 
@@ -208,14 +190,9 @@
         pytest
       ]
     ))
-    plantuml
-    graphviz
-
     # others
-    zola
     languagetool
     pavucontrol
-    jq
   ];
 
   programs.nix-ld.enable = true;
