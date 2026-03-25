@@ -124,11 +124,8 @@
     terraform
 
     # wine and gaming deps
-    quickemu
     gimp
     socat
-    virt-manager
-    virt-viewer
     spice
     spice-gtk
     spice-protocol
@@ -141,14 +138,6 @@
     dxvk
     krb5
     obs-studio
-
-    # X tools for emacs everywhere
-    xorg.xwininfo
-    xdotool
-    xclip
-
-    # automating xrandr profile
-    autorandr
 
     # development toolchain
     emscripten
@@ -192,7 +181,6 @@
     ))
     # others
     languagetool
-    pavucontrol
   ];
 
   programs.nix-ld.enable = true;

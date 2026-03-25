@@ -28,10 +28,15 @@
       killall
       nixfmt
       pandoc
+      pavucontrol
       pmutils
+      quickemu
       shellcheck
       shfmt
       unzip
+      xclip
+      xdotool
+      xwininfo
       zip
     ])
     ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 (with pkgs; [
@@ -39,6 +44,8 @@
       lutris
       slack
       spotify
+      virt-manager
+      virt-viewer
     ]);
 
   programs = {
