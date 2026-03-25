@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.3.5";
-    trueflow.url = "git+file:///Users/jmq/src/trueflow";
+    trueflow.url = "github:trueflow-dev/trueflow";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
