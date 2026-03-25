@@ -16,10 +16,29 @@
 
   # Shared baseline tools available across platforms.
   home.packages = with pkgs; [
+    bottom
+    broot
+    cloc
+    cmake
+    difftastic
     fd
     git
+    git-lfs
+    gnuplot
+    graphviz
+    jq
+    p7zip
+    pkg-config
+    plantuml
+    procs
+    protobuf
     ripgrep
     rustup
+    sqlite
+    tealdeer
+    tree-sitter
+    wget
+    zola
   ];
 
   home.sessionPath = [
