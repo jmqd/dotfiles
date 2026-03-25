@@ -27,6 +27,8 @@ const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "performance", title: "Performance", file: "performance-review.md" },
 	{ id: "concurrency", title: "Concurrency", file: "concurrency-review.md" },
 	{ id: "docs", title: "Documentation", file: "docs-review.md" },
+	{ id: "technical-writing", title: "Technical Writing", file: "technical-writing-review.md" },
+	{ id: "whats-missing", title: "What's Missing", file: "whats-missing-review.md" },
 	{ id: "api", title: "API Design", file: "api-review.md" },
 	{ id: "naming", title: "Naming", file: "naming-review.md" },
 ];
