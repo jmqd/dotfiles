@@ -23,10 +23,10 @@ require_macos() {
 detect_flake_ref() {
   case "$arch_name" in
     arm64)
-      printf 'github:%s#macos-aarch64\n' "$repo_slug"
+      printf '%s#macos-aarch64\n' "$checkout_dir"
       ;;
     x86_64)
-      printf 'github:%s#macos-x86_64\n' "$repo_slug"
+      printf '%s#macos-x86_64\n' "$checkout_dir"
       ;;
     *)
       echo "Unsupported macOS architecture: $arch_name" >&2
@@ -104,7 +104,7 @@ Bootstrap complete.
 
 Next steps:
 1. Open a new shell so Home Manager's shell changes are active.
-2. If you want the repo checked out locally, it is at:
+2. The repo is checked out locally at:
    $checkout_dir
 EOF
 }
@@ -112,12 +112,13 @@ EOF
 main() {
   require_macos
 
+  ensure_nix
+  ensure_checkout
+
   local flake_ref
   flake_ref="$(detect_flake_ref)"
 
-  ensure_nix
   apply_config "$flake_ref"
-  ensure_checkout
   print_next_steps
 }
 
