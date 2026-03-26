@@ -3,14 +3,15 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 backup_ext="${HM_BACKUP_EXT:-hm-backup}"
+current_user="${HM_USER:-${USER:-$(id -un)}}"
 
 detect_flake_ref() {
   case "$(uname -s):$(uname -m)" in
     Darwin:arm64)
-      printf '%s\n' "${repo_root}#jmq@macos-aarch64"
+      printf '%s\n' "${repo_root}#${current_user}@macos-aarch64"
       ;;
     Darwin:x86_64)
-      printf '%s\n' "${repo_root}#jmq@macos-x86_64"
+      printf '%s\n' "${repo_root}#${current_user}@macos-x86_64"
       ;;
     Linux:aarch64)
       printf '%s\n' "${repo_root}#jmq@linux-aarch64"

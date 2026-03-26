@@ -141,7 +141,12 @@
         }
       );
 
-      mkHome = system: module:
+      mkHome =
+        {
+          system,
+          module,
+          extraModules ? [ ],
+        }:
         let
           pkgs = import nixpkgs { inherit system; };
         in
@@ -150,6 +155,18 @@
           modules = [
             module
             (mkHomePackagesModule system)
+          ] ++ extraModules;
+        };
+
+      mkMacosHome = username: system:
+        mkHome {
+          inherit system;
+          module = ./home/hosts/jmq-macos.nix;
+          extraModules = [
+            {
+              home.username = nixpkgs.lib.mkForce username;
+              home.homeDirectory = nixpkgs.lib.mkForce "/Users/${username}";
+            }
           ];
         };
 
@@ -182,10 +199,18 @@
     perSystem
     // {
       homeConfigurations = {
-        "jmq@macos-aarch64" = mkHome "aarch64-darwin" ./home/hosts/jmq-macos.nix;
-        "jmq@macos-x86_64" = mkHome "x86_64-darwin" ./home/hosts/jmq-macos.nix;
-        "jmq@linux-aarch64" = mkHome "aarch64-linux" ./home/hosts/jmq-linux.nix;
-        "jmq@linux-x86_64" = mkHome "x86_64-linux" ./home/hosts/jmq-linux.nix;
+        "jmq@macos-aarch64" = mkMacosHome "jmq" "aarch64-darwin";
+        "jmq@macos-x86_64" = mkMacosHome "jmq" "x86_64-darwin";
+        "jm@macos-aarch64" = mkMacosHome "jm" "aarch64-darwin";
+        "jm@macos-x86_64" = mkMacosHome "jm" "x86_64-darwin";
+        "jmq@linux-aarch64" = mkHome {
+          system = "aarch64-linux";
+          module = ./home/hosts/jmq-linux.nix;
+        };
+        "jmq@linux-x86_64" = mkHome {
+          system = "x86_64-linux";
+          module = ./home/hosts/jmq-linux.nix;
+        };
       };
 
       nixosConfigurations = {
