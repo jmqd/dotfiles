@@ -8,10 +8,10 @@ current_user="${HM_USER:-${USER:-$(id -un)}}"
 detect_flake_ref() {
   case "$(uname -s):$(uname -m)" in
     Darwin:arm64)
-      printf '%s\n' "${repo_root}#${current_user}@macos-aarch64"
+      printf '%s\n' "${repo_root}#bootstrap-macos-aarch64"
       ;;
     Darwin:x86_64)
-      printf '%s\n' "${repo_root}#${current_user}@macos-x86_64"
+      printf '%s\n' "${repo_root}#bootstrap-macos-x86_64"
       ;;
     Linux:aarch64)
       printf '%s\n' "${repo_root}#jmq@linux-aarch64"
@@ -39,4 +39,9 @@ else
   flake_ref="$(detect_flake_ref)"
 fi
 
-exec nix run github:nix-community/home-manager -- switch --flake "$flake_ref" -b "$backup_ext" "$@"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  exec env HM_BOOTSTRAP_USER="$current_user" \
+    nix run github:nix-community/home-manager -- switch --impure --flake "$flake_ref" -b "$backup_ext" "$@"
+else
+  exec nix run github:nix-community/home-manager -- switch --flake "$flake_ref" -b "$backup_ext" "$@"
+fi

@@ -170,6 +170,30 @@
           ];
         };
 
+      mkBootstrapMacosHome = system:
+        let
+          bootstrapUser =
+            let
+              explicitUser = builtins.getEnv "HM_BOOTSTRAP_USER";
+              envUser = builtins.getEnv "USER";
+            in
+            if explicitUser != "" then explicitUser else if envUser != "" then envUser else "jmq";
+          bootstrapHome =
+            let envHome = builtins.getEnv "HOME";
+            in
+            if envHome != "" then envHome else "/Users/${bootstrapUser}";
+        in
+        mkHome {
+          inherit system;
+          module = ./home/hosts/jmq-macos.nix;
+          extraModules = [
+            {
+              home.username = nixpkgs.lib.mkForce bootstrapUser;
+              home.homeDirectory = nixpkgs.lib.mkForce bootstrapHome;
+            }
+          ];
+        };
+
       mkNixosHost =
         {
           system,
@@ -199,6 +223,8 @@
     perSystem
     // {
       homeConfigurations = {
+        "bootstrap-macos-aarch64" = mkBootstrapMacosHome "aarch64-darwin";
+        "bootstrap-macos-x86_64" = mkBootstrapMacosHome "x86_64-darwin";
         "jmq@macos-aarch64" = mkMacosHome "jmq" "aarch64-darwin";
         "jmq@macos-x86_64" = mkMacosHome "jmq" "x86_64-darwin";
         "jm@macos-aarch64" = mkMacosHome "jm" "aarch64-darwin";
