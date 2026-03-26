@@ -7,9 +7,16 @@ find ~ -name ".*" -maxdepth 1
 ## install
 
 ```bash
+# Fresh macOS bootstrap:
+curl --proto '=https' --tlsv1.2 -sSf -L \
+  https://raw.githubusercontent.com/jmqd/dotfiles/main/bin/bootstrap-macos.sh | bash
+```
+
+```bash
+# Existing local checkout or private/personal follow-on step:
 # only recommended if your name is "Jordan McQueen" ;)
 mkdir -p ~/src
-git clone https://github.com/mcqueenjordan/dotfiles.git ~/src/dotfiles
+git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
 nix develop ~/src/dotfiles -c bash ~/src/dotfiles/bin/install.sh
 ```
 

@@ -55,7 +55,7 @@ echo "Sourcing environment variables..."
 echo "Cloning & pulling latest for git repos..."
 # ******************************************************************************
 git clone https://github.com/mcqueenjordan/cloudhome.git ~/src/cloudhome
-git clone https://github.com/mcqueenjordan/dotfiles.git ~/src/dotfiles
+git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
 
 git -C ~/src/cloudhome pull --rebase
 git -C ~/src/dotfiles pull --rebase
