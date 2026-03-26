@@ -4,9 +4,10 @@ set -euo pipefail
 repo_slug="${DOTFILES_REPO:-jmqd/dotfiles}"
 checkout_dir="${DOTFILES_CHECKOUT_DIR:-$HOME/src/dotfiles}"
 backup_ext="${HM_BACKUP_EXT:-hm-backup}"
+current_user="${DOTFILES_HOME_USER:-${USER:-$(id -un)}}"
 os_name="$(uname -s)"
 arch_name="$(uname -m)"
-readonly repo_slug checkout_dir backup_ext os_name arch_name
+readonly repo_slug checkout_dir backup_ext current_user os_name arch_name
 
 has_nix() {
   command -v nix >/dev/null 2>&1
@@ -22,10 +23,10 @@ require_macos() {
 detect_flake_ref() {
   case "$arch_name" in
     arm64)
-      printf 'github:%s#jmq@macos-aarch64\n' "$repo_slug"
+      printf 'github:%s#%s@macos-aarch64\n' "$repo_slug" "$current_user"
       ;;
     x86_64)
-      printf 'github:%s#jmq@macos-x86_64\n' "$repo_slug"
+      printf 'github:%s#%s@macos-x86_64\n' "$repo_slug" "$current_user"
       ;;
     *)
       echo "Unsupported macOS architecture: $arch_name" >&2
