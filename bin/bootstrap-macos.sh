@@ -23,10 +23,10 @@ require_macos() {
 detect_flake_ref() {
   case "$arch_name" in
     arm64)
-      printf 'github:%s#%s@macos-aarch64\n' "$repo_slug" "$current_user"
+      printf 'github:%s#bootstrap-macos-aarch64\n' "$repo_slug"
       ;;
     x86_64)
-      printf 'github:%s#%s@macos-x86_64\n' "$repo_slug" "$current_user"
+      printf 'github:%s#bootstrap-macos-x86_64\n' "$repo_slug"
       ;;
     *)
       echo "Unsupported macOS architecture: $arch_name" >&2
@@ -71,8 +71,9 @@ ensure_nix() {
 apply_home_manager() {
   local flake_ref="$1"
 
-  echo "Applying Home Manager from ${flake_ref}..."
-  nix run --refresh github:nix-community/home-manager -- switch --flake "$flake_ref" -b "$backup_ext"
+  echo "Applying Home Manager from ${flake_ref} for user ${current_user}..."
+  HM_BOOTSTRAP_USER="$current_user" \
+    nix run --refresh github:nix-community/home-manager -- switch --impure --flake "$flake_ref" -b "$backup_ext"
 }
 
 apply_config() {
