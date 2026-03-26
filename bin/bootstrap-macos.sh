@@ -72,7 +72,7 @@ apply_home_manager() {
   local flake_ref="$1"
 
   echo "Applying Home Manager from ${flake_ref}..."
-  nix run github:nix-community/home-manager -- switch --flake "$flake_ref" -b "$backup_ext"
+  nix run --refresh github:nix-community/home-manager -- switch --flake "$flake_ref" -b "$backup_ext"
 }
 
 apply_config() {
