@@ -9,7 +9,7 @@ find ~ -name ".*" -maxdepth 1
 ```bash
 # Fresh macOS bootstrap:
 curl --proto '=https' --tlsv1.2 -sSf -L \
-  https://raw.githubusercontent.com/jmqd/dotfiles/main/bin/bootstrap-macos.sh | bash
+  https://raw.githubusercontent.com/jmqd/dotfiles/master/bin/bootstrap-macos.sh | bash
 ```
 
 ```bash
@@ -57,17 +57,17 @@ direnv allow
 ## home manager
 
 ```bash
-# Apple Silicon
-nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@macos-aarch64
+# Apple Silicon macOS (uses current user/home)
+HM_BOOTSTRAP_USER="$USER" nix run github:nix-community/home-manager -- switch --impure --flake ~/src/dotfiles#macos-aarch64
 
-# Intel macOS
-nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@macos-x86_64
+# Intel macOS (uses current user/home)
+HM_BOOTSTRAP_USER="$USER" nix run github:nix-community/home-manager -- switch --impure --flake ~/src/dotfiles#macos-x86_64
 
 # Linux x86_64
-nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@linux-x86_64
+nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#linux-x86_64
 
 # Linux aarch64
-nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#jmq@linux-aarch64
+nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#linux-aarch64
 ```
 
 ## home manager backup mode
