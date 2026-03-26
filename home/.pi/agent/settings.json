@@ -1,3 +1,8 @@
 {
-  "enableSkillCommands": true
+  "lastChangelogVersion": "0.60.0",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.4",
+  "defaultThinkingLevel": "xhigh",
+  "enableSkillCommands": true,
+  "theme": "light-minimal"
 }
