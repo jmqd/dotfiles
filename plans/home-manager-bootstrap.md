@@ -14,9 +14,9 @@ Add a minimal Home Manager setup in this repo that works on macOS and can grow i
 
 ## Target Commands
 - Apple Silicon macOS:
-`home-manager switch --flake .#jmq@macos-aarch64`
+`HM_BOOTSTRAP_USER="$USER" home-manager switch --impure --flake .#macos-aarch64`
 - Intel macOS:
-`home-manager switch --flake .#jmq@macos-x86_64`
+`HM_BOOTSTRAP_USER="$USER" home-manager switch --impure --flake .#macos-x86_64`
 
 ## Notes
 - This uses standalone Home Manager (no `nix-darwin` yet).

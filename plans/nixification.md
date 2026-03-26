@@ -61,7 +61,7 @@ Exit criteria:
 - Keep existing non-Nix bootstrap files during migration, but make flake path first-class.
 
 Exit criteria:
-- `home-manager switch --flake .#jmq@<host>` works on at least one machine.
+- `home-manager switch --flake .#<home-manager-target>` works on at least one machine.
 
 ### Phase 2: Migrate Shared Dotfiles to Home Manager
 - Move `.zshrc`/`.bashrc` logic into HM-managed shell programs where practical.
@@ -104,7 +104,7 @@ sudo nixos-rebuild switch --flake .#<host>
 
 macOS host (standalone Home Manager):
 ```bash
-home-manager switch --flake .#jmq@<host>
+home-manager switch --impure --flake .#macos-<arch>
 ```
 
 macOS host (if using nix-darwin):

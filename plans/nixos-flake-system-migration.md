@@ -275,7 +275,7 @@ From old installer-managed user files:
 
 ### Dry evaluation/build checks
 - [ ] `nix build .#nixosConfigurations.jmws.config.system.build.toplevel`
-- [ ] `nix eval .#homeConfigurations."jmq@linux-x86_64".activationPackage.drvPath`
+- [ ] `nix eval .#homeConfigurations."linux-x86_64".activationPackage.drvPath`
 
 ### Activation checks
 - [ ] `sudo nixos-rebuild switch --flake ~/src/dotfiles#jmws`

@@ -8,22 +8,22 @@ current_user="${HM_USER:-${USER:-$(id -un)}}"
 detect_flake_ref() {
   case "$(uname -s):$(uname -m)" in
     Darwin:arm64)
-      printf '%s\n' "${repo_root}#bootstrap-macos-aarch64"
+      printf '%s\n' "${repo_root}#macos-aarch64"
       ;;
     Darwin:x86_64)
-      printf '%s\n' "${repo_root}#bootstrap-macos-x86_64"
+      printf '%s\n' "${repo_root}#macos-x86_64"
       ;;
     Linux:aarch64)
-      printf '%s\n' "${repo_root}#jmq@linux-aarch64"
+      printf '%s\n' "${repo_root}#linux-aarch64"
       ;;
     Linux:x86_64)
-      printf '%s\n' "${repo_root}#jmq@linux-x86_64"
+      printf '%s\n' "${repo_root}#linux-x86_64"
       ;;
     *)
       cat >&2 <<'EOF'
 Unable to infer a Home Manager flake target for this machine.
 Pass one explicitly, for example:
-  bin/hm-switch.sh ~/src/dotfiles#jmq@macos-aarch64
+  bin/hm-switch.sh ~/src/dotfiles#macos-aarch64
 EOF
       exit 1
       ;;

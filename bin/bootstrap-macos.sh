@@ -23,10 +23,10 @@ require_macos() {
 detect_flake_ref() {
   case "$arch_name" in
     arm64)
-      printf 'github:%s#bootstrap-macos-aarch64\n' "$repo_slug"
+      printf 'github:%s#macos-aarch64\n' "$repo_slug"
       ;;
     x86_64)
-      printf 'github:%s#bootstrap-macos-x86_64\n' "$repo_slug"
+      printf 'github:%s#macos-x86_64\n' "$repo_slug"
       ;;
     *)
       echo "Unsupported macOS architecture: $arch_name" >&2
