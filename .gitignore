@@ -4,3 +4,4 @@ __pycache__/
 result
 emacs/var/
 emacs/eln-cache/
+blobs/*.zip

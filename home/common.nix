@@ -1,4 +1,7 @@
 { config, lib, pkgs, ... }:
+let
+  berkleyMono = pkgs.callPackage ../pkgs/berkley-mono { };
+in
 {
   imports = [
     ./direnv.nix
@@ -17,6 +20,7 @@
 
   # Shared baseline tools available across platforms.
   home.packages = with pkgs; [
+    berkleyMono
     basedpyright
     bottom
     broot

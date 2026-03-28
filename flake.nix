@@ -179,7 +179,10 @@
           inherit system;
           module = ./home/hosts/jmq-macos.nix;
           nixpkgsConfig = {
-            allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "raycast" ];
+            allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [
+              "berkley-mono"
+              "raycast"
+            ];
           };
           extraModules = [
             {
