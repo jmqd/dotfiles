@@ -1,6 +1,9 @@
 { pkgs, ... }:
 {
-  imports = [ ./common.nix ];
+  imports = [
+    ../common.nix
+    ./aerospace.nix
+  ];
 
   targets.darwin = {
     copyApps.enable = true;
