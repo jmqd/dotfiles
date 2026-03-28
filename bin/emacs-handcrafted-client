@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+server_name="${EMACS_HANDCRAFTED_SERVER:-handcrafted}"
+emacsclient_bin="${EMACS_HANDCRAFTED_EMACSCLIENT_BIN:-${EMACSCLIENT:-}}"
+
+if [[ -z "${emacsclient_bin}" ]]; then
+  emacsclient_bin="$(command -v emacsclient || true)"
+fi
+
+if [[ -z "${emacsclient_bin}" ]]; then
+  echo "No emacsclient binary found. Set EMACS_HANDCRAFTED_EMACSCLIENT_BIN or install the Home Manager Emacs package." >&2
+  exit 1
+fi
+
+server_ready() {
+  "${emacsclient_bin}" -s "${server_name}" -e t >/dev/null 2>&1
+}
+
+want_frame=1
+for arg in "$@"; do
+  case "$arg" in
+    -c|--create-frame|-t|--tty)
+      want_frame=0
+      ;;
+  esac
+done
+
+if [[ $# -eq 0 ]]; then
+  set -- -c
+elif [[ ${want_frame} -eq 1 ]]; then
+  set -- -c "$@"
+fi
+
+if ! server_ready; then
+  echo "Starting handcrafted Emacs daemon (${server_name}); first launch may take a while..." >&2
+  "${repo_root}/bin/emacs-handcrafted-daemon" >/dev/null 2>&1 &
+
+  ready=0
+  for _ in {1..600}; do
+    if server_ready; then
+      ready=1
+      break
+    fi
+    sleep 0.5
+  done
+
+  if [[ ${ready} -ne 1 ]]; then
+    echo "Failed to start or connect to the handcrafted Emacs server (${server_name})." >&2
+    exit 1
+  fi
+fi
+
+exec "${emacsclient_bin}" -s "${server_name}" "$@"
