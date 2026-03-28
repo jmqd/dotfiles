@@ -26,7 +26,6 @@
       imagemagick
       killall
       nixfmt
-      pandoc
       pavucontrol
       pmutils
       quickemu

@@ -28,6 +28,7 @@
     gnuplot
     graphviz
     jq
+    pandoc
     p7zip
     pkg-config
     plantuml
