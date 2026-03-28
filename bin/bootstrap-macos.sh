@@ -72,8 +72,10 @@ apply_home_manager() {
   local flake_ref="$1"
 
   echo "Applying Home Manager from ${flake_ref} for user ${current_user}..."
-  HM_BOOTSTRAP_USER="$current_user" \
-    nix run --refresh github:nix-community/home-manager -- switch --impure --flake "$flake_ref" -b "$backup_ext"
+  HM_USER="$current_user" \
+  HM_BACKUP_EXT="$backup_ext" \
+  HM_REFRESH=1 \
+    "$checkout_dir/bin/hm-switch.sh" "$flake_ref"
 }
 
 apply_config() {
