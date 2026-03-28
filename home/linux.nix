@@ -58,16 +58,6 @@
       enableZshIntegration = true;
     };
 
-    emacs = {
-      enable = true;
-      package = pkgs.emacs;
-    };
-
     i3status-rust.enable = true;
-  };
-
-  services.emacs = {
-    enable = true;
-    package = pkgs.emacs;
   };
 }
