@@ -39,7 +39,6 @@
     procs
     protobuf
     ripgrep
-    rust-analyzer
     rustup
     sqlite
     tealdeer
