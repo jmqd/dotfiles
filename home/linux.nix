@@ -5,8 +5,6 @@
     ./linux-desktop.nix
   ];
 
-  nixpkgs.config.allowUnfree = true;
-
   home.sessionVariables = {
     TERMINAL = "wezterm";
   };

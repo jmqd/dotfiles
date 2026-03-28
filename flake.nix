@@ -146,9 +146,13 @@
           system,
           module,
           extraModules ? [ ],
+          nixpkgsConfig ? { },
         }:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import nixpkgs {
+            inherit system;
+            config = nixpkgsConfig;
+          };
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
@@ -174,6 +178,9 @@
         mkHome {
           inherit system;
           module = ./home/hosts/jmq-macos.nix;
+          nixpkgsConfig = {
+            allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [ "raycast" ];
+          };
           extraModules = [
             {
               home.username = nixpkgs.lib.mkForce bootstrapUser;
@@ -216,10 +223,12 @@
         "linux-aarch64" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
+          nixpkgsConfig.allowUnfree = true;
         };
         "linux-x86_64" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
+          nixpkgsConfig.allowUnfree = true;
         };
       };
 

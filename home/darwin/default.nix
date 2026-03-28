@@ -3,6 +3,7 @@
   imports = [
     ../common.nix
     ./aerospace.nix
+    ./raycast.nix
   ];
 
   targets.darwin = {
