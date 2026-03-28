@@ -2,6 +2,7 @@
 {
   imports = [
     ./direnv.nix
+    ./emacs.nix
     ./files.nix
     ./gpg.nix
     ./git.nix
