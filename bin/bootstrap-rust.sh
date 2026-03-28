@@ -9,7 +9,7 @@ profile="${RUSTUP_PROFILE:-minimal}"
 if [[ $# -gt 0 ]]; then
   components=("$@")
 else
-  components=(rustfmt clippy rust-analyzer)
+  components=(rustfmt clippy rust-analyzer rust-src)
 fi
 
 if ! command -v "$rustup_bin" >/dev/null 2>&1; then
@@ -17,19 +17,20 @@ if ! command -v "$rustup_bin" >/dev/null 2>&1; then
   exit 1
 fi
 
+active_toolchain=""
 if "$rustup_bin" show active-toolchain >/dev/null 2>&1; then
-  active_toolchain="$($rustup_bin show active-toolchain)"
+  active_toolchain="$($rustup_bin show active-toolchain | awk '{print $1}')"
   echo "Rust toolchain already initialized: $active_toolchain"
-  exit 0
+else
+  echo "Initializing rustup default toolchain: $toolchain (profile: $profile)"
+  "$rustup_bin" toolchain install "$toolchain" --profile "$profile"
+  "$rustup_bin" default "$toolchain"
+  active_toolchain="$($rustup_bin show active-toolchain | awk '{print $1}')"
 fi
 
-echo "Initializing rustup default toolchain: $toolchain (profile: $profile)"
-"$rustup_bin" toolchain install "$toolchain" --profile "$profile"
-"$rustup_bin" default "$toolchain"
-
 if [[ ${#components[@]} -gt 0 ]]; then
-  echo "Installing rustup components: ${components[*]}"
-  "$rustup_bin" component add "${components[@]}"
+  echo "Ensuring rustup components on ${active_toolchain}: ${components[*]}"
+  "$rustup_bin" component add --toolchain "$active_toolchain" "${components[@]}"
 fi
 
 echo "Rust bootstrap complete."
