@@ -9,7 +9,6 @@
 
   home.sessionVariables = {
     TERMINAL = "wezterm";
-    VISUAL = "emacsclient -c";
   };
 
   home.shellAliases = {

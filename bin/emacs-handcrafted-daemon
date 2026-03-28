@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+loader_file="${repo_root}/emacs/handcrafted-loader.el"
+server_name="${EMACS_HANDCRAFTED_SERVER:-handcrafted}"
+emacs_bin="${EMACS_HANDCRAFTED_EMACS_BIN:-${EMACS:-}}"
+
+if [[ -z "${emacs_bin}" ]]; then
+  emacs_bin="$(command -v emacs || true)"
+fi
+
+if [[ -z "${emacs_bin}" ]]; then
+  echo "No Emacs binary found. Set EMACS_HANDCRAFTED_EMACS_BIN or install the Home Manager Emacs package." >&2
+  exit 1
+fi
+
+exec "${emacs_bin}" -Q --load "${loader_file}" --daemon="${server_name}" "$@"

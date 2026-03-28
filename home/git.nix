@@ -1,4 +1,4 @@
-{ ... }:
+{ config, ... }:
 {
   programs.git = {
     enable = true;
@@ -14,7 +14,7 @@
       };
 
       commit.template = "~/.gitmessage";
-      core.editor = "emacsclient";
+      core.editor = "${config.home.homeDirectory}/.local/bin/emacs-handcrafted-client";
       init.defaultBranch = "main";
       pull.rebase = true;
       rebase.autoStash = true;

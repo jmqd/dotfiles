@@ -10,7 +10,6 @@
     history.extended = true;
 
     sessionVariables = {
-      EDITOR = "emacs";
       TERM = "xterm-256color";
     };
 
