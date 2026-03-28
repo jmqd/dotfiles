@@ -17,17 +17,21 @@
 
   # Shared baseline tools available across platforms.
   home.packages = with pkgs; [
+    basedpyright
     bottom
     broot
+    clang-tools
     cloc
     cmake
     difftastic
     fd
     git
     git-lfs
+    gopls
     gnuplot
     graphviz
     jq
+    nil
     pandoc
     p7zip
     pkg-config
@@ -35,10 +39,12 @@
     procs
     protobuf
     ripgrep
+    rust-analyzer
     rustup
     sqlite
     tealdeer
     tree-sitter
+    typescript-language-server
     wget
     zola
   ];
