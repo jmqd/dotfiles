@@ -7,8 +7,8 @@
   ];
 
   targets.darwin = {
-    copyApps.enable = true;
-    linkApps.enable = false;
+    copyApps.enable = false;
+    linkApps.enable = true;
   };
 
   # First set of macOS user packages managed by Home Manager.
