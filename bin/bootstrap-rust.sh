@@ -17,15 +17,21 @@ if ! command -v "$rustup_bin" >/dev/null 2>&1; then
   exit 1
 fi
 
+get_active_toolchain() {
+  local active
+  active="$($rustup_bin show active-toolchain)"
+  printf '%s\n' "${active%% *}"
+}
+
 active_toolchain=""
 if "$rustup_bin" show active-toolchain >/dev/null 2>&1; then
-  active_toolchain="$($rustup_bin show active-toolchain | awk '{print $1}')"
+  active_toolchain="$(get_active_toolchain)"
   echo "Rust toolchain already initialized: $active_toolchain"
 else
   echo "Initializing rustup default toolchain: $toolchain (profile: $profile)"
   "$rustup_bin" toolchain install "$toolchain" --profile "$profile"
   "$rustup_bin" default "$toolchain"
-  active_toolchain="$($rustup_bin show active-toolchain | awk '{print $1}')"
+  active_toolchain="$(get_active_toolchain)"
 fi
 
 if [[ ${#components[@]} -gt 0 ]]; then
