@@ -12,6 +12,9 @@ in
     launchd.enable = true;
 
     settings = {
+      enable-normalization-flatten-containers = true;
+      enable-normalization-opposite-orientation-for-nested-containers = true;
+
       default-root-container-layout = "tiles";
       default-root-container-orientation = "auto";
 
@@ -38,18 +41,16 @@ in
         "alt-up" = "focus up";
         "alt-right" = "focus right";
 
-        "alt-shift-j" = "move left";
-        "alt-shift-k" = "move down";
-        "alt-shift-i" = "move up";
-        "alt-shift-l" = "move right";
+        # Directional structural edits use join-with; arrows keep direct moves.
+        "alt-shift-j" = "join-with left";
+        "alt-shift-k" = "join-with down";
+        "alt-shift-i" = "join-with up";
+        "alt-shift-l" = "join-with right";
 
         "alt-shift-left" = "move left";
         "alt-shift-down" = "move down";
         "alt-shift-up" = "move up";
         "alt-shift-right" = "move right";
-
-        "alt-shift-h" = "split horizontal";
-        "alt-shift-v" = "split vertical";
 
         "alt-f" = "fullscreen";
         "alt-s" = "layout v_accordion";
