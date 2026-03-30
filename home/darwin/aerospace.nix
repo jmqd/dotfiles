@@ -1,4 +1,11 @@
-{ ... }:
+{ config, lib, ... }:
+let
+  configPath =
+    if config.xdg.enable then
+      "${lib.removePrefix config.home.homeDirectory config.xdg.configHome}/aerospace/aerospace.toml"
+    else
+      ".aerospace.toml";
+in
 {
   programs.aerospace = {
     enable = true;
@@ -95,4 +102,14 @@
       };
     };
   };
+
+  home.file.${configPath}.onChange = lib.mkForce ''
+    if /usr/bin/pgrep -x AeroSpace >/dev/null 2>&1; then
+      echo "AeroSpace config changed, reloading..."
+      ${lib.getExe config.programs.aerospace.package} reload-config || \
+        echo "AeroSpace reload failed; continuing." >&2
+    else
+      echo "AeroSpace config changed, but AeroSpace is not running; skipping reload." >&2
+    fi
+  '';
 }
