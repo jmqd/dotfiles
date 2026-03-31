@@ -1,5 +1,11 @@
 ;;; prog.el -*- lexical-binding: t; -*-
 
+(use-package exec-path-from-shell
+  :if (eq system-type 'darwin)
+  :demand t
+  :config
+  (exec-path-from-shell-initialize))
+
 (defun jmq/setup-corfu-navigation ()
   "Preserve the old vertical navigation muscle memory inside completion UIs."
   (define-key corfu-map (kbd "H-i") #'corfu-previous)
@@ -58,7 +64,7 @@
   (add-to-list 'eglot-server-programs
                '(python-mode . ("basedpyright-langserver" "--stdio")))
   (add-to-list 'eglot-server-programs
-               '((rust-mode rustic-mode) . ("rust-analyzer")))
+               '((rust-mode rustic-mode) . ("rustup" "run" "stable" "rust-analyzer")))
   (add-to-list 'eglot-server-programs
                '((go-mode go-ts-mode) . ("gopls")))
   (add-to-list 'eglot-server-programs
