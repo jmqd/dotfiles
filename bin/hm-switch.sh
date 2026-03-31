@@ -33,27 +33,6 @@ EOF
   esac
 }
 
-build_home_manager_command() {
-  local flake_ref="$1"
-  shift
-
-  local -a cmd=(nix run)
-
-  if [[ "$refresh_home_manager" == "1" ]]; then
-    cmd+=(--refresh)
-  fi
-
-  cmd+=(github:nix-community/home-manager -- switch)
-
-  if [[ "$os_name" == "Darwin" ]]; then
-    cmd+=(--impure --flake "$flake_ref" -b "$backup_ext" "$@")
-  else
-    cmd+=(--flake "$flake_ref" -b "$backup_ext" "$@")
-  fi
-
-  printf '%s\0' "${cmd[@]}"
-}
-
 home_manager_hit_app_management_error() {
   local log_file="$1"
   grep -Fq "permission denied when trying to update apps" "$log_file" \
@@ -128,7 +107,19 @@ else
   flake_ref="$(detect_flake_ref)"
 fi
 
-mapfile -d '' -t home_manager_cmd < <(build_home_manager_command "$flake_ref" "$@")
+home_manager_cmd=(nix run)
+
+if [[ "$refresh_home_manager" == "1" ]]; then
+  home_manager_cmd+=(--refresh)
+fi
+
+home_manager_cmd+=(github:nix-community/home-manager -- switch)
+
+if [[ "$os_name" == "Darwin" ]]; then
+  home_manager_cmd+=(--impure --flake "$flake_ref" -b "$backup_ext" "$@")
+else
+  home_manager_cmd+=(--flake "$flake_ref" -b "$backup_ext" "$@")
+fi
 
 if [[ "$os_name" == "Darwin" ]]; then
   run_home_manager_switch env HM_BOOTSTRAP_USER="$current_user" "${home_manager_cmd[@]}"
