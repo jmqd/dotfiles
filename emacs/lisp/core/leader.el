@@ -45,6 +45,7 @@
 
     "f" '(:ignore t :which-key "files")
     "ff" '(find-file :which-key "find file")
+    "fR" '(rename-visited-file :which-key "rename file")
     "fr" '(consult-recent-file :which-key "recent file")
     "fs" '(save-buffer :which-key "save file")
     "fy" '(jmq/yank-file-path :which-key "yank file path")
