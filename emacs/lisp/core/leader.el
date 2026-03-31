@@ -28,6 +28,7 @@
 
     "b" '(:ignore t :which-key "buffers")
     "bb" '(consult-buffer :which-key "switch buffer")
+    "bi" '(ibuffer :which-key "ibuffer")
     "bk" '(kill-current-buffer :which-key "kill buffer")
 
     "f" '(:ignore t :which-key "files")
