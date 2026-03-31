@@ -87,9 +87,11 @@
     "op" '(project-eshell :which-key "project shell")
 
     "p" '(:ignore t :which-key "project")
-    "pp" '(project-switch-project :which-key "switch project")
-    "pf" '(project-find-file :which-key "find project file")
+    "p!" '(project-shell-command :which-key "shell command")
     "pb" '(consult-project-buffer :which-key "project buffer")
+    "pe" '(project-eshell :which-key "project shell")
+    "pf" '(project-find-file :which-key "find project file")
+    "pp" '(project-switch-project :which-key "switch project")
 
     "s" '(:ignore t :which-key "search")
     "sg" '(consult-ripgrep :which-key "ripgrep")
