@@ -6,6 +6,15 @@
   (setq which-key-idle-delay 0.4)
   (which-key-mode 1))
 
+(defun jmq/delete-file-and-buffer ()
+  "Delete the current file and kill the buffer."
+  (interactive)
+  (let ((file (buffer-file-name)))
+    (unless file (user-error "Buffer is not visiting a file"))
+    (when (yes-or-no-p (format "Delete %s? " file))
+      (delete-file file t)
+      (kill-buffer))))
+
 (defun jmq/yank-file-path ()
   "Copy the current buffer's file path to the kill ring."
   (interactive)
@@ -44,6 +53,7 @@
     "bk" '(kill-current-buffer :which-key "kill buffer")
 
     "f" '(:ignore t :which-key "files")
+    "fD" '(jmq/delete-file-and-buffer :which-key "delete file")
     "ff" '(find-file :which-key "find file")
     "fR" '(rename-visited-file :which-key "rename file")
     "fr" '(consult-recent-file :which-key "recent file")
