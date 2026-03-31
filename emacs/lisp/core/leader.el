@@ -74,6 +74,8 @@
 
     "g" '(:ignore t :which-key "git")
     "gg" '(magit-status :which-key "magit status")
+    "gb" '(magit-blame :which-key "blame")
+    "gl" '(magit-log-current :which-key "log current")
 
     "p" '(:ignore t :which-key "project")
     "pp" '(project-switch-project :which-key "switch project")
