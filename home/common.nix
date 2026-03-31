@@ -29,6 +29,7 @@ in
     cmake
     difftastic
     fd
+    gh
     git
     git-lfs
     gopls
