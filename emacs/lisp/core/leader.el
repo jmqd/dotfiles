@@ -28,6 +28,7 @@
     "/" '(consult-ripgrep :which-key "search project")
     "." '(find-file :which-key "find file")
     "," '(consult-buffer :which-key "switch buffer")
+    "u" '(universal-argument :which-key "universal argument")
 
     "b" '(:ignore t :which-key "buffers")
     "bb" '(consult-buffer :which-key "switch buffer")
