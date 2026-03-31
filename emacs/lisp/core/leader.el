@@ -22,6 +22,7 @@
 
   (jmq/leader-keys
     "SPC" '(execute-extended-command :which-key "M-x")
+    ":" '(execute-extended-command :which-key "M-x")
     "." '(find-file :which-key "find file")
     "," '(consult-buffer :which-key "switch buffer")
 
