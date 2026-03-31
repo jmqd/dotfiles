@@ -77,6 +77,15 @@
     "gb" '(magit-blame :which-key "blame")
     "gl" '(magit-log-current :which-key "log current")
 
+    "h" '(:ignore t :which-key "help")
+    "hf" '(describe-function :which-key "describe function")
+    "hv" '(describe-variable :which-key "describe variable")
+    "hk" '(describe-key :which-key "describe key")
+    "hm" '(describe-mode :which-key "describe mode")
+
+    "o" '(:ignore t :which-key "open")
+    "op" '(project-eshell :which-key "project shell")
+
     "p" '(:ignore t :which-key "project")
     "pp" '(project-switch-project :which-key "switch project")
     "pf" '(project-find-file :which-key "find project file")
