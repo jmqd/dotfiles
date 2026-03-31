@@ -99,6 +99,7 @@
     "si" '(consult-imenu :which-key "imenu")
 
     "w" '(:ignore t :which-key "windows")
+    "ww" '(evil-window-next :which-key "next window")
     "wi" '(evil-window-up :which-key "up")
     "wj" '(evil-window-left :which-key "left")
     "wk" '(evil-window-down :which-key "down")
