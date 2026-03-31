@@ -34,4 +34,16 @@
 (use-package consult
   :after (vertico recentf))
 
+(use-package embark
+  :bind
+  (("C-." . embark-act)
+   ("C-;" . embark-dwim))
+  :config
+  (setq prefix-help-command #'embark-prefix-help-command))
+
+(use-package embark-consult
+  :after (embark consult)
+  :hook
+  (embark-collect-mode . consult-preview-at-point-mode))
+
 (provide 'jmq-completion)
