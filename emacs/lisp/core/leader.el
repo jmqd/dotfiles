@@ -39,6 +39,7 @@
     "f" '(:ignore t :which-key "files")
     "ff" '(find-file :which-key "find file")
     "fr" '(consult-recent-file :which-key "recent file")
+    "fs" '(save-buffer :which-key "save file")
 
     "c" '(:ignore t :which-key "code")
     "ca" '(jmq/eglot-code-actions :which-key "code actions")
