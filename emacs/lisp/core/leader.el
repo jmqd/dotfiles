@@ -24,6 +24,7 @@
     "SPC" '(execute-extended-command :which-key "M-x")
     ":" '(execute-extended-command :which-key "M-x")
     "`" '(evil-switch-to-windows-last-buffer :which-key "last buffer")
+    "TAB" '(evil-switch-to-windows-last-buffer :which-key "last buffer")
     "." '(find-file :which-key "find file")
     "," '(consult-buffer :which-key "switch buffer")
 
