@@ -46,4 +46,8 @@
   :hook
   (embark-collect-mode . consult-preview-at-point-mode))
 
+(use-package wgrep
+  :config
+  (setq wgrep-auto-save-buffer t))
+
 (provide 'jmq-completion)
