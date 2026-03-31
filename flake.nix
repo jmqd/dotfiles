@@ -5,6 +5,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.3.5";
+    notion-cli = {
+      url = "github:lox/notion-cli/v0.5.0";
+      flake = false;
+    };
     trueflow.url = "github:trueflow-dev/trueflow";
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -17,6 +21,7 @@
       nixpkgs,
       flake-utils,
       googleworkspace-cli,
+      notion-cli,
       trueflow,
       home-manager,
       ...
@@ -46,6 +51,30 @@
           };
         };
 
+      mkNotionCliPkg =
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        pkgs.buildGoModule {
+          pname = "notion-cli";
+          version = "0.5.0";
+          src = notion-cli;
+          vendorHash = "sha256-SXs/voGAlA66aGMUC6GzttSejo9kSSOVdujp5Nl9GZM=";
+
+          ldflags = [
+            "-X main.version=v0.5.0"
+          ];
+
+          meta = with pkgs.lib; {
+            description = "Notion CLI";
+            homepage = "https://github.com/lox/notion-cli";
+            license = licenses.mit;
+            mainProgram = "notion-cli";
+            platforms = platforms.unix;
+          };
+        };
+
       mkTrueflowPkg =
         system:
         let
@@ -64,6 +93,7 @@
         system:
         let
           googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
+          notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
         in
@@ -73,6 +103,7 @@
         {
           home.packages = [
             googleworkspaceCliPkg
+            notionCliPkg
             piPkg
             trueflowPkg
           ];
@@ -83,6 +114,7 @@
         let
           pkgs = import nixpkgs { inherit system; };
           googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
+          notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
 
@@ -124,6 +156,7 @@
           };
 
           packages = {
+            notion-cli = notionCliPkg;
             pi = piPkg;
             secrets-lint = secretsLint;
           };

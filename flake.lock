@@ -182,12 +182,30 @@
         "type": "github"
       }
     },
+    "notion-cli": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1774396169,
+        "narHash": "sha256-XzoKI9r999BH4/2h+DmPUNaCzUqnkrC/RhpT2tFKvZc=",
+        "owner": "lox",
+        "repo": "notion-cli",
+        "rev": "787ab6d732ac344228c40e43ec3049eeb4d9da81",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lox",
+        "ref": "v0.5.0",
+        "repo": "notion-cli",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-utils": "flake-utils",
         "googleworkspace-cli": "googleworkspace-cli",
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs_2",
+        "notion-cli": "notion-cli",
         "trueflow": "trueflow"
       }
     },
