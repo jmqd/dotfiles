@@ -83,6 +83,11 @@
     "hk" '(describe-key :which-key "describe key")
     "hm" '(describe-mode :which-key "describe mode")
 
+    "j" '(:ignore t :which-key "jump")
+    "jj" '(avy-goto-char-2 :which-key "2 chars")
+    "jw" '(avy-goto-word-1 :which-key "word")
+    "jl" '(avy-goto-line :which-key "line")
+
     "o" '(:ignore t :which-key "open")
     "op" '(project-eshell :which-key "project shell")
 

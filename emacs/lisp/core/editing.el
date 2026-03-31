@@ -41,4 +41,7 @@
 
 (jmq/apply-minibuffer-directional-bindings)
 
+(use-package avy
+  :commands (avy-goto-char-2 avy-goto-line avy-goto-word-1))
+
 (provide 'jmq-editing)
