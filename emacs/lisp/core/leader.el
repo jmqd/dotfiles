@@ -32,6 +32,7 @@
 
     "b" '(:ignore t :which-key "buffers")
     "bb" '(consult-buffer :which-key "switch buffer")
+    "bd" '(kill-current-buffer :which-key "kill buffer")
     "bi" '(ibuffer :which-key "ibuffer")
     "bk" '(kill-current-buffer :which-key "kill buffer")
 
