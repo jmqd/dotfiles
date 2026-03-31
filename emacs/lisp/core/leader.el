@@ -95,6 +95,8 @@
 
     "s" '(:ignore t :which-key "search")
     "sg" '(consult-ripgrep :which-key "ripgrep")
+    "ss" '(consult-line :which-key "search buffer")
+    "si" '(consult-imenu :which-key "imenu")
 
     "w" '(:ignore t :which-key "windows")
     "wi" '(evil-window-up :which-key "up")
