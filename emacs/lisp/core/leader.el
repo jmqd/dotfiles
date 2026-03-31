@@ -25,6 +25,7 @@
     ":" '(execute-extended-command :which-key "M-x")
     "`" '(evil-switch-to-windows-last-buffer :which-key "last buffer")
     "TAB" '(evil-switch-to-windows-last-buffer :which-key "last buffer")
+    "/" '(consult-ripgrep :which-key "search project")
     "." '(find-file :which-key "find file")
     "," '(consult-buffer :which-key "switch buffer")
 
