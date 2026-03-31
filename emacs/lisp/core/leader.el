@@ -6,6 +6,13 @@
   (setq which-key-idle-delay 0.4)
   (which-key-mode 1))
 
+(defun jmq/yank-file-path ()
+  "Copy the current buffer's file path to the kill ring."
+  (interactive)
+  (if-let ((path (buffer-file-name)))
+      (progn (kill-new path) (message "%s" path))
+    (user-error "Buffer is not visiting a file")))
+
 (use-package general
   :after evil
   :config
@@ -40,6 +47,7 @@
     "ff" '(find-file :which-key "find file")
     "fr" '(consult-recent-file :which-key "recent file")
     "fs" '(save-buffer :which-key "save file")
+    "fy" '(jmq/yank-file-path :which-key "yank file path")
 
     "c" '(:ignore t :which-key "code")
     "ca" '(jmq/eglot-code-actions :which-key "code actions")
