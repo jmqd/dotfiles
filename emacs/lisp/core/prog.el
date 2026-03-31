@@ -38,7 +38,15 @@
         tab-always-indent 'complete)
   (global-corfu-mode 1)
   :config
-  (jmq/setup-corfu-navigation))
+  (jmq/setup-corfu-navigation)
+  (corfu-popupinfo-mode 1)
+  (corfu-history-mode 1))
+
+(use-package kind-icon
+  :after corfu
+  :config
+  (setq kind-icon-default-face 'corfu-default)
+  (add-to-list 'corfu-margin-formatters #'kind-icon-margin-formatter))
 
 (use-package cape
   :after corfu
