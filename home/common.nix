@@ -39,6 +39,7 @@ in
     graphviz
     imagemagick
     jq
+    lefthook
     postgresql
     mise
     nil
