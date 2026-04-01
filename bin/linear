@@ -19,24 +19,43 @@ gql() {
 }
 
 cmd_search() {
-  [ $# -ge 1 ] || die "usage: linear search <text>"
+  local status_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --status) [ $# -ge 2 ] || die "usage: --status <statuses>"; status_filter="$2"; shift 2 ;;
+      --status=*) status_filter="${1#--status=}"; shift ;;
+      -*) die "unknown flag: $1" ;;
+      *) break ;;
+    esac
+  done
+
+  [ $# -ge 1 ] || die "usage: linear search [--status todo,done] <text>"
   local text="$1"
   local escaped
   escaped=$(printf '%s' "$text" | sed 's/\\/\\\\/g; s/"/\\"/g')
 
   local query
   query=$(cat <<EOF
-{"query":"{ searchIssues(term: \\"${escaped}\\", first: 20) { nodes { identifier title state { name } assignee { name } priority url } } }"}
+{"query":"{ searchIssues(term: \\"${escaped}\\", first: 50) { nodes { identifier title state { name } assignee { name } priority url } } }"}
 EOF
   )
 
   local result
   result=$(gql "$query")
 
-  printf '%s' "$result" | jq -r '
-    .data.searchIssues.nodes[] |
-    "\(.identifier)\t\(.state.name)\t\(.assignee.name // "-")\t\(.title)"
-  ' 2>/dev/null || {
+  local jq_filter
+  if [ -n "$status_filter" ]; then
+    local states_json
+    states_json=$(printf '%s' "$status_filter" | tr ',' '\n' | jq -R 'ascii_downcase' | jq -s '.')
+    jq_filter="[.data.searchIssues.nodes[] | select((.state.name | ascii_downcase) as \$s | ${states_json} | any(. == \$s))][]"
+  else
+    jq_filter=".data.searchIssues.nodes[]"
+  fi
+
+  printf '%s' "$result" | jq -r "
+    ${jq_filter} |
+    \"\(.identifier)\t\(.state.name)\t\(.assignee.name // \"-\")\t\(.title)\"
+  " 2>/dev/null || {
     echo "No results or API error:" >&2
     printf '%s\n' "$result" | jq . 2>/dev/null || printf '%s\n' "$result"
     exit 1
@@ -82,7 +101,7 @@ usage() {
 usage: linear <command> [args]
 
 commands:
-  search <text>       search issues
+  search [--status s1,s2] <text>  search issues
   view <issue-id>     view issue details
 EOF
   exit 1
