@@ -36,6 +36,7 @@ in
     gopls
     gnuplot
     graphviz
+    imagemagick
     jq
     nil
     pandoc
@@ -46,11 +47,15 @@ in
     protobuf
     ripgrep
     rustup
+    shellcheck
+    shfmt
     sqlite
     tealdeer
     tree-sitter
     typescript-language-server
+    unzip
     wget
+    zip
     zola
   ];
 

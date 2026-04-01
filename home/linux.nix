@@ -20,19 +20,14 @@
       flameshot
       i3lock
       i3wsr
-      imagemagick
       killall
       nixfmt
       pavucontrol
       pmutils
       quickemu
-      shellcheck
-      shfmt
-      unzip
       xclip
       xdotool
       xwininfo
-      zip
     ])
     ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 (with pkgs; [
       discord
