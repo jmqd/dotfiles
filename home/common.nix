@@ -30,6 +30,7 @@ in
     cmake
     difftastic
     fd
+    flock
     gh
     git
     git-lfs
@@ -38,6 +39,7 @@ in
     graphviz
     imagemagick
     jq
+    libpq
     mise
     nil
     pandoc
