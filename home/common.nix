@@ -38,6 +38,7 @@ in
     graphviz
     imagemagick
     jq
+    mise
     nil
     pandoc
     p7zip
