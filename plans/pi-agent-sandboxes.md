@@ -1,4 +1,4 @@
-# Agent Fleet Sandboxes Plan
+# Hive: Agent Sandboxes Plan
 
 ## Goal
 Spin up `N` isolated coding agents for the same repo, with:
@@ -7,21 +7,21 @@ Spin up `N` isolated coding agents for the same repo, with:
 - the repo's dev environment pre-activated so tools work without manual setup
 - permission-gating friction removed because the container boundary is the real safety mechanism
 - both headless orchestration and optional human interaction with an individual agent
-- agent-agnostic design: the fleet tool manages sandboxes, not any specific agent
+- agent-agnostic design: the hive tool manages sandboxes, not any specific agent
 
 ## Target Agent Runtimes
-The fleet tool is agent-agnostic. Initial use cases:
+The hive tool is agent-agnostic. Initial use cases:
 - **Claude Code** (`claude --dangerously-skip-permissions`)
 - **pi** (`pi --mode rpc --no-session`)
 - **Codex** (`codex --full-auto`)
 
-The agent command is a configurable parameter. The fleet tool's job is container lifecycle and environment provisioning — the agent is just a process that runs inside it.
+The agent command is a configurable parameter. The hive tool's job is container lifecycle and environment provisioning — the agent is just a process that runs inside it.
 
 ## Design Priorities
 1. **Isolation first**: agents should not touch the host repo checkout.
 2. **Fast spin-up**: avoid rebuilding the same dev environment per agent.
 3. **Cheap parallelism**: N agents should share immutable artifacts where safe.
-4. **Good ergonomics**: starting a fleet should be one command.
+4. **Good ergonomics**: starting a hive should be one command.
 5. **Debuggability**: it should be easy to attach to one agent/container when something goes wrong.
 6. **Cross-platform**: must work on macOS (primary) and Linux.
 
@@ -45,8 +45,8 @@ Why Docker over `systemd-nspawn`:
 For MVP, create worktrees directly from the live repo:
 
 ```bash
-git worktree add /tmp/fleet/agent-01 HEAD --detach
-git worktree add /tmp/fleet/agent-02 HEAD --detach
+git worktree add /tmp/hive/agent-01 HEAD --detach
+git worktree add /tmp/hive/agent-02 HEAD --detach
 ```
 
 Each agent gets its own worktree bind-mounted writable into its container.
@@ -58,7 +58,7 @@ Why start simple:
 
 Future option — bare mirror for scale:
 - if N concurrent agents cause `.git/worktrees` contention, move to a bare mirror
-- `~/.local/share/agent-fleet/repos/<project>.git` with per-agent worktrees from that mirror
+- `~/.local/share/agent-hive/repos/<project>.git` with per-agent worktrees from that mirror
 - only build this if the simple approach breaks
 
 ### 3. Nix dev environment: host store, shared read-only
@@ -75,12 +75,12 @@ Agents activate the dev environment via:
 nix develop <repo> -c <agent-command>
 ```
 
-Why skip a dedicated fleet store for now:
+Why skip a dedicated hive store for now:
 - the host store already has everything built
 - avoids the complexity of a separate daemon, socket, and volume
 - only revisit if host store contamination becomes a real problem
 
-Future option — dedicated fleet store:
+Future option — dedicated hive store:
 - one long-lived store daemon container
 - its `/nix` on a dedicated volume
 - agent containers mount that store read-only
@@ -88,8 +88,8 @@ Future option — dedicated fleet store:
 
 ## Interaction Model
 
-### Layer 1: fleet tool (agent-agnostic)
-The fleet tool manages container lifecycle only:
+### Layer 1: hive tool (agent-agnostic)
+The hive tool manages container lifecycle only:
 - start/stop containers
 - provision worktrees
 - activate dev environments
@@ -106,13 +106,13 @@ Thin adapters for orchestration beyond "give me a shell":
 | pi | RPC protocol | RPC status | RPC event stream |
 | Codex | stdin | exit code | stdout/stderr |
 
-Layer 2 is **not needed for MVP**. Start with `fleet attach` for interactive use and `fleet exec` for scripted use.
+Layer 2 is **not needed for MVP**. Start with `hive attach` for interactive use and `hive exec` for scripted use.
 
 ### Interactive attach
 ```bash
-fleet attach agent-01          # shell inside the container
-fleet attach agent-01 --agent  # launch the agent TUI interactively
-fleet logs agent-01            # tail container logs
+hive attach agent-01          # shell inside the container
+hive attach agent-01 --agent  # launch the agent TUI interactively
+hive logs agent-01            # tail container logs
 ```
 
 ## Permission Model
@@ -131,19 +131,19 @@ Per-agent flags for permissive mode:
 ## Proposed CLI Shape
 
 ```bash
-fleet up --repo ~/src/project --agents 3
-fleet up --repo ~/src/project --agents 3 --cmd "claude --dangerously-skip-permissions"
-fleet up --repo ~/src/project --agents 3 --cmd "pi --mode rpc --no-session"
+hive up --repo ~/src/project --agents 3
+hive up --repo ~/src/project --agents 3 --cmd "claude --dangerously-skip-permissions"
+hive up --repo ~/src/project --agents 3 --cmd "pi --mode rpc --no-session"
 
-fleet ls                                    # list running agents
-fleet attach agent-01                       # shell into container
-fleet exec agent-01 "run the test suite"    # run a command in the agent's shell
-fleet logs agent-01                         # tail logs
-fleet down                                  # stop all, clean up worktrees
-fleet down --keep-worktrees                 # stop containers, keep worktrees
+hive ls                                    # list running agents
+hive attach agent-01                       # shell into container
+hive exec agent-01 "run the test suite"    # run a command in the agent's shell
+hive logs agent-01                         # tail logs
+hive down                                  # stop all, clean up worktrees
+hive down --keep-worktrees                 # stop containers, keep worktrees
 ```
 
-### `fleet up` internals
+### `hive up` internals
 1. Create N git worktrees from the repo
 2. Build/ensure the Nix dev environment closure
 3. Launch N Docker containers, each with:
@@ -152,16 +152,16 @@ fleet down --keep-worktrees                 # stop containers, keep worktrees
    - isolated `$HOME`, tmp, cache dirs
    - `nix develop` as the entrypoint wrapper
 4. If `--cmd` is provided, run the agent command inside `nix develop`
-5. Otherwise, containers idle with a shell, ready for `fleet attach`
+5. Otherwise, containers idle with a shell, ready for `hive attach`
 
-### `fleet down` internals
+### `hive down` internals
 1. Stop and remove containers
 2. Remove git worktrees (unless `--keep-worktrees`)
 3. Clean up state/logs
 
 ## Storage / State Layout
 ```text
-~/.local/share/agent-fleet/
+~/.local/share/agent-hive/
 ├── worktrees/
 │   └── <project>/
 │       ├── agent-01/
@@ -183,24 +183,24 @@ Use a minimal base image with Nix pre-installed:
 ## MVP Plan
 
 ### MVP v1: one agent, one command
-- `fleet up --repo <path>` starts one container
+- `hive up --repo <path>` starts one container
 - one git worktree from the live repo
 - host Nix store mounted read-only
 - `nix develop` activates the dev env
-- `fleet attach` gives a shell
-- `fleet down` cleans up
+- `hive attach` gives a shell
+- `hive down` cleans up
 - implemented as a small bash script
 
 ### MVP v2: N agents
 - `--agents N` flag
 - parallel container launch
-- `fleet ls` to list agents
-- `fleet attach agent-N` to pick one
-- `fleet logs agent-N`
+- `hive ls` to list agents
+- `hive attach agent-N` to pick one
+- `hive logs agent-N`
 
 ### MVP v3: orchestration
 - `--cmd` to auto-launch an agent in each container
-- `fleet exec` to send commands to running agents
+- `hive exec` to send commands to running agents
 - basic log aggregation
 - optional: Layer 2 agent drivers for prompt/status/stream
 
@@ -208,7 +208,7 @@ Use a minimal base image with Nix pre-installed:
 - broadcast commands to all agents
 - result aggregation / diffing across agents
 - bare mirror for repos with many concurrent agents
-- optional dedicated fleet Nix store
+- optional dedicated hive Nix store
 - optional specialized agent roles/prompts
 
 ## Key Tradeoffs
@@ -228,13 +228,13 @@ Cons:
 
 If Linux-only deployment becomes important, nspawn can be added as an alternative backend without changing the CLI interface.
 
-### Host store vs dedicated fleet store
+### Host store vs dedicated hive store
 **Host store for MVP.**
 
 The host already has the closures built. Mounting read-only is free. Only build a dedicated store if:
 - host store contamination is a real problem
 - you want agents to install packages without affecting the host
-- you're running fleet on remote machines without a pre-populated store
+- you're running hive on remote machines without a pre-populated store
 
 ### Worktrees from live repo vs bare mirror
 **Live repo worktrees for MVP.**
@@ -242,7 +242,7 @@ The host already has the closures built. Mounting read-only is free. Only build 
 `git worktree add` is fast and simple. Only move to a bare mirror if:
 - `.git/worktrees` contention becomes a problem with N agents
 - you need worktrees on a different branch/ref than what's checked out
-- fleet runs against remote repos
+- hive runs against remote repos
 
 ## Resolved Questions
 - **Agent rootfs**: ephemeral per run, with a cached Docker image for the base layer.
@@ -253,7 +253,7 @@ The host already has the closures built. Mounting read-only is free. Only build 
 
 ## Follow-up Implementation Targets
 Potential repo additions:
-- `bin/fleet` — the main CLI script
-- `pkgs/fleet-image/` — Nix expression for the base Docker image
+- `bin/hive` — the main CLI script
+- `pkgs/hive-image/` — Nix expression for the base Docker image
 - `plans/pi-agent-sandboxes.md` — this plan
 - optional: Layer 2 agent driver scripts per agent runtime
