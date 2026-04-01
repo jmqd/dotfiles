@@ -16,7 +16,6 @@
   home.packages =
     (with pkgs; [
       autorandr
-      awscli2
       dmenu
       flameshot
       i3lock

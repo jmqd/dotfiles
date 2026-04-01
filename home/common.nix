@@ -21,6 +21,7 @@ in
   # Shared baseline tools available across platforms.
   home.packages = with pkgs; [
     berkleyMono
+    awscli2
     basedpyright
     bottom
     broot
