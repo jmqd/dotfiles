@@ -26,7 +26,7 @@ cmd_search() {
 
   local query
   query=$(cat <<EOF
-{"query":"{ issueSearch(query: \\"${escaped}\\", first: 20) { nodes { identifier title state { name } assignee { name } priority url } } }"}
+{"query":"{ searchIssues(term: \\"${escaped}\\", first: 20) { nodes { identifier title state { name } assignee { name } priority url } } }"}
 EOF
   )
 
@@ -34,7 +34,7 @@ EOF
   result=$(gql "$query")
 
   printf '%s' "$result" | jq -r '
-    .data.issueSearch.nodes[] |
+    .data.searchIssues.nodes[] |
     "\(.identifier)\t\(.state.name)\t\(.assignee.name // "-")\t\(.title)"
   ' 2>/dev/null || {
     echo "No results or API error:" >&2
