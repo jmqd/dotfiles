@@ -51,6 +51,7 @@ in
     protobuf
     ripgrep
     rustup
+    slackdump
     shellcheck
     shfmt
     sqlite
