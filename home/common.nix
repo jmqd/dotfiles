@@ -39,7 +39,7 @@ in
     graphviz
     imagemagick
     jq
-    libpq
+    postgresql
     mise
     nil
     pandoc
