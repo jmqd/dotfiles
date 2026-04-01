@@ -3,6 +3,7 @@
   home.file = {
     ".bashrc".source = ../.bashrc;
     ".gdbinit".source = ../.gdbinit;
+    ".local/bin/linear".source = ../bin/linear;
     ".sqliterc".source = ../.sqliterc;
 
     ".claude/CLAUDE.md".source = ./.pi/agent/AGENTS.md;

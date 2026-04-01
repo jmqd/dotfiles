@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+api_key="${LINEAR_API_KEY:-}"
+api_url="https://api.linear.app/graphql"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+[ -n "$api_key" ] || die "LINEAR_API_KEY is not set"
+command -v curl >/dev/null 2>&1 || die "curl is required"
+command -v jq >/dev/null 2>&1 || die "jq is required"
+
+gql() {
+  local query="$1"
+  curl -s -X POST "$api_url" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: $api_key" \
+    -d "$query"
+}
+
+cmd_search() {
+  [ $# -ge 1 ] || die "usage: linear search <text>"
+  local text="$1"
+  local escaped
+  escaped=$(printf '%s' "$text" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+  local query
+  query=$(cat <<EOF
+{"query":"{ issueSearch(query: \\"${escaped}\\", first: 20) { nodes { identifier title state { name } assignee { name } priority url } } }"}
+EOF
+  )
+
+  local result
+  result=$(gql "$query")
+
+  printf '%s' "$result" | jq -r '
+    .data.issueSearch.nodes[] |
+    "\(.identifier)\t\(.state.name)\t\(.assignee.name // "-")\t\(.title)"
+  ' 2>/dev/null || {
+    echo "No results or API error:" >&2
+    printf '%s\n' "$result" | jq . 2>/dev/null || printf '%s\n' "$result"
+    exit 1
+  }
+}
+
+cmd_view() {
+  [ $# -ge 1 ] || die "usage: linear view <issue-id>"
+  local issue_id="$1"
+  local escaped
+  escaped=$(printf '%s' "$issue_id" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+  local query
+  query=$(cat <<EOF
+{"query":"{ issue(id: \\"${escaped}\\") { identifier title description state { name } assignee { name } priority labels { nodes { name } } url createdAt updatedAt } }"}
+EOF
+  )
+
+  local result
+  result=$(gql "$query")
+
+  printf '%s' "$result" | jq -r '
+    .data.issue |
+    "Issue:    \(.identifier) — \(.title)",
+    "State:    \(.state.name)",
+    "Assignee: \(.assignee.name // "-")",
+    "Priority: \(.priority)",
+    "Labels:   \([ .labels.nodes[].name ] | join(", "))",
+    "URL:      \(.url)",
+    "Created:  \(.createdAt)",
+    "Updated:  \(.updatedAt)",
+    "",
+    (.description // "(no description)")
+  ' 2>/dev/null || {
+    echo "Issue not found or API error:" >&2
+    printf '%s\n' "$result" | jq . 2>/dev/null || printf '%s\n' "$result"
+    exit 1
+  }
+}
+
+usage() {
+  cat <<EOF
+usage: linear <command> [args]
+
+commands:
+  search <text>       search issues
+  view <issue-id>     view issue details
+EOF
+  exit 1
+}
+
+[ $# -ge 1 ] || usage
+
+case "$1" in
+  search) shift; cmd_search "$@" ;;
+  view)   shift; cmd_view "$@" ;;
+  *)      usage ;;
+esac
