@@ -32,6 +32,10 @@
 - For non-reversible or high-impact changes, suggest concrete verification steps.
 - When changing code, include focused checks or tests when appropriate.
 
+## Work context
+
+- If a `~/.WORK.md` file exists, read it for work-specific context; that means we're at our day job.
+
 ## Language / tooling preferences
 
 - For Rust: prioritize correctness, explicit invariants, good error handling, and performance-aware design.
