@@ -1,294 +1,259 @@
-# pi Agent Sandboxes Plan
+# Agent Fleet Sandboxes Plan
 
 ## Goal
-Create an easy way to spin up `N` isolated pi agents for the same repo on Linux, with:
+Spin up `N` isolated coding agents for the same repo, with:
 - a separate working tree per agent
-- an isolated shared Nix store/daemon that does **not** use the host `/nix/store`
-- the repo dev environment available inside each sandbox so tools work without manual setup
+- container-level isolation (filesystem, process, network)
+- the repo's dev environment pre-activated so tools work without manual setup
 - permission-gating friction removed because the container boundary is the real safety mechanism
 - both headless orchestration and optional human interaction with an individual agent
+- agent-agnostic design: the fleet tool manages sandboxes, not any specific agent
+
+## Target Agent Runtimes
+The fleet tool is agent-agnostic. Initial use cases:
+- **Claude Code** (`claude --dangerously-skip-permissions`)
+- **pi** (`pi --mode rpc --no-session`)
+- **Codex** (`codex --full-auto`)
+
+The agent command is a configurable parameter. The fleet tool's job is container lifecycle and environment provisioning — the agent is just a process that runs inside it.
 
 ## Design Priorities
-1. **Isolation first**: agents should not touch the host repo checkout or host `/nix/store`.
+1. **Isolation first**: agents should not touch the host repo checkout.
 2. **Fast spin-up**: avoid rebuilding the same dev environment per agent.
 3. **Cheap parallelism**: N agents should share immutable artifacts where safe.
 4. **Good ergonomics**: starting a fleet should be one command.
 5. **Debuggability**: it should be easy to attach to one agent/container when something goes wrong.
+6. **Cross-platform**: must work on macOS (primary) and Linux.
 
 ## Recommended Architecture
 
-### 1. Repo source model: bare mirror + per-agent worktrees
-Do **not** create worktrees directly from the live repo checkout.
+### 1. Container runtime: Docker / OrbStack
+Use Docker containers as the isolation primitive.
 
-Instead:
-- maintain a local bare mirror, e.g.:
-  - `~/.local/share/pi-agent-fleet/repos/dotfiles.git`
-- refresh it from the source repo via `git fetch`
-- create per-agent detached worktrees from that mirror, e.g.:
-  - `~/.local/share/pi-agent-fleet/worktrees/dotfiles/agent-01`
-  - `~/.local/share/pi-agent-fleet/worktrees/dotfiles/agent-02`
+On macOS: OrbStack provides fast, lightweight Docker with near-native performance on Apple Silicon. The Linux VM it manages already has access to `/nix/store`.
 
-Why:
-- avoids mutating the live working tree
-- avoids sharing the live repo’s `.git/worktrees` admin state
-- makes cleanup and fleet lifecycle simpler
+On Linux: standard Docker or Podman.
 
-### 2. Nix isolation model: one dedicated daemon/store for the fleet
-Use a dedicated writable Nix daemon/store for the fleet, separate from the host store.
+Why Docker over `systemd-nspawn`:
+- works on both macOS and Linux (nspawn is Linux-only)
+- OrbStack makes it fast on macOS
+- well-understood tooling, easy to attach/debug
+- bind mounts, volume mounts, networking all work cleanly
+- `docker exec -it` for shell access
 
-Suggested shape:
-- one long-lived "store daemon" container or sandbox root
-- its `/nix` lives on a dedicated volume/subvolume/image under something like:
-  - `/var/lib/pi-agent-fleet/nix-store/`
-- all agent sandboxes mount that store’s `/nix/store` **read-only**
-- agents talk to the dedicated daemon socket, not the host daemon
+### 2. Repo source model: per-agent git worktrees
+For MVP, create worktrees directly from the live repo:
 
-Why:
-- avoids polluting the host store
-- shares realized closures across all agents
-- keeps agent sandboxes mostly immutable except for their worktree/tmp/cache areas
-
-### 3. Agent runtime: per-agent `systemd-nspawn` container
-Run each agent in its own `systemd-nspawn` machine.
-
-Each agent gets:
-- its own rootfs / writable overlay
-- its own worktree bind-mounted writable
-- read-only bind of the shared fleet `/nix/store`
-- access to the fleet Nix daemon socket
-- isolated `$HOME`, cache dirs, session dirs, and temp dirs
-
-Why `systemd-nspawn`:
-- integrates well with `machinectl`
-- supports bind mounts cleanly
-- good fit for "many lightweight Linux sandboxes"
-- easier to inspect/attach than more opaque solutions
-
-## Suggested Interaction Model
-
-### Default: headless control via pi RPC mode
-Run pi inside each sandbox as:
 ```bash
-pi --mode rpc --no-session
+git worktree add /tmp/fleet/agent-01 HEAD --detach
+git worktree add /tmp/fleet/agent-02 HEAD --detach
 ```
 
-Then build a small host-side controller that:
-- starts/stops agents
-- sends prompts to one or many agents
-- collects streamed events/results
-- can steer/follow-up/abort individual agents
-- records logs and results per agent
+Each agent gets its own worktree bind-mounted writable into its container.
 
-Why:
-- better for orchestration than trying to multiplex many TUIs
-- pi already supports RPC mode for subprocess integration
-- a host controller can later provide its own TUI/web UI if desired
+Why start simple:
+- `git worktree add` is fast and cheap
+- cleanup is `git worktree remove`
+- avoids the complexity of maintaining a bare mirror
 
-### Optional: interactive attach for one agent
-Also support attaching to a single sandbox for direct debugging.
+Future option — bare mirror for scale:
+- if N concurrent agents cause `.git/worktrees` contention, move to a bare mirror
+- `~/.local/share/agent-fleet/repos/<project>.git` with per-agent worktrees from that mirror
+- only build this if the simple approach breaks
 
-Possible modes:
-- `machinectl shell <agent>` for a shell inside the container
-- run pi interactively in a tmux pane inside the sandbox for one-off debugging
-- provide a helper like:
-  - `fleet attach agent-03`
-  - `fleet logs agent-03`
+### 3. Nix dev environment: host store, shared read-only
+For MVP, mount the **host Nix store read-only** into containers.
 
-Recommended approach:
-- **RPC for orchestration**
-- **attach/shell for debugging**
+On macOS with OrbStack/Docker, the Nix store is already available in the Linux VM. Mount it into each container:
 
-## Dev Environment Strategy
-The repo should feel "ready to use" inside each agent.
+```bash
+docker run -v /nix/store:/nix/store:ro ...
+```
 
-Recommended ordering:
-1. make the dev environment a first-class flake entrypoint
-2. prewarm/build it once in the dedicated fleet store
-3. launch pi commands through that environment
+Agents activate the dev environment via:
+```bash
+nix develop <repo> -c <agent-command>
+```
 
-Likely entrypoints:
-- `nix develop <repo> -c pi ...`
-- or if using `devenv`, `devenv shell -- pi ...`
+Why skip a dedicated fleet store for now:
+- the host store already has everything built
+- avoids the complexity of a separate daemon, socket, and volume
+- only revisit if host store contamination becomes a real problem
 
-For the first implementation, prefer:
-- `nix develop -c ...`
+Future option — dedicated fleet store:
+- one long-lived store daemon container
+- its `/nix` on a dedicated volume
+- agent containers mount that store read-only
+- useful if you want full host isolation or run on remote machines
 
-Why:
-- lower integration risk
-- aligns with the current repo’s flake dev shell
-- easy to pre-build in the shared dedicated store
+## Interaction Model
 
-If `devenv` becomes the main environment later, the launcher can swap to that without changing the rest of the architecture.
+### Layer 1: fleet tool (agent-agnostic)
+The fleet tool manages container lifecycle only:
+- start/stop containers
+- provision worktrees
+- activate dev environments
+- attach shell to any container
+- stream logs
+- cleanup
+
+### Layer 2: agent drivers (optional, per-agent)
+Thin adapters for orchestration beyond "give me a shell":
+
+| Agent | Send prompt | Get status | Stream output |
+|-------|-------------|------------|---------------|
+| Claude Code | `claude -p "..."` or Agent SDK | session files | stdout/stderr |
+| pi | RPC protocol | RPC status | RPC event stream |
+| Codex | stdin | exit code | stdout/stderr |
+
+Layer 2 is **not needed for MVP**. Start with `fleet attach` for interactive use and `fleet exec` for scripted use.
+
+### Interactive attach
+```bash
+fleet attach agent-01          # shell inside the container
+fleet attach agent-01 --agent  # launch the agent TUI interactively
+fleet logs agent-01            # tail container logs
+```
 
 ## Permission Model
-There does **not** appear to be a documented built-in global pi flag specifically for "skip all permission prompts".
+The container boundary is the safety mechanism.
 
-So the recommended model is:
-- treat the container boundary as the real safety boundary
-- do **not** load permission-gating extensions in the sandboxed fleet runtime
-- or add a custom flag/extension mode such as:
-  - `--trusted-sandbox`
-  - which auto-allows permission checks in your own gate extensions
+- Agents run with full permissions inside their container
+- The container cannot touch the host filesystem beyond its bind-mounted worktree
+- No need for agent-level permission gating (Claude's `--dangerously-skip-permissions`, pi's trusted sandbox, codex's `--full-auto`)
+- The host repo checkout is never modified by agents
 
-Recommendation:
-- keep the host/default pi runtime conservative
-- create a separate fleet runtime profile that is permissive because the container is the protection layer
+Per-agent flags for permissive mode:
+- Claude Code: `--dangerously-skip-permissions`
+- pi: `--no-session` + no permission-gating extensions
+- Codex: `--full-auto`
 
 ## Proposed CLI Shape
-Longer-term, add a small wrapper, maybe something like:
 
 ```bash
-bin/pi-fleet up --repo ~/src/dotfiles --agents 4
-bin/pi-fleet prompt agent-01 "review the uncommitted changes"
-bin/pi-fleet prompt --all "find dead code"
-bin/pi-fleet steer agent-02 "stop and focus on tests"
-bin/pi-fleet attach agent-03
-bin/pi-fleet logs agent-04
-bin/pi-fleet down
+fleet up --repo ~/src/project --agents 3
+fleet up --repo ~/src/project --agents 3 --cmd "claude --dangerously-skip-permissions"
+fleet up --repo ~/src/project --agents 3 --cmd "pi --mode rpc --no-session"
+
+fleet ls                                    # list running agents
+fleet attach agent-01                       # shell into container
+fleet exec agent-01 "run the test suite"    # run a command in the agent's shell
+fleet logs agent-01                         # tail logs
+fleet down                                  # stop all, clean up worktrees
+fleet down --keep-worktrees                 # stop containers, keep worktrees
 ```
 
-Possible internals:
-- `fleet up`
-  - refresh bare mirror
-  - create/update worktrees
-  - ensure dedicated store daemon is running
-  - prewarm dev env closure
-  - start `N` nspawn containers
-  - launch pi in RPC mode in each container
-- `fleet prompt`
-  - send RPC `prompt` to one/all agents
-- `fleet attach`
-  - attach shell or interactive pi session to a chosen agent
-- `fleet down`
-  - stop machines, optionally keep worktrees/store warm
+### `fleet up` internals
+1. Create N git worktrees from the repo
+2. Build/ensure the Nix dev environment closure
+3. Launch N Docker containers, each with:
+   - its worktree bind-mounted writable
+   - host `/nix/store` mounted read-only
+   - isolated `$HOME`, tmp, cache dirs
+   - `nix develop` as the entrypoint wrapper
+4. If `--cmd` is provided, run the agent command inside `nix develop`
+5. Otherwise, containers idle with a shell, ready for `fleet attach`
+
+### `fleet down` internals
+1. Stop and remove containers
+2. Remove git worktrees (unless `--keep-worktrees`)
+3. Clean up state/logs
 
 ## Storage / State Layout
-Suggested local state:
 ```text
-~/.local/share/pi-agent-fleet/
-├── repos/
-│   └── dotfiles.git/
+~/.local/share/agent-fleet/
 ├── worktrees/
-│   └── dotfiles/
+│   └── <project>/
 │       ├── agent-01/
 │       ├── agent-02/
 │       └── ...
-├── sessions/
-│   ├── agent-01/
-│   ├── agent-02/
-│   └── ...
 ├── logs/
 │   ├── agent-01.log
 │   └── ...
 └── runtime/
-    ├── sockets/
     └── metadata/
 ```
 
-Dedicated fleet Nix store/state:
-```text
-/var/lib/pi-agent-fleet/
-└── nix/
-    ├── store/
-    ├── var/
-    └── daemon-socket/
-```
+## Container Image Strategy
+Use a minimal base image with Nix pre-installed:
+- `nixos/nix` or a custom image with Determinate Nix
+- The image is built once and cached; dev environment activation happens at container start via `nix develop`
+- Consider pre-baking the dev environment closure into the image for faster spin-up at scale
 
-## MVP Recommendation
-Keep the first slice small.
+## MVP Plan
 
-### MVP v1
-- one dedicated fleet Nix daemon/store
-- one agent container
-- one worktree from a local bare mirror
-- pi launched via `nix develop -c pi --mode rpc --no-session`
-- simple host script to:
-  - start agent
-  - send one prompt
-  - stream logs
-  - attach shell
+### MVP v1: one agent, one command
+- `fleet up --repo <path>` starts one container
+- one git worktree from the live repo
+- host Nix store mounted read-only
+- `nix develop` activates the dev env
+- `fleet attach` gives a shell
+- `fleet down` cleans up
+- implemented as a small bash script
 
-### MVP v2
-- multiple agents
-- shared worktree provisioning logic
-- basic orchestration commands (`prompt`, `abort`, `logs`, `attach`)
+### MVP v2: N agents
+- `--agents N` flag
+- parallel container launch
+- `fleet ls` to list agents
+- `fleet attach agent-N` to pick one
+- `fleet logs agent-N`
 
-### MVP v3
-- broadcast prompts to multiple agents
-- aggregate results
-- basic scheduler/queueing
-- optional specialized agent roles
+### MVP v3: orchestration
+- `--cmd` to auto-launch an agent in each container
+- `fleet exec` to send commands to running agents
+- basic log aggregation
+- optional: Layer 2 agent drivers for prompt/status/stream
+
+### MVP v4: scale and polish
+- broadcast commands to all agents
+- result aggregation / diffing across agents
+- bare mirror for repos with many concurrent agents
+- optional dedicated fleet Nix store
+- optional specialized agent roles/prompts
 
 ## Key Tradeoffs
 
-### `systemd-nspawn` vs alternatives
-**Recommend `systemd-nspawn` first**.
+### Docker vs `systemd-nspawn`
+**Docker first.**
 
 Pros:
-- integrates naturally with Linux/systemd
-- machine lifecycle is easy to observe and control
-- good bind-mount ergonomics
-- easy to attach/debug
+- cross-platform (macOS + Linux)
+- OrbStack makes it fast on Apple Silicon
+- familiar tooling
+- easy attach/debug
 
 Cons:
-- more Linux/systemd-specific
-- you will need to think carefully about shared socket/store mounts
+- slightly heavier than nspawn on Linux
+- Docker daemon dependency
 
-### Shared dedicated store vs binary cache
-Your proposed shared read-only store + dedicated daemon is workable and probably the right first design.
+If Linux-only deployment becomes important, nspawn can be added as an alternative backend without changing the CLI interface.
 
-Alternative:
-- each agent has its own isolated store
-- populate from a private binary cache
+### Host store vs dedicated fleet store
+**Host store for MVP.**
 
-That alternative is cleaner in some ways, but heavier and slower at first.
+The host already has the closures built. Mounting read-only is free. Only build a dedicated store if:
+- host store contamination is a real problem
+- you want agents to install packages without affecting the host
+- you're running fleet on remote machines without a pre-populated store
 
-Recommendation:
-- start with **one dedicated store daemon + read-only store mounts**
-- only move to a binary cache model if daemon/socket sharing becomes awkward
+### Worktrees from live repo vs bare mirror
+**Live repo worktrees for MVP.**
 
-### Interactive TUI vs RPC
-**Recommend RPC as the control plane**.
+`git worktree add` is fast and simple. Only move to a bare mirror if:
+- `.git/worktrees` contention becomes a problem with N agents
+- you need worktrees on a different branch/ref than what's checked out
+- fleet runs against remote repos
 
-Use interactive attach only for debugging.
-
-Why:
-- multiple TUIs are awkward to orchestrate
-- RPC composes better with a supervisor, queue, or custom UI
-- pi already supports steer/follow-up/abort/state via RPC
-
-## Open Questions
-- Should the dedicated fleet store live in a persistent host directory, a loopback image, or a special daemon container root?
-- Should agent root filesystems be ephemeral per run, or cached between runs?
-- Do you want one global warm fleet store, or one per repo/project?
-- Should worktrees be recreated per run, or reused and hard-reset/cleaned?
-- Should the host controller be a shell script first, or a small typed program (Node/Rust)?
-- Do you want "attach" to mean a shell, an interactive pi TUI, or both?
-- Do you want the fleet runner to support specialized roles/prompts from day one, or only generic workers initially?
-
-## Recommended First Implementation Slice
-1. write a small design-constraining script for one agent only
-2. use a local bare mirror instead of the live repo
-3. run one `systemd-nspawn` agent with an isolated worktree and isolated HOME
-4. run pi in RPC mode inside that agent
-5. drive it from a very small host controller
-6. only after that works, introduce the dedicated fleet Nix daemon/store
-
-Reason:
-- the hardest conceptual parts are lifecycle and interaction
-- if those are wrong, the dedicated-store work will be wasted churn
-- once the one-agent path is clean, scaling to `N` agents is much easier
+## Resolved Questions
+- **Agent rootfs**: ephemeral per run, with a cached Docker image for the base layer.
+- **Worktrees**: recreated per run (clean slate). Cheap with git.
+- **Controller**: shell script first. Migrate to Agent SDK or typed program when real orchestration is needed.
+- **Attach**: both shell (`docker exec`) and agent TUI (run agent interactively inside the container).
+- **Specialized roles**: generic workers only for MVP. Roles/prompts are a Layer 2 concern.
 
 ## Follow-up Implementation Targets
-Potential repo additions later:
-- `bin/pi-fleet`
-- `nixos/modules/pi-agent-fleet.nix`
-- `nixos/modules/pi-agent-store.nix`
-- `plans/pi-agent-sandboxes.md`
-- optional pi extension/profile for permissive trusted-sandbox mode
-
-## References
-- pi RPC mode docs: `docs/rpc.md`
-- pi extension docs: `docs/extensions.md`
-- pi sandbox example: `examples/extensions/sandbox/`
-- pi remote execution example: `examples/extensions/ssh.ts`
+Potential repo additions:
+- `bin/fleet` — the main CLI script
+- `pkgs/fleet-image/` — Nix expression for the base Docker image
+- `plans/pi-agent-sandboxes.md` — this plan
+- optional: Layer 2 agent driver scripts per agent runtime
