@@ -21,5 +21,6 @@ in
   home.packages = [
     fakeBrew
     pkgs.google-cloud-sdk
+    pkgs.orbstack
   ];
 }
