@@ -214,6 +214,7 @@
           nixpkgsConfig = {
             allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [
               "berkley-mono"
+              "orbstack"
               "raycast"
             ];
           };
