@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HIVE_STATE="${HIVE_STATE:-${HOME}/.local/share/agent-hive}"
+HIVE_LABEL="agent-hive"
+HIVE_IMAGE="${HIVE_IMAGE:-nixos/nix}"
+HIVE_NIX_VOLUME="hive-nix-store"
+
+die() { echo "error: $*" >&2; exit 1; }
+
+require_docker() {
+  command -v docker >/dev/null 2>&1 || die "docker is not installed"
+  docker info >/dev/null 2>&1 || die "docker daemon is not running"
+}
+
+# ---------------------------------------------------------------------------
+# Resolve a short agent id (e.g. "01") or full name (e.g. "agent-01").
+# ---------------------------------------------------------------------------
+agent_name() {
+  local input="$1"
+  if [[ "$input" == agent-* ]]; then
+    printf '%s' "$input"
+  else
+    printf 'agent-%s' "$input"
+  fi
+}
+
+container_name() {
+  local repo_slug="$1" agent="$2"
+  printf 'hive-%s-%s' "$repo_slug" "$agent"
+}
+
+repo_slug() {
+  basename "$1"
+}
+
+# ---------------------------------------------------------------------------
+# hive up
+# ---------------------------------------------------------------------------
+cmd_up() {
+  local repo="" agents=1 cmd=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --repo)    [ $# -ge 2 ] || die "--repo requires a path"; repo="$2"; shift 2 ;;
+      --repo=*)  repo="${1#--repo=}"; shift ;;
+      --agents)  [ $# -ge 2 ] || die "--agents requires a number"; agents="$2"; shift 2 ;;
+      --agents=*) agents="${1#--agents=}"; shift ;;
+      --cmd)     [ $# -ge 2 ] || die "--cmd requires a command"; cmd="$2"; shift 2 ;;
+      --cmd=*)   cmd="${1#--cmd=}"; shift ;;
+      *) die "unknown flag: $1" ;;
+    esac
+  done
+
+  [ -n "$repo" ] || die "usage: hive up --repo <path> [--agents N] [--cmd \"...\"]"
+  [ -d "$repo/.git" ] || die "not a git repo: $repo"
+  repo="$(cd "$repo" && pwd)"
+
+  local slug
+  slug="$(repo_slug "$repo")"
+
+  # Ensure shared Nix store volume exists.
+  docker volume inspect "$HIVE_NIX_VOLUME" >/dev/null 2>&1 \
+    || docker volume create "$HIVE_NIX_VOLUME" >/dev/null
+
+  # Ensure state dirs exist.
+  mkdir -p "${HIVE_STATE}/worktrees/${slug}" "${HIVE_STATE}/logs"
+
+  local i=1
+  while [ "$i" -le "$agents" ]; do
+    local agent
+    agent="$(printf 'agent-%02d' "$i")"
+    local cname
+    cname="$(container_name "$slug" "$agent")"
+    local worktree="${HIVE_STATE}/worktrees/${slug}/${agent}"
+
+    # Skip if already running.
+    if docker ps -q -f "name=^${cname}$" 2>/dev/null | grep -q .; then
+      echo "${agent}: already running"
+      i=$((i + 1))
+      continue
+    fi
+
+    # Clean up stopped container with same name.
+    docker rm -f "$cname" >/dev/null 2>&1 || true
+
+    # Create worktree.
+    if [ -d "$worktree" ]; then
+      git -C "$repo" worktree remove --force "$worktree" 2>/dev/null || true
+    fi
+    git -C "$repo" worktree add --detach "$worktree" HEAD
+
+    # Launch container.
+    docker run -d \
+      --name "$cname" \
+      --label "$HIVE_LABEL" \
+      --label "hive.repo=${slug}" \
+      --label "hive.agent=${agent}" \
+      -v "${worktree}:/work" \
+      -v "${HIVE_NIX_VOLUME}:/nix" \
+      -w /work \
+      -e "NIX_CONFIG=experimental-features = nix-command flakes" \
+      "$HIVE_IMAGE" \
+      sleep infinity >/dev/null
+
+    echo "${agent}: started (${cname})"
+
+    # If --cmd was given, run it in background inside the container.
+    if [ -n "$cmd" ]; then
+      local logfile="${HIVE_STATE}/logs/${slug}-${agent}.log"
+      docker exec -d "$cname" sh -c "cd /work && nix develop -c ${cmd}" \
+        > "$logfile" 2>&1 &
+      echo "${agent}: launched cmd in background (log: ${logfile})"
+    fi
+
+    i=$((i + 1))
+  done
+}
+
+# ---------------------------------------------------------------------------
+# hive attach
+# ---------------------------------------------------------------------------
+cmd_attach() {
+  [ $# -ge 1 ] || die "usage: hive attach <agent-id>"
+  require_docker
+
+  local agent
+  agent="$(agent_name "$1")"
+  shift
+
+  # Find the container.
+  local cname
+  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
+  [ -n "$cname" ] || die "no running hive container for ${agent}"
+
+  exec docker exec -it "$cname" bash -l "$@"
+}
+
+# ---------------------------------------------------------------------------
+# hive ls
+# ---------------------------------------------------------------------------
+cmd_ls() {
+  require_docker
+  docker ps --filter "label=${HIVE_LABEL}" \
+    --format 'table {{.Names}}\t{{.Status}}\t{{.Label "hive.repo"}}\t{{.Label "hive.agent"}}'
+}
+
+# ---------------------------------------------------------------------------
+# hive logs
+# ---------------------------------------------------------------------------
+cmd_logs() {
+  [ $# -ge 1 ] || die "usage: hive logs <agent-id>"
+  require_docker
+
+  local agent
+  agent="$(agent_name "$1")"
+
+  local cname
+  cname="$(docker ps -a --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
+  [ -n "$cname" ] || die "no hive container for ${agent}"
+
+  docker logs -f "$cname"
+}
+
+# ---------------------------------------------------------------------------
+# hive down
+# ---------------------------------------------------------------------------
+cmd_down() {
+  require_docker
+  local keep_worktrees=0
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --keep-worktrees) keep_worktrees=1; shift ;;
+      *) die "unknown flag: $1" ;;
+    esac
+  done
+
+  # Find all hive containers.
+  local containers
+  containers="$(docker ps -aq --filter "label=${HIVE_LABEL}")"
+
+  if [ -z "$containers" ]; then
+    echo "no hive containers running"
+    return
+  fi
+
+  # Collect worktree paths before stopping.
+  local worktrees=""
+  if [ "$keep_worktrees" -eq 0 ]; then
+    for cname in $(docker ps -a --filter "label=${HIVE_LABEL}" --format '{{.Names}}'); do
+      local repo_label agent_label
+      repo_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.repo"}}')"
+      agent_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.agent"}}')"
+      local wt="${HIVE_STATE}/worktrees/${repo_label}/${agent_label}"
+      if [ -d "$wt" ]; then
+        worktrees="${worktrees} ${wt}"
+      fi
+    done
+  fi
+
+  # Stop and remove containers.
+  echo "$containers" | xargs docker rm -f >/dev/null
+  echo "containers stopped"
+
+  # Clean up worktrees.
+  if [ "$keep_worktrees" -eq 0 ] && [ -n "$worktrees" ]; then
+    for wt in $worktrees; do
+      git -C "$wt" worktree remove --force "$wt" 2>/dev/null || rm -rf "$wt"
+    done
+    echo "worktrees cleaned"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# hive exec
+# ---------------------------------------------------------------------------
+cmd_exec() {
+  [ $# -ge 2 ] || die "usage: hive exec <agent-id> <command...>"
+  require_docker
+
+  local agent
+  agent="$(agent_name "$1")"
+  shift
+
+  local cname
+  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
+  [ -n "$cname" ] || die "no running hive container for ${agent}"
+
+  docker exec -it "$cname" sh -c "$*"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+usage() {
+  cat <<EOF
+usage: hive <command> [args]
+
+commands:
+  up [--repo <path>] [--agents N] [--cmd "..."]   start agent containers
+  ls                                                list running agents
+  attach <agent-id>                                 shell into a container
+  exec <agent-id> <command>                         run a command in a container
+  logs <agent-id>                                   tail container logs
+  down [--keep-worktrees]                           stop all and clean up
+EOF
+  exit 1
+}
+
+[ $# -ge 1 ] || usage
+require_docker
+
+case "$1" in
+  up)     shift; cmd_up "$@" ;;
+  ls)     shift; cmd_ls "$@" ;;
+  attach) shift; cmd_attach "$@" ;;
+  exec)   shift; cmd_exec "$@" ;;
+  logs)   shift; cmd_logs "$@" ;;
+  down)   shift; cmd_down "$@" ;;
+  *)      usage ;;
+esac
