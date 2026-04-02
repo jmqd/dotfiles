@@ -109,11 +109,12 @@ cmd_up() {
     echo "${agent}: started (${cname})"
 
     # If --cmd was given, start it in a tmux session inside the container.
+    # The command is wrapped to write exit status to /work/.hive-exit on completion.
     if [ -n "$cmd" ]; then
-      local logfile="${HIVE_STATE}/logs/${slug}-${agent}.log"
+      docker exec "$cname" rm -f /work/.hive-exit
       docker exec -d "$cname" \
         tmux new-session -d -s agent -x 200 -y 50 \
-          "cd /work && nix develop -c ${cmd} 2>&1 | tee ${logfile##*/}"
+          "cd /work && nix develop -c ${cmd}; echo \$? > /work/.hive-exit"
       echo "${agent}: running in tmux session 'agent' (hive attach ${agent} to connect)"
     fi
 
@@ -246,7 +247,85 @@ cmd_exec() {
   cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
   [ -n "$cname" ] || die "no running hive container for ${agent}"
 
-  docker exec -it "$cname" sh -c "$*"
+  # Use -it only when stdin is a tty.
+  local flags=""
+  if [ -t 0 ]; then
+    flags="-it"
+  fi
+  docker exec $flags "$cname" sh -c "$*"
+}
+
+# ---------------------------------------------------------------------------
+# hive wait — block until an agent's tmux session exits
+# ---------------------------------------------------------------------------
+cmd_wait() {
+  local wait_all=0
+  if [ $# -eq 0 ] || [ "$1" = "--all" ]; then
+    wait_all=1
+  fi
+  require_docker
+
+  if [ "$wait_all" -eq 1 ]; then
+    local agents
+    agents="$(docker ps --filter "label=${HIVE_LABEL}" --format '{{.Label "hive.agent"}}' | sort)"
+    [ -n "$agents" ] || die "no running hive containers"
+    for a in $agents; do
+      wait_for_agent "$a"
+    done
+  else
+    local agent
+    agent="$(agent_name "$1")"
+    wait_for_agent "$agent"
+  fi
+}
+
+wait_for_agent() {
+  local agent="$1"
+  local cname
+  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
+  [ -n "$cname" ] || die "no running hive container for ${agent}"
+
+  local repo_label
+  repo_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.repo"}}')"
+  local exit_file="${HIVE_STATE}/worktrees/${repo_label}/${agent}/.hive-exit"
+
+  echo "${agent}: waiting..."
+  while [ ! -f "$exit_file" ]; do
+    # Also bail if the container died.
+    if ! docker ps -q -f "name=^${cname}$" 2>/dev/null | grep -q .; then
+      echo "${agent}: container exited unexpectedly" >&2
+      return 1
+    fi
+    sleep 2
+  done
+
+  local code
+  code="$(cat "$exit_file")"
+  if [ "$code" = "0" ]; then
+    echo "${agent}: done (exit 0)"
+  else
+    echo "${agent}: done (exit ${code})" >&2
+  fi
+  return "$code"
+}
+
+# ---------------------------------------------------------------------------
+# hive worktree — print the host worktree path for an agent
+# ---------------------------------------------------------------------------
+cmd_worktree() {
+  [ $# -ge 1 ] || die "usage: hive worktree <agent-id>"
+  require_docker
+
+  local agent
+  agent="$(agent_name "$1")"
+
+  local cname
+  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
+  [ -n "$cname" ] || die "no running hive container for ${agent}"
+
+  local repo_label
+  repo_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.repo"}}')"
+  printf '%s\n' "${HIVE_STATE}/worktrees/${repo_label}/${agent}"
 }
 
 # ---------------------------------------------------------------------------
@@ -261,6 +340,8 @@ commands:
   ls                                                list running agents
   attach <agent-id> [--shell]                        attach to agent tmux session (--shell for plain bash)
   exec <agent-id> <command>                         run a command in a container
+  wait <agent-id> | --all                           block until agent(s) finish
+  worktree <agent-id>                               print host worktree path
   logs <agent-id>                                   tail container logs
   down [--keep-worktrees]                           stop all and clean up
 EOF
@@ -271,11 +352,13 @@ EOF
 require_docker
 
 case "$1" in
-  up)     shift; cmd_up "$@" ;;
-  ls)     shift; cmd_ls "$@" ;;
-  attach) shift; cmd_attach "$@" ;;
-  exec)   shift; cmd_exec "$@" ;;
-  logs)   shift; cmd_logs "$@" ;;
-  down)   shift; cmd_down "$@" ;;
+  up)       shift; cmd_up "$@" ;;
+  ls)       shift; cmd_ls "$@" ;;
+  attach)   shift; cmd_attach "$@" ;;
+  exec)     shift; cmd_exec "$@" ;;
+  wait)     shift; cmd_wait "$@" ;;
+  worktree) shift; cmd_worktree "$@" ;;
+  logs)     shift; cmd_logs "$@" ;;
+  down)     shift; cmd_down "$@" ;;
   *)      usage ;;
 esac
