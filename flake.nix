@@ -216,6 +216,7 @@
               "berkley-mono"
               "orbstack"
               "raycast"
+              "spotify"
             ];
           };
           extraModules = [
