@@ -22,5 +22,6 @@ in
     fakeBrew
     pkgs.google-cloud-sdk
     pkgs.orbstack
+    pkgs.spotify
   ];
 }
