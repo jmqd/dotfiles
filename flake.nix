@@ -89,6 +89,13 @@
         in
         pkgs.callPackage ./pkgs/pi { };
 
+      mkFlowPkg =
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        pkgs.callPackage ./pkgs/flow { };
+
       mkHomePackagesModule =
         system:
         let
@@ -117,6 +124,7 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          flowPkg = mkFlowPkg system;
 
           secretsLint = pkgs.writeShellApplication {
             name = "secrets-lint";
@@ -156,12 +164,17 @@
           };
 
           packages = {
+            flow = flowPkg;
             notion-cli = notionCliPkg;
             pi = piPkg;
             secrets-lint = secretsLint;
           };
 
           apps = {
+            flow = {
+              type = "app";
+              program = "${flowPkg}/bin/flow";
+            };
             pi = {
               type = "app";
               program = "${piPkg}/bin/pi";
