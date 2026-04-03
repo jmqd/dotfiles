@@ -10,6 +10,7 @@
     ".claude/CLAUDE.md".source = ./.pi/agent/AGENTS.md;
     ".pi/agent/AGENTS.md".source = ./.pi/agent/AGENTS.md;
     ".pi/agent/keybindings.json".source = ./.pi/agent/keybindings.json;
+    ".pi/agent/models.json".source = ./.pi/agent/models.json;
     ".pi/agent/settings.json".source = ./.pi/agent/settings.json;
     ".pi/agent/prompts".source = ./.pi/agent/prompts;
     ".pi/agent/skills".source = ./.pi/agent/skills;

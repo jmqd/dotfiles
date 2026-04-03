@@ -1,0 +1,25 @@
+{
+  "providers": {
+    "openai-codex": {
+      "baseUrl": "https://chatgpt.com/backend-api",
+      "apiKey": "OPENAI_API_KEY",
+      "api": "openai-codex-responses",
+      "models": [
+        {
+          "id": "gpt-5.4-pro",
+          "name": "GPT-5.4 Pro",
+          "reasoning": true,
+          "input": ["text", "image"],
+          "cost": {
+            "input": 30,
+            "output": 180,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          },
+          "contextWindow": 1050000,
+          "maxTokens": 128000
+        }
+      ]
+    }
+  }
+}
