@@ -1,8 +1,8 @@
 {
-  "cursorUp": ["up", "alt+i"],
-  "cursorLeft": ["left", "ctrl+b", "alt+j"],
-  "cursorDown": ["down", "alt+k"],
-  "cursorRight": ["right", "ctrl+f", "alt+l"],
-  "selectUp": ["up", "alt+i"],
-  "selectDown": ["down", "alt+k"]
+  "tui.editor.cursorUp": ["up", "alt+i"],
+  "tui.editor.cursorLeft": ["left", "ctrl+b", "alt+j"],
+  "tui.editor.cursorDown": ["down", "alt+k"],
+  "tui.editor.cursorRight": ["right", "ctrl+f", "alt+l"],
+  "tui.select.up": ["up", "alt+i"],
+  "tui.select.down": ["down", "alt+k"]
 }
