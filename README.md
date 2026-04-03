@@ -40,6 +40,10 @@ nix develop .#pi-packaging -c bash -lc 'cd pkgs/pi && npm install --package-lock
 nix build .#pi
 nix run .#pi
 
+# Build or run the local flow jm.dev personal CLI
+nix build .#flow
+nix run .#flow -- --help
+
 # Run credential-pattern lint manually
 nix run .#secrets-lint
 ```
