@@ -84,11 +84,16 @@ export default function reviewOrchestrator(pi: ExtensionAPI) {
 					return;
 				}
 
-				const apiKey = await ctx.modelRegistry.getApiKey(ctx.model);
-				if (!apiKey) {
-					ctx.ui.notify("No API key available for current model", "error");
+				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+				if (!auth.ok || !auth.apiKey) {
+					ctx.ui.notify(auth.ok ? "No API key available for current model" : auth.error, "error");
 					return;
 				}
+
+				const requestOptions = {
+					apiKey: auth.apiKey,
+					headers: auth.headers,
+				};
 
 				ctx.ui.notify(`Starting multi-pass review for ${target.targetName}`, "info");
 
@@ -131,7 +136,7 @@ export default function reviewOrchestrator(pi: ExtensionAPI) {
 									systemPrompt: SUB_REVIEW_SYSTEM_PROMPT,
 									messages: [toUserMessage(prompt)],
 								},
-								{ apiKey },
+								requestOptions,
 							);
 
 							const output = extractText(response.content).trim();
@@ -181,7 +186,7 @@ export default function reviewOrchestrator(pi: ExtensionAPI) {
 						systemPrompt: AGGREGATOR_SYSTEM_PROMPT,
 						messages: [toUserMessage(aggregatePrompt)],
 					},
-					{ apiKey },
+					requestOptions,
 				);
 
 				const finalReport = extractText(aggregateResponse.content).trim();
@@ -201,7 +206,7 @@ export default function reviewOrchestrator(pi: ExtensionAPI) {
 						systemPrompt: PLANNER_SYSTEM_PROMPT,
 						messages: [toUserMessage(planPrompt)],
 					},
-					{ apiKey },
+					requestOptions,
 				);
 
 				const implementationPlan = extractText(planResponse.content).trim();
