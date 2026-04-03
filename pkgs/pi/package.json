@@ -1,12 +1,12 @@
 {
   "name": "pi-coding-agent-wrapper",
-  "version": "0.60.0",
+  "version": "0.64.0",
   "private": true,
   "type": "module",
   "bin": {
     "pi": "./bin/pi.js"
   },
   "dependencies": {
-    "@mariozechner/pi-coding-agent": "0.60.0"
+    "@mariozechner/pi-coding-agent": "0.64.0"
   }
 }
