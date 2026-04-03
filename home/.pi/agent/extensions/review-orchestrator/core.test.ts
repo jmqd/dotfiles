@@ -35,6 +35,8 @@ test("normalizeScopeKind maps aliases and defaults unknown values to staged", ()
 	assert.equal(normalizeScopeKind("repo"), "repo");
 	assert.equal(normalizeScopeKind("range"), "range");
 	assert.equal(normalizeScopeKind("file"), "file");
+	assert.equal(normalizeScopeKind("commit"), "commit");
+	assert.equal(normalizeScopeKind("head"), "commit");
 	assert.equal(normalizeScopeKind(" staged "), "staged");
 	assert.equal(normalizeScopeKind(""), "staged");
 	assert.equal(normalizeScopeKind("nonsense"), "staged");
@@ -46,6 +48,9 @@ test("parseScope handles supported scopes and aliases", () => {
 	assert.deepEqual(parseScope("working", "staged"), { kind: "uncommitted" });
 	assert.deepEqual(parseScope("uncommitted", "staged"), { kind: "uncommitted" });
 	assert.deepEqual(parseScope("repo", "staged"), { kind: "repo" });
+	assert.deepEqual(parseScope("commit", "staged"), { kind: "commit", value: "HEAD" });
+	assert.deepEqual(parseScope("head", "staged"), { kind: "commit", value: "HEAD" });
+	assert.deepEqual(parseScope("commit HEAD~2", "staged"), { kind: "commit", value: "HEAD~2" });
 	assert.deepEqual(parseScope("range HEAD~3..HEAD", "staged"), { kind: "range", value: "HEAD~3..HEAD" });
 	assert.deepEqual(parseScope("file src/main.ts", "staged"), { kind: "file", value: "src/main.ts" });
 	assert.deepEqual(parseScope("file @src/main.ts", "staged"), { kind: "file", value: "@src/main.ts" });
@@ -53,6 +58,7 @@ test("parseScope handles supported scopes and aliases", () => {
 	assert.equal(parseScope("range   ", "staged"), null);
 	assert.equal(parseScope("file", "staged"), null);
 	assert.equal(parseScope("file   ", "staged"), null);
+	assert.deepEqual(parseScope("commit ", "staged"), { kind: "commit", value: "HEAD" });
 	assert.equal(parseScope("unknown", "staged"), null);
 });
 
@@ -107,7 +113,7 @@ test("stripAtPrefix only removes a leading @ marker", () => {
 	assert.equal(stripAtPrefix("src/main.ts"), "src/main.ts");
 });
 
-test("loadTarget covers staged, range, in-repo file scope, and empty staged scopes", async () => {
+test("loadTarget covers staged, range, commit, in-repo file scope, and empty staged scopes", async () => {
 	const cwd = await mkdtemp(path.join(os.tmpdir(), "review-target-"));
 	const filePath = path.join(cwd, "notes.txt");
 	await writeFile(filePath, "hello world\n", "utf8");
@@ -115,6 +121,9 @@ test("loadTarget covers staged, range, in-repo file scope, and empty staged scop
 	const exec = createExec({
 		"git diff --cached --no-ext-diff --minimal": { stdout: "diff --git a/a b/a\n" },
 		"git diff HEAD~1..HEAD --no-ext-diff --minimal": { stdout: "diff --git a/range b/range\n" },
+		"git show --format=medium --patch --no-ext-diff --minimal HEAD": {
+			stdout: "commit abc123\n\n    Latest commit\n\ndiff --git a/c b/c\n",
+		},
 	});
 
 	assert.deepEqual(await loadTarget(cwd, { kind: "staged" }, { exec }), {
@@ -129,6 +138,13 @@ test("loadTarget covers staged, range, in-repo file scope, and empty staged scop
 		reviewScope: "range HEAD~1..HEAD",
 		scopeDescription: "Git diff for revision range HEAD~1..HEAD.",
 		content: "diff --git a/range b/range",
+	});
+
+	assert.deepEqual(await loadTarget(cwd, { kind: "commit", value: "HEAD" }, { exec }), {
+		targetName: "commit HEAD",
+		reviewScope: "commit HEAD",
+		scopeDescription: "Single commit review for HEAD, including commit metadata and patch.",
+		content: "commit abc123\n\n    Latest commit\n\ndiff --git a/c b/c",
 	});
 
 	const realFilePath = await realpath(filePath);

@@ -2,14 +2,15 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export type ScopeKind = "staged" | "uncommitted" | "repo" | "range" | "file";
+export type ScopeKind = "staged" | "uncommitted" | "repo" | "range" | "file" | "commit";
 
 export type ScopeSpec =
 	| { kind: "staged" }
 	| { kind: "uncommitted" }
 	| { kind: "repo" }
 	| { kind: "range"; value: string }
-	| { kind: "file"; value: string };
+	| { kind: "file"; value: string }
+	| { kind: "commit"; value: string };
 
 export type TemplateInfo = {
 	body: string;
@@ -50,7 +51,10 @@ export function normalizeScopeKind(value: string): ScopeKind {
 		case "repo":
 		case "range":
 		case "file":
+		case "commit":
 			return value.trim() as ScopeKind;
+		case "head":
+			return "commit";
 		default:
 			return "staged";
 	}
@@ -62,6 +66,7 @@ export function parseScope(args: string, defaultScope: ScopeKind): ScopeSpec | n
 	if (trimmed === "staged") return { kind: "staged" };
 	if (trimmed === "working" || trimmed === "uncommitted") return { kind: "uncommitted" };
 	if (trimmed === "repo") return { kind: "repo" };
+	if (trimmed === "commit" || trimmed === "head") return { kind: "commit", value: "HEAD" };
 	if (trimmed.startsWith("range ")) {
 		const value = trimmed.slice("range ".length).trim();
 		return value ? { kind: "range", value } : null;
@@ -69,6 +74,10 @@ export function parseScope(args: string, defaultScope: ScopeKind): ScopeSpec | n
 	if (trimmed.startsWith("file ")) {
 		const value = trimmed.slice("file ".length).trim();
 		return value ? { kind: "file", value } : null;
+	}
+	if (trimmed.startsWith("commit ")) {
+		const value = trimmed.slice("commit ".length).trim();
+		return value ? { kind: "commit", value } : null;
 	}
 	return null;
 }
@@ -151,6 +160,21 @@ export async function loadTarget(
 				targetName: `range ${scope.value}`,
 				reviewScope: `range ${scope.value}`,
 				scopeDescription: `Git diff for revision range ${scope.value}.`,
+				content,
+			};
+		}
+		case "commit": {
+			const shown = await exec(
+				"git",
+				["show", "--format=medium", "--patch", "--no-ext-diff", "--minimal", scope.value],
+				cwd,
+			);
+			const content = truncateForReview(shown.stdout.trim());
+			if (!content) return null;
+			return {
+				targetName: `commit ${scope.value}`,
+				reviewScope: `commit ${scope.value}`,
+				scopeDescription: `Single commit review for ${scope.value}, including commit metadata and patch.`,
 				content,
 			};
 		}
