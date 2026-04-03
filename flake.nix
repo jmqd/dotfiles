@@ -103,12 +103,14 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          flowPkg = mkFlowPkg system;
         in
         {
           ...
         }:
         {
           home.packages = [
+            flowPkg
             googleworkspaceCliPkg
             notionCliPkg
             piPkg
