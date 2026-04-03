@@ -1,7 +1,7 @@
 ---
 description: Aggregate specialized review findings from separate review passes
 default-scope: uncommitted
-scope-help: uncommitted | staged | repo | range <git-revset> | file <path>
+scope-help: uncommitted | staged | repo | range <git-revset> | file <path> | commit [<git-rev>] | head
 ---
 You are aggregating specialized code review findings for {{TARGET_NAME}}.
 

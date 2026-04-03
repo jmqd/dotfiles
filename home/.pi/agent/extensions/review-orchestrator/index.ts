@@ -68,7 +68,7 @@ export default function reviewOrchestrator(pi: ExtensionAPI) {
 				const defaultScope = normalizeScopeKind(aggregateTemplate.frontmatter["default-scope"] ?? "staged");
 				const scopeHelp =
 					aggregateTemplate.frontmatter["scope-help"] ??
-					"uncommitted | staged | repo | range <git-revset> | file <path>";
+					"uncommitted | staged | repo | range <git-revset> | file <path> | commit [<git-rev>] | head";
 
 				const scope = parseScope(args, defaultScope);
 				if (!scope) {
