@@ -61,7 +61,6 @@ From the historical bootstrap flow and repo contents:
 ### Private/bootstrap items that should not be copied directly into the public flake
 - `~/.env`
 - `~/.git-credentials`
-- `~/.cloudhome.json`
 - `~/.password-store`
 - `~/.gpg-id`
 - private-data sync steps from `bin/link-private-data.sh`

@@ -8,7 +8,6 @@
 ## Private/bootstrap follow-ups
 - [ ] Decide whether `bin/link-private-data.sh` should stay as a script or move into a private Home Manager layer.
 - [ ] Keep `~/.env` provisioning explicit and documented.
-- [ ] Revisit whether `~/.cloudhome.json` is still needed.
 
 ## Emacs cleanup
 - [ ] Inventory any remaining `.doom.d/` assumptions and delete/archive stale Doom config if it is truly unused.

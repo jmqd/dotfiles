@@ -80,7 +80,6 @@ ensure_link "$private_cloud_root/secrets/dotfiles/.password-store" "$HOME/.passw
 ensure_link "$private_cloud_root/secrets/dotfiles/.gpg-id" "$HOME/.gpg-id"
 ensure_link "$private_cloud_root/dotfiles/.env" "$HOME/.env"
 ensure_link "$private_cloud_root/secrets/dotfiles/.git-credentials" "$HOME/.git-credentials"
-ensure_link "$private_cloud_root/dotfiles/.cloudhome.json" "$HOME/.cloudhome.json"
 
 echo
 echo "Done. Home Manager handles public dotfiles; this script only links private data."
