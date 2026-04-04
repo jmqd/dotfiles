@@ -19,50 +19,55 @@ in
   programs.home-manager.enable = true;
 
   # Shared baseline tools available across platforms.
-  home.packages = with pkgs; [
-    berkleyMono
-    awscli2
-    basedpyright
-    bottom
-    broot
-    clang-tools
-    cloc
-    cmake
-    difftastic
-    fd
-    flock
-    gh
-    git
-    git-lfs
-    gopls
-    gnuplot
-    graphviz
-    imagemagick
-    jq
-    lefthook
-    postgresql
-    mise
-    nil
-    pandoc
-    p7zip
-    pkg-config
-    plantuml
-    procs
-    protobuf
-    ripgrep
-    rustup
-    slackdump
-    shellcheck
-    shfmt
-    sqlite
-    tealdeer
-    tree-sitter
-    typescript-language-server
-    unzip
-    wget
-    zip
-    zola
-  ];
+  home.packages =
+    (with pkgs; [
+      berkleyMono
+      awscli2
+      basedpyright
+      bottom
+      broot
+      clang-tools
+      cloc
+      cmake
+      difftastic
+      fd
+      flock
+      gh
+      git
+      git-lfs
+      gopls
+      gnuplot
+      graphviz
+      imagemagick
+      jq
+      lefthook
+      lldb
+      postgresql
+      mise
+      nil
+      pandoc
+      p7zip
+      pkg-config
+      plantuml
+      procs
+      protobuf
+      ripgrep
+      rustup
+      slackdump
+      shellcheck
+      shfmt
+      sqlite
+      tealdeer
+      tree-sitter
+      typescript-language-server
+      unzip
+      wget
+      zip
+      zola
+    ])
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (with pkgs; [
+      gdb
+    ]);
 
   home.sessionPath = [
     "${config.home.homeDirectory}/.cargo/bin"

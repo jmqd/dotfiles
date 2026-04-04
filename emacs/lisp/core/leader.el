@@ -67,6 +67,17 @@
     "cf" '(jmq/eglot-format :which-key "format buffer")
     "cr" '(jmq/eglot-rename :which-key "rename")
 
+    "d" '(:ignore t :which-key "debug")
+    "db" '(dap-breakpoint-toggle :which-key "toggle breakpoint")
+    "dc" '(dap-continue :which-key "continue")
+    "dd" '(dap-debug :which-key "debug")
+    "de" '(dap-debug-edit-template :which-key "edit template")
+    "di" '(dap-step-in :which-key "step in")
+    "dn" '(dap-next :which-key "next")
+    "do" '(dap-step-out :which-key "step out")
+    "dr" '(dap-debug-restart :which-key "restart")
+    "dq" '(dap-disconnect :which-key "disconnect")
+
     "e" '(:ignore t :which-key "errors")
     "en" '(flymake-goto-next-error :which-key "next")
     "ep" '(flymake-goto-prev-error :which-key "previous")

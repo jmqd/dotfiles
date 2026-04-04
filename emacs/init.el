@@ -7,5 +7,6 @@
   (load (expand-file-name "completion.el" core-dir) nil 'nomessage)
   (load (expand-file-name "leader.el" core-dir) nil 'nomessage)
   (load (expand-file-name "prog.el" core-dir) nil 'nomessage)
+  (load (expand-file-name "debug.el" core-dir) nil 'nomessage)
   (load (expand-file-name "vcs.el" core-dir) nil 'nomessage)
   (load (expand-file-name "org.el" core-dir) nil 'nomessage))
