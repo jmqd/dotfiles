@@ -1,6 +1,10 @@
 { config, lib, pkgs, ... }:
 let
   berkleyMono = pkgs.callPackage ../pkgs/berkley-mono { };
+  aspellWithDicts = pkgs.aspellWithDicts (dicts: [
+    dicts.en
+    dicts."en-computers"
+  ]);
 in
 {
   imports = [
@@ -22,6 +26,7 @@ in
   home.packages =
     (with pkgs; [
       berkleyMono
+      aspellWithDicts
       awscli2
       basedpyright
       bottom
@@ -41,6 +46,7 @@ in
       imagemagick
       jq
       lefthook
+      languagetool
       lldb
       postgresql
       mise

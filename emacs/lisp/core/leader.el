@@ -115,6 +115,14 @@
     "ss" '(consult-line :which-key "search buffer")
     "si" '(consult-imenu :which-key "imenu")
 
+    "t" '(:ignore t :which-key "text")
+    "tc" '(langtool-check :which-key "grammar check")
+    "td" '(langtool-check-done :which-key "grammar clear")
+    "tl" '(langtool-switch-default-language :which-key "grammar language")
+    "tm" '(langtool-show-message-at-point :which-key "grammar message")
+    "tr" '(langtool-correct-buffer :which-key "grammar correct")
+    "ts" '(jmq/toggle-spell-checking :which-key "spell toggle")
+
     "w" '(:ignore t :which-key "windows")
     "ww" '(evil-window-next :which-key "next window")
     "wi" '(evil-window-up :which-key "up")
