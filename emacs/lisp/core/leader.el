@@ -100,6 +100,7 @@
     "jl" '(avy-goto-line :which-key "line")
 
     "o" '(:ignore t :which-key "open")
+    "oe" '(eshell :which-key "eshell")
     "op" '(project-eshell :which-key "project shell")
 
     "p" '(:ignore t :which-key "project")
