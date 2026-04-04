@@ -4,7 +4,7 @@
 find ~ -name ".*" -maxdepth 1
 ```
 
-## install
+## bootstrap
 
 ```bash
 # Fresh macOS bootstrap:
@@ -13,15 +13,27 @@ curl --proto '=https' --tlsv1.2 -sSf -L \
 ```
 
 ```bash
-# Existing local checkout:
+# Existing checkout with Home Manager (macOS or Linux):
 mkdir -p ~/src
 git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
 bash ~/src/dotfiles/bin/hm-switch.sh
+```
 
+```bash
+# NixOS host rebuild (jmws):
+mkdir -p ~/src
+git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
+sudo nixos-rebuild switch --flake ~/src/dotfiles#jmws
+```
+
+```bash
 # Optional private/personal follow-on step:
 # only recommended if your name is "Jordan McQueen" ;)
 bash ~/src/dotfiles/bin/link-private-data.sh
 ```
+
+Home Manager is the canonical path for user-facing config. The private-data linker is only
+for the small set of personal files that still live outside the public flake.
 
 ## git hooks
 
