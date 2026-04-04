@@ -128,6 +128,39 @@
           piPkg = mkPiPkg system;
           flowPkg = mkFlowPkg system;
 
+          shellScriptFiles = [
+            "bin/bootstrap-macos.sh"
+            "bin/bootstrap-rust.sh"
+            "bin/hm-switch.sh"
+            "bin/link-private-data.sh"
+            "bin/lint-secrets.sh"
+            "bin/setup-git-hooks.sh"
+          ];
+
+          shellcheckCheck = pkgs.runCommand "shellcheck-bin-scripts" {
+            nativeBuildInputs = [ pkgs.shellcheck ];
+          } ''
+            cd ${./.}
+            shellcheck ${pkgs.lib.escapeShellArgs shellScriptFiles}
+            touch $out
+          '';
+
+          shfmtCheck = pkgs.runCommand "shfmt-bin-scripts" {
+            nativeBuildInputs = [ pkgs.shfmt ];
+          } ''
+            cd ${./.}
+            shfmt -d ${pkgs.lib.escapeShellArgs shellScriptFiles}
+            touch $out
+          '';
+
+          reviewOrchestratorTests = pkgs.runCommand "review-orchestrator-tests" {
+            nativeBuildInputs = [ pkgs.nodejs ];
+          } ''
+            cd ${./.}
+            node --test home/.pi/agent/extensions/review-orchestrator/core.test.ts
+            touch $out
+          '';
+
           secretsLint = pkgs.writeShellApplication {
             name = "secrets-lint";
             runtimeInputs = [ pkgs.gitleaks ];
@@ -170,6 +203,13 @@
             notion-cli = notionCliPkg;
             pi = piPkg;
             secrets-lint = secretsLint;
+          };
+
+          checks = {
+            flow = flowPkg;
+            review-orchestrator-tests = reviewOrchestratorTests;
+            shellcheck-bin-scripts = shellcheckCheck;
+            shfmt-bin-scripts = shfmtCheck;
           };
 
           apps = {
