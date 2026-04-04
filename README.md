@@ -13,11 +13,14 @@ curl --proto '=https' --tlsv1.2 -sSf -L \
 ```
 
 ```bash
-# Existing local checkout or private/personal follow-on step:
-# only recommended if your name is "Jordan McQueen" ;)
+# Existing local checkout:
 mkdir -p ~/src
 git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
-nix develop ~/src/dotfiles -c bash ~/src/dotfiles/bin/install.sh
+bash ~/src/dotfiles/bin/hm-switch.sh
+
+# Optional private/personal follow-on step:
+# only recommended if your name is "Jordan McQueen" ;)
+bash ~/src/dotfiles/bin/link-private-data.sh
 ```
 
 ## git hooks

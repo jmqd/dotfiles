@@ -9,10 +9,10 @@ Parallel scan across bootstrap scripts, shell configs, i3/i3status configs, NixO
 - `RED`: likely skip for now.
 
 ## (A) Correctness / Logic / Overall Fixes
-1. `A1` `GREEN` Fix installer root-context bug (`README` uses `sudo sh`, so `~` resolves to root and user files land under root home).
-Refs: [README.md](/Users/jmq/src/dotfiles/README.md#L13), [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L24), [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L49), [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L63)
-2. `A2` `GREEN` Make installer idempotent and fail-fast (`set -euo pipefail`, guarded clones, safer symlink behavior for reruns).
-Refs: [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L54), [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L55), [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L42)
+1. `A1` `GREEN` Fix legacy bootstrap root-context bugs (older bootstrap flows wrote user files in the wrong home when run under the wrong user).
+Refs: historical bootstrap flow, README
+2. `A2` `GREEN` Make the private-data linker idempotent and fail-fast (`set -euo pipefail`, guarded symlink behavior for reruns).
+Refs: [bin/link-private-data.sh](/Users/jmq/src/dotfiles/bin/link-private-data.sh)
 3. `A3` `GREEN` Fix broken git alias `fixup` (currently malformed around `git rev-parse`).
 Refs: [.gitconfig](/Users/jmq/src/dotfiles/.gitconfig#L13)
 4. `A4` `GREEN` Fix `gptel-api-key` loading logic in Doom config (`insert-file-contents` does not return the key string as used here).
@@ -21,10 +21,10 @@ Refs: [.doom.d/config.el](/Users/jmq/src/dotfiles/.doom.d/config.el#L59)
 Refs: [.i3/status_bar.toml](/Users/jmq/src/dotfiles/.i3/status_bar.toml#L3)
 
 ## (B) Security / Leaks / Privacy
-1. `B1` `GREEN` Stop sourcing `~/.env` as code in installer path (high-risk especially with current `sudo` invocation model).
-Refs: [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L49)
+1. `B1` `GREEN` Stop sourcing `~/.env` as code in bootstrap paths (high-risk especially with user/context confusion).
+Refs: historical bootstrap flow
 2. `B2` `YELLOW` Replace plaintext git credential storage with OS-backed helper (`osxkeychain`, `libsecret`, or GCM).
-Refs: [.gitconfig](/Users/jmq/src/dotfiles/.gitconfig#L16), [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L43)
+Refs: [.gitconfig](/Users/jmq/src/dotfiles/.gitconfig#L16), [bin/link-private-data.sh](/Users/jmq/src/dotfiles/bin/link-private-data.sh)
 3. `B3` `YELLOW` Harden SSH defaults explicitly on NixOS (`PasswordAuthentication`, `PermitRootLogin`, optional `KbdInteractiveAuthentication`).
 Refs: [nixos/configuration.nix](/Users/jmq/src/dotfiles/nixos/configuration.nix#L64)
 4. `B4` `YELLOW` Reassess external network calls from status bar (`wttr.in`, `1.1.1.1`) if privacy-sensitive.
@@ -45,8 +45,8 @@ Refs: [.i3/config](/Users/jmq/src/dotfiles/.i3/config#L154), [.config/i3status/i
 Refs: [.i3/config](/Users/jmq/src/dotfiles/.i3/config#L8), [bin/i3-renameworkspaces.pl](/Users/jmq/src/dotfiles/bin/i3-renameworkspaces.pl#L1)
 3. `D3` `GREEN` Remove empty placeholder `.config/prefs`.
 Refs: [.config/prefs](/Users/jmq/src/dotfiles/.config/prefs)
-4. `D4` `YELLOW` Remove Doom bootstrap from installer once handcrafted Emacs setup is live.
-Refs: [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L16), [bin/install.sh](/Users/jmq/src/dotfiles/bin/install.sh#L19)
+4. `D4` `YELLOW` Remove Doom bootstrap from legacy bootstrap flows once handcrafted Emacs setup is live.
+Refs: historical bootstrap flow
 
 ## Proposed First Implementation Batch
 - `A1`, `A2`, `A3`, `A5`, `B1`, `C1`, `D1`, `D3`
