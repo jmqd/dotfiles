@@ -49,10 +49,10 @@
   };
   services.timesyncd.enable = true;
 
+  services.displayManager.defaultSession = "none+i3";
   services.xserver = {
     enable = true;
     desktopManager = { xterm.enable = false; };
-    displayManager = { defaultSession = "none+i3"; };
     windowManager.i3 = {
       enable = true;
       extraPackages = with pkgs; [ dmenu i3status i3lock i3wsr ];
@@ -64,8 +64,6 @@
       enable = true;
       qemu = {
         swtpm.enable = true;
-        ovmf.enable = true;
-        ovmf.packages = [ pkgs.OVMFFull.fd ];
       };
     };
     spiceUSBRedirection.enable = true;

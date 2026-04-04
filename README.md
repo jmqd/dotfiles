@@ -36,6 +36,9 @@ bash ~/src/dotfiles/bin/setup-git-hooks.sh
 # (git/python3/awscli2)
 nix develop
 
+# Run the repo's lightweight automated checks
+nix flake check
+
 # Regenerate the pi package lockfile with flake-pinned Node/npm
 nix develop .#pi-packaging -c bash -lc 'cd pkgs/pi && npm install --package-lock-only --ignore-scripts'
 
