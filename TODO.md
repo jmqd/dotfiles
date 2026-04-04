@@ -1,33 +1,24 @@
 # TODO
 
-## 1) Nixify dotfiles
-- [ ] Decide target model: `NixOS` system config vs `nix` package manager + `home-manager`.
-- [ ] Create a flake-based layout for reproducible setup.
-- [ ] Move user-facing dotfiles/config into `home-manager` modules.
-- [ ] Package or wire in local scripts from `bin/`.
-- [ ] Define a clean bootstrap path for a brand-new machine.
+## Current priorities
+- [ ] Add lightweight repo quality checks and a canonical `nix flake check` path.
+- [ ] Audit the remaining `bin/` scripts and decide which should be exposed in Home Manager PATH, kept repo-local, or archived.
+- [ ] Tighten bootstrap docs for macOS, Linux, NixOS, and the optional private-data follow-on flow.
 
-## 2) Remove Doom Emacs dependency
-- [ ] Inventory what is currently provided by `.doom.d/`.
-- [ ] Create a piecewise Emacs config (`early-init.el`, `init.el`, and modular files).
-- [ ] Set up package management (`use-package` with `package.el` or `straight.el`).
-- [ ] Port keybindings, completion, LSP, org, and language tooling incrementally.
-- [ ] Document migration notes and parity gaps during transition.
-- [ ] Remove Doom-specific install/bootstrapping from machine setup.
+## Private/bootstrap follow-ups
+- [ ] Decide whether `bin/link-private-data.sh` should stay as a script or move into a private Home Manager layer.
+- [ ] Keep `~/.env` provisioning explicit and documented.
+- [ ] Revisit whether `~/.cloudhome.json` is still needed.
 
-## 3) Fixes and modernization
-- [ ] Audit shell setup (`.bashrc`, `.zshrc`) for portability and startup performance.
-- [ ] Modernize install/bootstrap docs and workflows.
-- [ ] Add quality checks where useful (`shellcheck`, formatting, Nix checks).
-- [ ] Refresh aging configs (tmux, terminal, WM, git) against current defaults.
+## Emacs cleanup
+- [ ] Inventory any remaining `.doom.d/` assumptions and delete/archive stale Doom config if it is truly unused.
+- [ ] Document handcrafted Emacs parity gaps only if they still matter in practice.
 
-## 4) Add style settings for pi
+## Pi / review tooling
+- [ ] Decide whether to add opinionated pi style defaults beyond the current agent config.
+- [ ] Consider a small smoke-test path for the `/review` extension beyond the current unit tests.
 
-## 5) Agent sandboxes / fleet runner
-- [ ] Design a reproducible multi-agent sandbox runner for pi on Linux.
-- [ ] Use per-agent worktrees cloned from a local bare mirror, not the live repo checkout.
-- [ ] Provide an isolated shared Nix daemon/store for agents that does not touch the host `/nix/store`.
-- [ ] Make the repo dev environment available inside each sandbox so tools "just work" (`nix develop` / `devenv`).
-- [ ] Support running N agents in N sandboxes with permission gates disabled inside the sandbox boundary.
-- [ ] Support both headless orchestration and optional interactive attach/debug for a specific agent.
-- [ ] Write down the target design and rollout plan.
+## Hive follow-ups
+- [ ] Decide whether hive should move from live-repo worktrees to a local bare mirror.
+- [ ] Evaluate stronger sandboxing defaults (`--hardened`, non-root user, read-only rootfs, dedicated store).
+- [ ] Add a small Docker/OrbStack smoke-test path for hive.
