@@ -4,6 +4,8 @@ set -euo pipefail
 HIVE_STATE="${HIVE_STATE:-${HOME}/.local/share/agent-hive}"
 HIVE_LABEL="agent-hive"
 HIVE_IMAGE="${HIVE_IMAGE:-nixos/nix}"
+HIVE_CONTAINER_SHELL="${HIVE_CONTAINER_SHELL:-sh}"
+HIVE_KEEPALIVE_CMD="${HIVE_KEEPALIVE_CMD:-while :; do sleep 3600; done}"
 HIVE_NIX_VOLUME="hive-nix-store"
 
 die() { echo "error: $*" >&2; exit 1; }
@@ -165,7 +167,7 @@ cmd_up() {
 
     docker run "${docker_args[@]}" \
       "$HIVE_IMAGE" \
-      sleep infinity >/dev/null
+      "$HIVE_CONTAINER_SHELL" -lc "$HIVE_KEEPALIVE_CMD" >/dev/null
 
     echo "${agent}: started (${cname})"
 

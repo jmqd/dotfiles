@@ -330,6 +330,7 @@ assert_contains "$run_log" '--cap-drop=ALL'
 assert_contains "$run_log" '/nix/store:/nix/store:ro'
 assert_contains "$run_log" 'hive-repo-agent-01'
 assert_contains "$run_log" 'hive-repo-agent-02'
+assert_contains "$run_log" 'sh -lc while :; do sleep 3600; done'
 
 ls_output="$(hive ls --repo "$repo_dir")"
 assert_contains "$ls_output" 'hive-repo-agent-01'
