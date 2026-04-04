@@ -45,6 +45,7 @@ in
       graphviz
       imagemagick
       jq
+      just
       lefthook
       languagetool
       lldb
