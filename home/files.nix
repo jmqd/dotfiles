@@ -5,6 +5,9 @@
     ".gdbinit".source = ../.gdbinit;
     ".local/bin/hive".source = ../bin/hive;
     ".local/bin/linear".source = ../bin/linear;
+    ".local/bin/link-private-data".source = ../bin/link-private-data.sh;
+    ".local/bin/lint-secrets".source = ../bin/lint-secrets.sh;
+    ".local/bin/setup-git-hooks".source = ../bin/setup-git-hooks.sh;
     ".sqliterc".source = ../.sqliterc;
 
     ".claude/CLAUDE.md".source = ./.pi/agent/AGENTS.md;
