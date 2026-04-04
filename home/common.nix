@@ -62,7 +62,9 @@ in
       typescript-language-server
       unzip
       wget
+      zig
       zip
+      zls
       zola
     ])
     ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (with pkgs; [

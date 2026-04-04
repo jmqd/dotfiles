@@ -65,7 +65,8 @@
    (js-ts-mode . eglot-ensure)
    (typescript-mode . eglot-ensure)
    (typescript-ts-mode . eglot-ensure)
-   (nix-mode . eglot-ensure))
+   (nix-mode . eglot-ensure)
+   (zig-mode . eglot-ensure))
   :config
   (setq eglot-autoshutdown t
         eglot-confirm-server-initiated-edits nil)
@@ -79,7 +80,9 @@
                '((nix-mode nix-ts-mode) . ("nil")))
   (add-to-list 'eglot-server-programs
                '((js-mode js-ts-mode typescript-mode typescript-ts-mode)
-                 . ("typescript-language-server" "--stdio"))))
+                 . ("typescript-language-server" "--stdio")))
+  (add-to-list 'eglot-server-programs
+               '(zig-mode . ("zls"))))
 
 (use-package rust-mode
   :mode "\\.rs\\'")
@@ -87,10 +90,27 @@
 (use-package go-mode
   :mode "\\.go\\'")
 
+(use-package markdown-mode
+  :mode (("README\\.md\\'" . gfm-mode)
+         ("\\.md\\'" . markdown-mode)))
+
 (use-package nix-mode
   :mode "\\.nix\\'")
 
+(use-package plantuml-mode
+  :mode (("\\.plantuml\\'" . plantuml-mode)
+         ("\\.puml\\'" . plantuml-mode)
+         ("\\.uml\\'" . plantuml-mode))
+  :config
+  (when-let ((plantuml (executable-find "plantuml")))
+    (setq plantuml-default-exec-mode 'executable
+          plantuml-executable-path plantuml)))
+
 (use-package yaml-mode
   :mode "\\.ya?ml\\'")
+
+(use-package zig-mode
+  :mode (("\\.zig\\'" . zig-mode)
+         ("\\.zon\\'" . zig-mode)))
 
 (provide 'jmq-prog)

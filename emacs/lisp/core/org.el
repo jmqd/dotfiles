@@ -23,4 +23,7 @@
   :config
   (add-hook 'org-babel-after-execute-hook #'jmq/org-redisplay-inline-images))
 
+(use-package ox-reveal
+  :after org)
+
 (provide 'jmq-org)
