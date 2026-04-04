@@ -17,7 +17,7 @@ Today the repo has:
 - old Linux system config in `nixos/configuration.nix`
 - generated hardware config in `nixos/hardware-configuration.nix`
 - an embedded Home Manager block inside `nixos/configuration.nix`
-- old installer behavior in `bin/install.sh` that still symlinks Linux desktop/user files manually
+- old bootstrap behavior that still symlinked Linux desktop/user files manually
 
 ## Source Inventory
 
@@ -45,8 +45,8 @@ These should move into `home/linux.nix` and related Home Manager modules:
 - user programs (`chromium`, `google-chrome`, `rofi`, `nix-index`, `emacs`, `i3status-rust`)
 - `services.emacs`
 
-### Old installer-managed user files not yet migrated to Home Manager modules
-From `bin/install.sh` and repo contents:
+### Old bootstrap-managed user files not yet migrated to Home Manager modules
+From the historical bootstrap flow and repo contents:
 - `.Xmodmap`
 - `.Xresources`
 - `.i3/config`
@@ -64,7 +64,7 @@ From `bin/install.sh` and repo contents:
 - `~/.cloudhome.json`
 - `~/.password-store`
 - `~/.gpg-id`
-- cloud/bootstrap sync steps from `bin/install.sh`
+- private-data sync steps from `bin/link-private-data.sh`
 
 These likely belong in a private module/bootstrap layer, `sops-nix`, `agenix`, or a separate manual bootstrap step.
 
@@ -219,7 +219,7 @@ Suggested module split:
 - [ ] stop depending on the old `<home-manager/nixos>` path
 - [ ] document the flake-native rebuild command:
   - `sudo nixos-rebuild switch --flake ~/src/dotfiles#jmws`
-- [ ] keep `bin/install.sh` only for non-declarative/bootstrap concerns, or retire it entirely once replaced
+- [ ] keep `bin/link-private-data.sh` only for private/bootstrap concerns, or retire it entirely once replaced
 
 ### Phase 8: Private/bootstrap layer
 - [ ] decide how private secrets/config will be provisioned
