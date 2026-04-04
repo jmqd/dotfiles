@@ -161,6 +161,14 @@
             touch $out
           '';
 
+          hiveSmokeTests = pkgs.runCommand "hive-smoke-tests" {
+            nativeBuildInputs = [ pkgs.bash ];
+          } ''
+            cd ${./.}
+            bash tests/hive-smoke.sh
+            touch $out
+          '';
+
           secretsLint = pkgs.writeShellApplication {
             name = "secrets-lint";
             runtimeInputs = [ pkgs.gitleaks ];
@@ -207,6 +215,7 @@
 
           checks = {
             flow = flowPkg;
+            hive-smoke-tests = hiveSmokeTests;
             review-orchestrator-tests = reviewOrchestratorTests;
             shellcheck-bin-scripts = shellcheckCheck;
             shfmt-bin-scripts = shfmtCheck;
