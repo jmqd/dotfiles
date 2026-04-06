@@ -135,6 +135,8 @@
             "bin/link-private-data.sh"
             "bin/lint-secrets.sh"
             "bin/setup-git-hooks.sh"
+            "tests/flow-search-smoke.sh"
+            "tests/hive-smoke.sh"
           ];
 
           shellcheckCheck = pkgs.runCommand "shellcheck-bin-scripts" {
@@ -166,6 +168,19 @@
           } ''
             cd ${./.}
             bash tests/hive-smoke.sh
+            touch $out
+          '';
+
+          flowSmokeTests = pkgs.runCommand "flow-smoke-tests" {
+            nativeBuildInputs = [
+              pkgs.bash
+              pkgs.git
+              pkgs.jq
+              flowPkg
+            ];
+          } ''
+            cd ${./.}
+            bash tests/flow-search-smoke.sh
             touch $out
           '';
 
@@ -215,6 +230,7 @@
 
           checks = {
             flow = flowPkg;
+            flow-smoke-tests = flowSmokeTests;
             hive-smoke-tests = hiveSmokeTests;
             review-orchestrator-tests = reviewOrchestratorTests;
             shellcheck-bin-scripts = shellcheckCheck;
