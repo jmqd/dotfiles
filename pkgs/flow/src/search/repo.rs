@@ -256,7 +256,7 @@ fn find_repo_root(path: &Path) -> anyhow::Result<PathBuf> {
 
     while let Some(current) = candidate {
         if current.join(".git").exists() {
-            return Ok(current);
+            return Ok(current.canonicalize().unwrap_or(current));
         }
         candidate = current.parent().map(Path::to_path_buf);
     }
@@ -271,9 +271,15 @@ fn render_relative_path(path: &Path) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{DiscoveredRepo, render_relative_path};
+    use super::{
+        DiscoveredRepo, RepoRecord, discover_repos, find_repo_root, render_relative_path,
+        resolve_repo_selector,
+    };
     use crate::search::config::SearchConfig;
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use tempfile::TempDir;
 
     #[test]
     fn repo_from_path_uses_relative_display_name_when_under_root() {
@@ -292,6 +298,205 @@ mod tests {
         assert_eq!(
             render_relative_path(PathBuf::from("repo").as_path()),
             "repo"
+        );
+    }
+
+    #[test]
+    fn discover_repos_includes_linked_worktrees_once_each() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        fs::create_dir_all(&root).expect("create root");
+
+        let repo = init_git_repo(&root.join("project"));
+        commit_file(&repo, "README.md", "main\n");
+
+        let worktree = root.join("project-linked");
+        git(
+            &repo,
+            &["worktree", "add", worktree.to_str().expect("utf8 path")],
+        );
+
+        let config = test_config(root.clone(), sandbox.path().join("state"));
+        let repos = discover_repos(&config).expect("discovery succeeds");
+        let discovered_paths = repos
+            .iter()
+            .map(|repo| repo.path.clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(repos.len(), 2);
+        assert!(discovered_paths.contains(&repo.canonicalize().expect("canonical repo")));
+        assert!(discovered_paths.contains(&worktree.canonicalize().expect("canonical worktree")));
+    }
+
+    #[test]
+    fn resolve_repo_selector_reports_ambiguous_basename_across_multiple_repos() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        let state_dir = sandbox.path().join("state");
+        fs::create_dir_all(root.join("alpha/shared")).expect("create alpha/shared");
+        fs::create_dir_all(root.join("beta/shared")).expect("create beta/shared");
+        fs::write(root.join("alpha/shared/.git"), "gitdir: /tmp/alpha\n").expect("alpha marker");
+        fs::write(root.join("beta/shared/.git"), "gitdir: /tmp/beta\n").expect("beta marker");
+
+        let config = test_config(root.clone(), state_dir);
+        let error = resolve_repo_selector(&config, "shared", sandbox.path())
+            .expect_err("basename should be ambiguous");
+
+        let message = error.to_string();
+        assert!(message.contains("repo selector shared is ambiguous"));
+        assert!(message.contains("alpha/shared"));
+        assert!(message.contains("beta/shared"));
+    }
+
+    #[test]
+    fn resolve_repo_selector_prefers_manifest_records_without_discovery_fallback_when_present() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        fs::create_dir_all(&root).expect("create root");
+
+        let repo = init_git_repo(&root.join("discovered-only"));
+        commit_file(&repo, "README.md", "hello\n");
+
+        let config = test_config(root.clone(), sandbox.path().join("state"));
+        config.ensure_state_dirs().expect("state dirs");
+        fs::write(
+            &config.repos_manifest_path,
+            serde_json::to_string(&vec![RepoRecord {
+                name: "manifest-only".to_owned(),
+                display_name: "manifest-only".to_owned(),
+                path: sandbox
+                    .path()
+                    .join("indexed/manifest-only")
+                    .display()
+                    .to_string(),
+            }])
+            .expect("manifest json"),
+        )
+        .expect("write manifest");
+
+        let error = resolve_repo_selector(&config, "discovered-only", sandbox.path())
+            .expect_err("selector should only see manifest entries");
+        assert_eq!(
+            error.to_string(),
+            "no indexed repo matched selector discovered-only"
+        );
+
+        let selected = resolve_repo_selector(&config, "manifest-only", sandbox.path())
+            .expect("manifest selector resolves");
+        assert_eq!(selected.display_name, "manifest-only");
+    }
+
+    #[test]
+    fn resolve_repo_selector_falls_back_to_discovery_when_manifest_missing() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        fs::create_dir_all(&root).expect("create root");
+
+        let repo = init_git_repo(&root.join("discovered-only"));
+        commit_file(&repo, "README.md", "hello\n");
+
+        let config = test_config(root.clone(), sandbox.path().join("state"));
+        let selected = resolve_repo_selector(&config, "discovered-only", sandbox.path())
+            .expect("selector resolves via discovery");
+
+        assert_eq!(selected.display_name, "discovered-only");
+        assert_eq!(selected.path, repo.canonicalize().expect("canonical repo"));
+    }
+
+    #[test]
+    fn path_like_selector_that_does_not_exist_is_resolved_relative_to_cwd() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        fs::create_dir_all(&root).expect("create root");
+
+        let repo = init_git_repo(&root.join("app"));
+        commit_file(&repo, "README.md", "hello\n");
+        let working_dir = repo.join("nested/current");
+        fs::create_dir_all(&working_dir).expect("working dir");
+
+        let config = test_config(root.clone(), sandbox.path().join("state"));
+        let selected = resolve_repo_selector(&config, "../missing/file.rs", &working_dir)
+            .expect("path-like selector should walk up from cwd-relative path");
+
+        assert_eq!(selected.path, repo.canonicalize().expect("canonical repo"));
+        assert_eq!(selected.display_name, "app");
+    }
+
+    #[test]
+    fn find_repo_root_accepts_linked_worktree_git_file() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let repo = init_git_repo(&sandbox.path().join("project"));
+        commit_file(&repo, "README.md", "hello\n");
+        let worktree = sandbox.path().join("project-linked");
+        git(
+            &repo,
+            &["worktree", "add", worktree.to_str().expect("utf8 path")],
+        );
+
+        let root =
+            find_repo_root(&worktree.join("src/does-not-exist.rs")).expect("repo root resolves");
+        assert_eq!(root, worktree.canonicalize().expect("canonical worktree"));
+    }
+
+    fn test_config(root: PathBuf, state_dir: PathBuf) -> SearchConfig {
+        let root = if root.exists() {
+            root.canonicalize().expect("canonical root")
+        } else {
+            root
+        };
+
+        SearchConfig {
+            roots: vec![root],
+            zoekt_dir: state_dir.join("zoekt"),
+            zoekt_index_dir: state_dir.join("zoekt/index"),
+            metadata_dir: state_dir.join("metadata"),
+            metadata_db_path: state_dir.join("metadata/commits.sqlite"),
+            repos_manifest_path: state_dir.join("metadata/repos.json"),
+            state_path: state_dir.join("state.json"),
+            state_dir,
+            zoekt_listen: "127.0.0.1:6070".to_owned(),
+            excluded_dir_names: vec![
+                ".direnv".to_owned(),
+                ".git".to_owned(),
+                "dist".to_owned(),
+                "node_modules".to_owned(),
+                "result".to_owned(),
+                "target".to_owned(),
+            ],
+        }
+    }
+
+    fn init_git_repo(path: &Path) -> PathBuf {
+        fs::create_dir_all(path).expect("create repo dir");
+        git(path, &["init"]);
+        git(path, &["config", "user.name", "Flow Tests"]);
+        git(path, &["config", "user.email", "flow-tests@example.com"]);
+        path.to_path_buf()
+    }
+
+    fn commit_file(repo: &Path, relative_path: &str, contents: &str) {
+        let file_path = repo.join(relative_path);
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent).expect("create parent dirs");
+        }
+        fs::write(&file_path, contents).expect("write file");
+        git(repo, &["add", relative_path]);
+        git(repo, &["commit", "-m", "test commit"]);
+    }
+
+    fn git(repo: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .output()
+            .expect("run git command");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: stdout={} stderr={}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
         );
     }
 }
