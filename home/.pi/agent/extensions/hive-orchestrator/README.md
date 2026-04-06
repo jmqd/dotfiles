@@ -20,6 +20,7 @@ Pi extension for long-running `hive`-backed parallel work.
   - cherry-pick verified worker commits onto the host integration branch
   - tick the queue forward by polling, integrating, and dispatching dependency-ready tasks
 - user-facing commands:
+  - `/hive-run <goal>`
   - `/hive-init <goal>`
   - `/hive-status`
   - `/hive-tick`
@@ -58,11 +59,19 @@ The orchestrator keeps these host-worktree files (normally ignored by git via `.
 
 High level:
 
-- use `/hive-orchestrator <goal>` when you want the model to drive the workflow
-- use `/hive-init <goal>` to initialize queue state directly
+- use `/hive-run <goal>` when you want pi to inspect the repo, make a solid plan, choose concurrency, write planning notes, initialize/resume the queue, enqueue tasks, and start the workflow
+- use `/hive-orchestrator <goal>` when you want the model to drive the workflow more manually from the prompt template
+- use `/hive-init <goal>` to initialize queue state directly without the higher-level planning workflow
 - use `/hive-status` to poll and display queue state
 - use `/hive-tick` to run one poll/integrate/dispatch step
 - use `/hive-loop 30` to keep ticking every 30 seconds until the queue drains or needs attention
+
+`/hive-run` uses a dedicated one-turn workflow system prompt that forces:
+
+- a real planning phase before worker launch
+- an explicit concurrency decision
+- planning notes in `.hive/orchestrator/planning-notes.md`
+- queue initialization/resume + first tick
 
 You can also explicitly tell the model:
 
