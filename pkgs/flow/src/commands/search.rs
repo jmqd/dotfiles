@@ -632,8 +632,19 @@ fn format_status(output: &StatusOutput) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        SearchOutput, SearchResult, SearchResultsOutput, StatusOutput, format_status, format_text,
+        ReindexOutput, SearchOutput, SearchResult, SearchResultsOutput, StatusOutput,
+        execute_query, format_text,
     };
+    use crate::cli::{CommonArgs, SearchQueryArgs, SearchScopeArgs};
+    use crate::context::Ctx;
+    use crate::output::OutputMode;
+    use crate::search::SearchTools;
+    use crate::search::config::SearchConfig;
+    use crate::search::metadata;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::{Mutex, OnceLock};
+    use tempfile::TempDir;
 
     #[test]
     fn formats_grouped_search_text() {
@@ -678,8 +689,49 @@ mod tests {
     }
 
     #[test]
-    fn formats_status_with_distinct_repo_counts() {
-        let rendered = format_status(&StatusOutput {
+    fn formats_code_commits_reindex_and_status_outputs() {
+        let code_rendered = format_text(&SearchOutput::Code(SearchResultsOutput {
+            query: "needle".to_owned(),
+            repo: None,
+            results: vec![SearchResult::Code {
+                repo: "dotfiles".to_owned(),
+                path: "src/main.rs".to_owned(),
+                line: 7,
+                snippet: "needle();".to_owned(),
+            }],
+            warnings: Vec::new(),
+        }));
+        assert!(code_rendered.contains("Code matches"));
+
+        let commits_rendered = format_text(&SearchOutput::Commits(SearchResultsOutput {
+            query: "needle".to_owned(),
+            repo: None,
+            results: vec![SearchResult::Commit {
+                repo: "dotfiles".to_owned(),
+                commit: "abc123".to_owned(),
+                author: "Jane".to_owned(),
+                author_email: "jane@example.com".to_owned(),
+                authored_at: "2026-04-06T15:00:00+00:00".to_owned(),
+                subject: "search: add tests".to_owned(),
+                body: String::new(),
+                changed_files: vec!["src/main.rs".to_owned()],
+            }],
+            warnings: Vec::new(),
+        }));
+        assert!(commits_rendered.contains("Commit matches"));
+
+        let reindex_rendered = format_text(&SearchOutput::Reindex(ReindexOutput {
+            roots: vec!["/src".to_owned()],
+            repo_count: 2,
+            indexed_repo_count: 1,
+            commit_count: 4,
+            last_reindex_at: "2026-04-06T00:00:00Z".to_owned(),
+            warnings: vec!["skipped repo".to_owned()],
+        }));
+        assert!(reindex_rendered.contains("reindexed 1 repos"));
+        assert!(reindex_rendered.contains("warnings:"));
+
+        let status_rendered = format_text(&SearchOutput::Status(StatusOutput {
             roots: vec!["/src".to_owned()],
             state_dir: "/state".to_owned(),
             zoekt_index_dir: "/state/zoekt/index".to_owned(),
@@ -693,9 +745,207 @@ mod tests {
             indexed_repo_count: 3,
             commit_count: 42,
             last_reindex_at: Some("2026-04-06T00:00:00Z".to_owned()),
-        });
+        }));
+        assert!(status_rendered.contains("discovered_repo_count: 5"));
+        assert!(status_rendered.contains("indexed_repo_count: 3"));
+    }
 
-        assert!(rendered.contains("discovered_repo_count: 5"));
-        assert!(rendered.contains("indexed_repo_count: 3"));
+    #[test]
+    fn rejects_query_when_all_backends_are_disabled() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let config = test_config(sandbox.path().join("src"), sandbox.path().join("state"));
+        let ctx = test_ctx(sandbox.path());
+        let error = execute_query(
+            &ctx,
+            &config,
+            &test_tools(empty_zoekt_script(sandbox.path())),
+            SearchQueryArgs {
+                scope: default_scope(),
+                author: None,
+                since: None,
+                include_dirty: false,
+                no_code: true,
+                no_commits: true,
+                terms: vec!["review".to_owned()],
+            },
+        )
+        .expect_err("query should fail");
+
+        assert!(error
+            .to_string()
+            .contains("search query has no enabled backends"));
+    }
+
+    #[test]
+    fn missing_code_index_still_allows_commit_backend() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let config = test_config(sandbox.path().join("src"), sandbox.path().join("state"));
+        config.ensure_state_dirs().expect("state dirs");
+        metadata::reindex(&config, "git", &[]).expect("metadata db created");
+        let ctx = test_ctx(sandbox.path());
+
+        let output = execute_query(
+            &ctx,
+            &config,
+            &test_tools(empty_zoekt_script(sandbox.path())),
+            SearchQueryArgs {
+                scope: default_scope(),
+                author: None,
+                since: None,
+                include_dirty: false,
+                no_code: false,
+                no_commits: false,
+                terms: vec!["review".to_owned()],
+            },
+        )
+        .expect("commit backend remains usable");
+
+        assert!(output.results.is_empty());
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("Zoekt index is missing"));
+        assert!(output.warnings[0].contains("flow search reindex"));
+    }
+
+    #[test]
+    fn missing_metadata_index_still_allows_code_backend() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let config = test_config(sandbox.path().join("src"), sandbox.path().join("state"));
+        fs::create_dir_all(&config.zoekt_index_dir).expect("create index dir");
+        fs::write(config.zoekt_index_dir.join("test.zoekt"), b"").expect("write index shard");
+        let ctx = test_ctx(sandbox.path());
+
+        let output = execute_query(
+            &ctx,
+            &config,
+            &test_tools(empty_zoekt_script(sandbox.path())),
+            SearchQueryArgs {
+                scope: default_scope(),
+                author: None,
+                since: None,
+                include_dirty: false,
+                no_code: false,
+                no_commits: false,
+                terms: vec!["review".to_owned()],
+            },
+        )
+        .expect("code backend remains usable");
+
+        assert!(output.results.is_empty());
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("commit metadata index is missing"));
+        assert!(output.warnings[0].contains("flow search reindex"));
+    }
+
+    #[test]
+    fn include_dirty_outside_repo_warns_when_commit_backend_is_active() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let config = test_config(sandbox.path().join("src"), sandbox.path().join("state"));
+        config.ensure_state_dirs().expect("state dirs");
+        metadata::reindex(&config, "git", &[]).expect("metadata db created");
+        let outside_repo = sandbox.path().join("outside-repo");
+        fs::create_dir_all(&outside_repo).expect("outside repo dir");
+        let ctx = test_ctx(&outside_repo);
+
+        let output = execute_query(
+            &ctx,
+            &config,
+            &test_tools(empty_zoekt_script(sandbox.path())),
+            SearchQueryArgs {
+                scope: default_scope(),
+                author: None,
+                since: None,
+                include_dirty: true,
+                no_code: true,
+                no_commits: false,
+                terms: vec!["review".to_owned()],
+            },
+        )
+        .expect("commit backend remains usable");
+
+        assert!(output.results.is_empty());
+        assert_eq!(output.warnings.len(), 1);
+        assert!(output.warnings[0].contains("dirty search was requested"));
+        assert!(output.warnings[0].contains("not inside a git repo"));
+    }
+
+    fn default_scope() -> SearchScopeArgs {
+        SearchScopeArgs {
+            repo: None,
+            path: None,
+            limit: 25,
+        }
+    }
+
+    fn test_tools(zoekt_bin: String) -> SearchTools {
+        let _guard = cwd_lock().lock().expect("env lock");
+        unsafe {
+            std::env::set_var("FLOW_SEARCH_GIT_BIN", "git");
+            std::env::set_var("FLOW_SEARCH_ZOEKT_BIN", &zoekt_bin);
+            std::env::set_var("FLOW_SEARCH_ZOEKT_GIT_INDEX_BIN", "zoekt-git-index");
+        }
+        let tools = SearchTools::load();
+        unsafe {
+            std::env::remove_var("FLOW_SEARCH_GIT_BIN");
+            std::env::remove_var("FLOW_SEARCH_ZOEKT_BIN");
+            std::env::remove_var("FLOW_SEARCH_ZOEKT_GIT_INDEX_BIN");
+        }
+        drop(_guard);
+        tools
+    }
+
+    fn test_ctx(working_dir: &Path) -> Ctx {
+        let _guard = cwd_lock().lock().expect("cwd lock");
+        let previous = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(working_dir).expect("set current dir");
+        let ctx = Ctx::new(CommonArgs {
+            automated: true,
+            output: OutputMode::Json,
+            log_format: None,
+        })
+        .expect("ctx builds");
+        std::env::set_current_dir(previous).expect("restore current dir");
+        drop(_guard);
+        ctx
+    }
+
+    fn cwd_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn test_config(root: PathBuf, state_dir: PathBuf) -> SearchConfig {
+        SearchConfig {
+            roots: vec![root],
+            zoekt_dir: state_dir.join("zoekt"),
+            zoekt_index_dir: state_dir.join("zoekt/index"),
+            metadata_dir: state_dir.join("metadata"),
+            metadata_db_path: state_dir.join("metadata/commits.sqlite"),
+            repos_manifest_path: state_dir.join("metadata/repos.json"),
+            state_path: state_dir.join("state.json"),
+            reindex_lock_path: state_dir.join("reindex.lock"),
+            state_dir,
+            zoekt_listen: "127.0.0.1:6070".to_owned(),
+            excluded_dir_names: vec![
+                ".direnv".to_owned(),
+                ".git".to_owned(),
+                "dist".to_owned(),
+                "node_modules".to_owned(),
+                "result".to_owned(),
+                "target".to_owned(),
+            ],
+        }
+    }
+
+    fn empty_zoekt_script(root: &Path) -> String {
+        let script_path = root.join("fake-zoekt.sh");
+        fs::write(&script_path, "#!/bin/sh\nexit 0\n").expect("write zoekt script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&script_path).expect("metadata").permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&script_path, perms).expect("chmod");
+        }
+        script_path.display().to_string()
     }
 }
