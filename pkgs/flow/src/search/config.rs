@@ -27,6 +27,7 @@ pub struct SearchConfig {
     pub metadata_db_path: PathBuf,
     pub repos_manifest_path: PathBuf,
     pub state_path: PathBuf,
+    pub reindex_lock_path: PathBuf,
     pub zoekt_listen: String,
     pub excluded_dir_names: Vec<String>,
 }
@@ -34,7 +35,8 @@ pub struct SearchConfig {
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SearchState {
     pub last_reindex_at: Option<String>,
-    pub repo_count: usize,
+    pub discovered_repo_count: usize,
+    pub indexed_repo_count: usize,
     pub commit_count: usize,
 }
 
@@ -69,6 +71,7 @@ impl SearchConfig {
         let metadata_db_path = metadata_dir.join("commits.sqlite");
         let repos_manifest_path = metadata_dir.join("repos.json");
         let state_path = state_dir.join("state.json");
+        let reindex_lock_path = state_dir.join("reindex.lock");
         let zoekt_listen =
             std::env::var("FLOW_SEARCH_ZOEKT_LISTEN").unwrap_or_else(|_| DEFAULT_LISTEN.to_owned());
 
@@ -81,6 +84,7 @@ impl SearchConfig {
             metadata_db_path,
             repos_manifest_path,
             state_path,
+            reindex_lock_path,
             zoekt_listen,
             excluded_dir_names: EXCLUDED_DIRS.iter().map(|dir| (*dir).to_owned()).collect(),
         })
@@ -187,13 +191,18 @@ fn expand_home(value: &str, home_dir: &Path) -> anyhow::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::SearchConfig;
+    use super::{SearchConfig, SearchState};
 
     #[test]
     fn default_config_uses_src_root_and_local_state_dir() {
         let config = SearchConfig::load().expect("config loads");
         assert!(config.roots.iter().any(|root| root.ends_with("src")));
         assert!(config.state_dir.ends_with(".local/share/flow-search"));
+        assert!(
+            config
+                .reindex_lock_path
+                .ends_with(".local/share/flow-search/reindex.lock")
+        );
         assert_eq!(config.zoekt_listen, "127.0.0.1:6070");
     }
 
@@ -203,5 +212,23 @@ mod tests {
         assert!(config.is_excluded_dir_name("node_modules"));
         assert!(config.is_excluded_dir_name("target"));
         assert!(!config.is_excluded_dir_name("src"));
+    }
+
+    #[test]
+    fn search_state_tracks_discovered_and_indexed_counts_separately() {
+        let state = SearchState {
+            last_reindex_at: Some("2026-04-06T00:00:00Z".to_owned()),
+            discovered_repo_count: 5,
+            indexed_repo_count: 3,
+            commit_count: 42,
+        };
+
+        let json = serde_json::to_string(&state).expect("state serializes");
+        assert!(json.contains("\"discovered_repo_count\":5"));
+        assert!(json.contains("\"indexed_repo_count\":3"));
+        assert!(!json.contains("\"repo_count\""));
+
+        let roundtrip: SearchState = serde_json::from_str(&json).expect("state deserializes");
+        assert_eq!(roundtrip, state);
     }
 }
