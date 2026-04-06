@@ -163,6 +163,14 @@
             touch $out
           '';
 
+          hiveOrchestratorTests = pkgs.runCommand "hive-orchestrator-tests" {
+            nativeBuildInputs = [ pkgs.nodejs ];
+          } ''
+            cd ${./.}
+            node --test home/.pi/agent/extensions/hive-orchestrator/core.test.ts
+            touch $out
+          '';
+
           hiveSmokeTests = pkgs.runCommand "hive-smoke-tests" {
             nativeBuildInputs = [ pkgs.bash ];
           } ''
@@ -231,6 +239,7 @@
           checks = {
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
+            hive-orchestrator-tests = hiveOrchestratorTests;
             hive-smoke-tests = hiveSmokeTests;
             review-orchestrator-tests = reviewOrchestratorTests;
             shellcheck-bin-scripts = shellcheckCheck;

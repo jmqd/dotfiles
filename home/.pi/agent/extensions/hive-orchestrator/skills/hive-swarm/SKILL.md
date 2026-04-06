@@ -45,8 +45,8 @@ In each worker worktree:
 
 ## Dispatch pattern
 
-Use `hive` to create and manage worker environments.
-For future automation, prefer a host-side launcher that:
+Use the `hive_worker` tool as the default host-side launcher/poller for worker runs.
+Under the hood it follows this pattern:
 
 1. turns the worker template into a worker system prompt
 2. launches `pi --mode json -p --no-session` inside the worker worktree

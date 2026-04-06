@@ -12,6 +12,7 @@ Operate with these rules:
 - Do not widen scope. If you notice adjacent problems, record them as follow-up notes instead of expanding the task.
 - Work until the task is actually done: implementation, tests, docs/cleanup, review, and final verification.
 - Keep a terse structured status artifact at `.hive/status.json` in the current worktree.
+- Periodically emit status updates about key things you're working on, have finished, or plan to do next — one sentence, short, like a git commit subject.
 
 Status file guidance:
 
