@@ -25,11 +25,13 @@ import {
 import {
 	addTasksToQueue,
 	applyTaskIntegrationResult,
+	createAutoFollowUpTask,
 	createOrchestratorQueue,
 	getOrchestratorPaths,
 	isTaskReadyForDispatch,
 	loadQueue,
 	renderQueueSummary,
+	shouldAutoCreateFollowUpTask,
 	syncTaskWithWorker,
 	writeOrchestratorArtifacts,
 	type OrchestratorProgressEntry,
@@ -427,28 +429,49 @@ async function integrateTask(
 	if (currentBranch !== queue.integrationBranch) {
 		return {
 			state: "blocked",
+			reason: "host_branch_mismatch",
 			message: `current branch is ${currentBranch}, expected ${queue.integrationBranch}`,
 			workerHeadSha: task.workerHeadSha,
 		};
 	}
 
-	await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+	try {
+		await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+	} catch (error) {
+		return {
+			state: "blocked",
+			reason: "host_dirty",
+			message: error instanceof Error ? error.message : String(error),
+			workerHeadSha: task.workerHeadSha,
+		};
+	}
 	const workerDetails = await pollWorker(pi, ctx, { repo: repoRoot, agent: task.agent }, signal);
 	const worker = workerDetails.worker;
 	if (worker.isRunning) {
 		return {
 			state: "blocked",
+			reason: "worker_running",
 			message: `worker ${task.agent} is still running`,
 			workerHeadSha: task.workerHeadSha,
 		};
 	}
 
-	await ensureCleanWorkingTree(pi, worker.worktreeDir, `worker worktree ${worker.worktreeDir}`, signal);
+	try {
+		await ensureCleanWorkingTree(pi, worker.worktreeDir, `worker worktree ${worker.worktreeDir}`, signal);
+	} catch (error) {
+		return {
+			state: "blocked",
+			reason: "worker_dirty",
+			message: error instanceof Error ? error.message : String(error),
+			workerHeadSha: task.workerHeadSha,
+		};
+	}
 	const actualWorkerHeadSha = await getHeadSha(pi, worker.worktreeDir, signal);
 	const validation = validateWorkerDoneStatus(worker.status, actualWorkerHeadSha);
 	if (!validation.ok) {
 		return {
 			state: "blocked",
+			reason: "worker_not_ready",
 			message: `worker is not ready for integration: ${validation.errors.join("; ")}`,
 			workerHeadSha: task.workerHeadSha,
 		};
@@ -471,38 +494,62 @@ async function integrateTask(
 	if (diffCheck.code !== 1) {
 		return {
 			state: "failed",
+			reason: "diff_failed",
 			message: `failed to diff host against worker head ${workerHeadSha}: ${diffCheck.stderr || diffCheck.stdout}`,
 			workerHeadSha,
 		};
 	}
 
-	try {
-		await withTemporaryIntegrationWorktree(pi, repoRoot, task.id, signal, async (integrationWorktree) => {
-			const cherryPick = await pi.exec(
-				"git",
-				["-C", integrationWorktree, "cherry-pick", "-x", workerHeadSha],
-				{ cwd: integrationWorktree, signal, timeout: 60_000 },
-			);
-			if (cherryPick.code !== 0) {
-				await tryAbortCherryPick(pi, integrationWorktree, signal);
-				throw new Error(`temp cherry-pick failed: ${cherryPick.stderr || cherryPick.stdout}`);
-			}
+	const tempVerification = await withTemporaryIntegrationWorktree(pi, repoRoot, task.id, signal, async (integrationWorktree) => {
+		const cherryPick = await pi.exec(
+			"git",
+			["-C", integrationWorktree, "cherry-pick", "-x", workerHeadSha],
+			{ cwd: integrationWorktree, signal, timeout: 60_000 },
+		);
+		if (cherryPick.code !== 0) {
+			await tryAbortCherryPick(pi, integrationWorktree, signal);
+			return {
+				ok: false as const,
+				reason: "integration_conflict" as const,
+				message: `temp cherry-pick failed: ${cherryPick.stderr || cherryPick.stdout}`,
+			};
+		}
 
+		try {
 			await runFinalChecks(pi, integrationWorktree, queue.finalCheckCommands, signal);
-		});
-	} catch (error) {
+			return { ok: true as const };
+		} catch (error) {
+			return {
+				ok: false as const,
+				reason: "integration_checks_failed" as const,
+				message: error instanceof Error ? error.message : String(error),
+			};
+		}
+	});
+	if (!tempVerification.ok) {
 		return {
 			state: "blocked",
-			message: error instanceof Error ? error.message : String(error),
+			reason: tempVerification.reason,
+			message: tempVerification.message,
 			workerHeadSha,
 		};
 	}
 
-	await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+	try {
+		await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+	} catch (error) {
+		return {
+			state: "blocked",
+			reason: "host_dirty",
+			message: error instanceof Error ? error.message : String(error),
+			workerHeadSha,
+		};
+	}
 	const hostHeadStill = await getHeadSha(pi, repoRoot, signal);
 	if (hostHeadStill !== hostHeadBefore) {
 		return {
 			state: "blocked",
+			reason: "host_changed",
 			message: `host branch moved during integration attempt (${hostHeadBefore.slice(0, 12)} -> ${hostHeadStill.slice(0, 12)})`,
 			workerHeadSha,
 		};
@@ -517,6 +564,7 @@ async function integrateTask(
 		await tryAbortCherryPick(pi, repoRoot, signal);
 		return {
 			state: "blocked",
+			reason: "integration_conflict",
 			message: `host cherry-pick failed: ${hostCherryPick.stderr || hostCherryPick.stdout}`,
 			workerHeadSha,
 		};
@@ -637,7 +685,15 @@ async function tickOrchestrator(
 			updatedAt: new Date().toISOString(),
 		};
 		recentChanges.push(applied.note);
-		if (result.state === "merged") integratedTaskIds.push(task.id);
+		if (result.state === "merged") {
+			integratedTaskIds.push(task.id);
+		} else if (shouldAutoCreateFollowUpTask(result) && !applied.task.replacementTaskId) {
+			const followUp = createAutoFollowUpTask(nextQueue, applied.task, result, new Date().toISOString());
+			nextQueue = followUp.queue;
+			recentChanges.push(
+				`Auto-created ${followUp.followUp.id} to replace ${applied.task.id} after ${result.reason}: ${followUp.followUp.title}`,
+			);
+		}
 	}
 
 	const readyTasks = nextQueue.tasks.filter((task) => isTaskReadyForDispatch(nextQueue, task));
