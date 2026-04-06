@@ -32,6 +32,7 @@ import {
 	loadQueue,
 	renderQueueSummary,
 	shouldAutoCreateFollowUpTask,
+	summarizeQueueCounts,
 	syncTaskWithWorker,
 	writeOrchestratorArtifacts,
 	type OrchestratorProgressEntry,
@@ -776,12 +777,132 @@ async function tickOrchestrator(
 	};
 }
 
+function renderOrchestratorReport(title: string, details: HiveOrchestratorDetails): string {
+	return [`# ${title}`, "", renderQueueSummary(details.queue, details.recentChanges)].join("\n");
+}
+
+async function sendOrchestratorReport(
+	pi: ExtensionAPI,
+	title: string,
+	details: HiveOrchestratorDetails,
+): Promise<void> {
+	pi.sendMessage(
+		{
+			customType: "hive-orchestrator-report",
+			content: renderOrchestratorReport(title, details),
+			display: true,
+			details,
+		},
+		{ triggerTurn: false },
+	);
+}
+
+function shouldStopHiveLoop(queue: OrchestratorQueue): { stop: boolean; reason?: string } {
+	const counts = summarizeQueueCounts(queue);
+	if (counts.blocked > 0 || counts.failed > 0) {
+		return { stop: true, reason: "queue has blocked or failed tasks requiring attention" };
+	}
+	if (counts.planned === 0 && counts.running === 0 && counts.done === 0) {
+		return { stop: true, reason: "queue drained" };
+	}
+	return { stop: false };
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function hiveOrchestrator(pi: ExtensionAPI) {
 	pi.on("resources_discover", () => {
 		return {
 			promptPaths: [orchestratorPromptTemplatePath, workerPromptTemplatePath],
 			skillPaths: [hiveSkillPath],
 		};
+	});
+
+	pi.registerMessageRenderer("hive-orchestrator-report", (message) => {
+		return new Text(typeof message.content === "string" ? message.content : String(message.content ?? ""), 0, 0);
+	});
+
+	pi.registerCommand("hive-init", {
+		description: "Initialize the hive orchestrator queue for the current repo",
+		handler: async (args, ctx) => {
+			const goal = args.trim();
+			if (!goal) {
+				ctx.ui.notify("Usage: /hive-init <goal>", "error");
+				return;
+			}
+			try {
+				const details = await initOrchestrator(pi, ctx, { goal }, undefined);
+				await sendOrchestratorReport(pi, "Hive init", details);
+				ctx.ui.notify("Initialized hive orchestrator queue", "success");
+			} catch (error) {
+				ctx.ui.notify(`Hive init failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("hive-status", {
+		description: "Poll and show current hive orchestrator queue status",
+		handler: async (_args, ctx) => {
+			try {
+				const details = await pollOrchestrator(pi, ctx, {}, undefined);
+				await sendOrchestratorReport(pi, "Hive status", details);
+				ctx.ui.notify("Updated hive queue status", "info");
+			} catch (error) {
+				ctx.ui.notify(`Hive status failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+			}
+		},
+	});
+
+	pi.registerCommand("hive-tick", {
+		description: "Run one hive orchestrator tick: poll, integrate, dispatch",
+		handler: async (_args, ctx) => {
+			ctx.ui.setStatus("hive-loop", "Running hive tick...");
+			try {
+				const details = await tickOrchestrator(pi, ctx, {}, undefined);
+				await sendOrchestratorReport(pi, "Hive tick", details);
+				ctx.ui.notify("Completed hive tick", "success");
+			} catch (error) {
+				ctx.ui.notify(`Hive tick failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+			} finally {
+				ctx.ui.setStatus("hive-loop", "");
+			}
+		},
+	});
+
+	pi.registerCommand("hive-loop", {
+		description: "Run repeated hive ticks until the queue drains or needs attention",
+		handler: async (args, ctx) => {
+			const trimmed = args.trim();
+			const intervalSeconds = trimmed ? Number.parseInt(trimmed, 10) : 30;
+			if (!Number.isInteger(intervalSeconds) || intervalSeconds <= 0) {
+				ctx.ui.notify("Usage: /hive-loop [seconds]", "error");
+				return;
+			}
+
+			let iteration = 0;
+			ctx.ui.notify(`Starting hive loop (${intervalSeconds}s)`, "info");
+			try {
+				while (true) {
+					iteration += 1;
+					ctx.ui.setStatus("hive-loop", `Hive loop: tick ${iteration}`);
+					const details = await tickOrchestrator(pi, ctx, {}, undefined);
+					await sendOrchestratorReport(pi, `Hive loop tick ${iteration}`, details);
+					const stop = shouldStopHiveLoop(details.queue);
+					if (stop.stop) {
+						ctx.ui.notify(`Hive loop stopped: ${stop.reason}`, stop.reason === "queue drained" ? "success" : "warning");
+						return;
+					}
+					ctx.ui.setStatus("hive-loop", `Hive loop sleeping for ${intervalSeconds}s`);
+					await sleep(intervalSeconds * 1000);
+				}
+			} catch (error) {
+				ctx.ui.notify(`Hive loop failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+			} finally {
+				ctx.ui.setStatus("hive-loop", "");
+			}
+		},
 	});
 
 	pi.registerTool({
