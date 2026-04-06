@@ -7,6 +7,8 @@ HIVE_IMAGE="${HIVE_IMAGE:-nixos/nix}"
 HIVE_CONTAINER_SHELL="${HIVE_CONTAINER_SHELL:-sh}"
 HIVE_KEEPALIVE_CMD="${HIVE_KEEPALIVE_CMD:-while :; do sleep 3600; done}"
 HIVE_NIX_VOLUME="hive-nix-store"
+HIVE_CODEX_NIXPKG="${HIVE_CODEX_NIXPKG:-nixpkgs#nodejs}"
+HIVE_CODEX_NPM_PACKAGE="${HIVE_CODEX_NPM_PACKAGE:-@openai/codex}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -18,6 +20,59 @@ require_docker() {
 require_host_nix_store() {
   [ -d /nix/store ] || die "host /nix/store not found"
   [ -d /nix/var/nix/db ] || die "host /nix/var/nix/db not found"
+}
+
+shell_join() {
+  local joined="" arg
+  for arg in "$@"; do
+    joined="${joined} $(printf '%q' "$arg")"
+  done
+  printf '%s' "${joined# }"
+}
+
+agent_home_dir() {
+  local repo_slug="$1" agent="$2"
+  printf '%s/homes/%s/%s' "$HIVE_STATE" "$repo_slug" "$agent"
+}
+
+seed_codex_state() {
+  local agent_home="$1"
+  local host_codex_dir="${HOME}/.codex"
+  local file
+
+  mkdir -p "${agent_home}/.codex"
+  for file in auth.json config.toml; do
+    if [ -f "${host_codex_dir}/${file}" ]; then
+      cp "${host_codex_dir}/${file}" "${agent_home}/.codex/${file}"
+    fi
+  done
+}
+
+docker_exec_auto() {
+  local cname="$1"
+  shift
+
+  local -a exec_args=()
+  if [ -t 0 ]; then
+    exec_args+=( -i )
+  fi
+  if [ -t 1 ]; then
+    exec_args+=( -t )
+  fi
+
+  if [ "${#exec_args[@]}" -gt 0 ]; then
+    docker exec "${exec_args[@]}" "$cname" "$@"
+  else
+    docker exec "$cname" "$@"
+  fi
+}
+
+docker_exec_shell() {
+  local cname="$1"
+  shift
+  local command
+  command="$(shell_join "$@")"
+  docker_exec_auto "$cname" bash -lc "$command"
 }
 
 # ---------------------------------------------------------------------------
@@ -104,7 +159,7 @@ cmd_up() {
   fi
 
   # Ensure state dirs exist.
-  mkdir -p "${HIVE_STATE}/worktrees/${slug}" "${HIVE_STATE}/logs"
+  mkdir -p "${HIVE_STATE}/worktrees/${slug}" "${HIVE_STATE}/logs" "${HIVE_STATE}/homes/${slug}"
 
   local i=1
   while [ "$i" -le "$agents" ]; do
@@ -113,6 +168,8 @@ cmd_up() {
     local cname
     cname="$(container_name "$slug" "$agent")"
     local worktree="${HIVE_STATE}/worktrees/${slug}/${agent}"
+    local agent_home
+    agent_home="$(agent_home_dir "$slug" "$agent")"
 
     # Skip if already running.
     if docker ps -q -f "name=^${cname}$" 2>/dev/null | grep -q .; then
@@ -129,16 +186,25 @@ cmd_up() {
       git -C "$repo" worktree remove --force "$worktree" 2>/dev/null || true
     fi
     git -C "$repo" worktree add --detach "$worktree" HEAD
+    mkdir -p "$agent_home"
+    seed_codex_state "$agent_home"
 
     # Launch container.
-    local docker_args=(
+    # Mount the worktree and shared git metadata at their host-absolute paths so
+    # git-backed tools inside the container can resolve worktree metadata
+    # correctly while still using an isolated working copy.
+    local -a docker_args=(
       -d
       --name "$cname"
       --label "$HIVE_LABEL"
       --label "hive.repo=${slug}"
       --label "hive.agent=${agent}"
       -v "${worktree}:/work"
+      -v "${worktree}:${worktree}"
+      -v "${repo}/.git:${repo}/.git"
+      -v "${agent_home}:/root"
       -w /work
+      -e "HOME=/root"
       -e "NIX_CONFIG=experimental-features = nix-command flakes"
     )
 
@@ -159,9 +225,7 @@ cmd_up() {
         --security-opt "no-new-privileges"
         --tmpfs "/tmp:rw,noexec,nosuid,nodev,mode=1777"
         --tmpfs "/var/tmp:rw,noexec,nosuid,nodev,mode=1777"
-        --tmpfs "/root:rw,nosuid,nodev,mode=700"
         --pids-limit "512"
-        -e "HOME=/root"
       )
     fi
 
@@ -174,7 +238,7 @@ cmd_up() {
     # If --cmd was given, run it in background inside the container.
     if [ -n "$cmd" ]; then
       local logfile="${HIVE_STATE}/logs/${slug}-${agent}.log"
-      docker exec -d "$cname" sh -c "cd /work && nix develop -c ${cmd}" \
+      docker exec -d "$cname" bash -lc "cd /work && nix develop -c ${cmd}" \
         > "$logfile" 2>&1 &
       echo "${agent}: launched cmd in background (log: ${logfile})"
     fi
@@ -299,14 +363,19 @@ cmd_down() {
 
   # Collect worktree paths before stopping.
   local worktrees=""
+  local homes=""
   if [ "$keep_worktrees" -eq 0 ]; then
     for cname in $("${names_args[@]}" --format '{{.Names}}'); do
       local repo_label agent_label
       repo_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.repo"}}')"
       agent_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.agent"}}')"
       local wt="${HIVE_STATE}/worktrees/${repo_label}/${agent_label}"
+      local home="${HIVE_STATE}/homes/${repo_label}/${agent_label}"
       if [ -d "$wt" ]; then
         worktrees="${worktrees} ${wt}"
+      fi
+      if [ -d "$home" ]; then
+        homes="${homes} ${home}"
       fi
     done
   fi
@@ -321,6 +390,12 @@ cmd_down() {
       git -C "$wt" worktree remove --force "$wt" 2>/dev/null || true
     done
     echo "worktrees cleaned${repo_filter:+ for repo ${repo_filter}}"
+  fi
+
+  if [ "$keep_worktrees" -eq 0 ] && [ -n "$homes" ]; then
+    for home in $homes; do
+      rm -rf "$home"
+    done
   fi
 }
 
@@ -350,15 +425,44 @@ cmd_exec() {
   cname="$(find_running_container "$agent" "$repo_filter")"
   [ -n "$cname" ] || die "no running hive container for ${agent}${repo_filter:+ in repo ${repo_filter}}"
 
-  local exec_args=()
-  if [ -t 0 ]; then
-    exec_args+=( -i )
-  fi
-  if [ -t 1 ]; then
-    exec_args+=( -t )
+  docker_exec_shell "$cname" "$@"
+}
+
+# ---------------------------------------------------------------------------
+# hive codex
+# ---------------------------------------------------------------------------
+cmd_codex() {
+  [ $# -ge 1 ] || die "usage: hive codex [--repo <path|slug>] <agent-id> [codex-args...]"
+  require_docker
+
+  local repo_filter=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --repo) [ $# -ge 2 ] || die "--repo requires a path or slug"; repo_filter="$(repo_filter_slug "$2")"; shift 2 ;;
+      --repo=*) repo_filter="$(repo_filter_slug "${1#--repo=}")"; shift ;;
+      *) break ;;
+    esac
+  done
+
+  [ $# -ge 1 ] || die "usage: hive codex [--repo <path|slug>] <agent-id> [codex-args...]"
+
+  local agent
+  agent="$(agent_name "$1")"
+  shift
+
+  local cname
+  cname="$(find_running_container "$agent" "$repo_filter")"
+  [ -n "$cname" ] || die "no running hive container for ${agent}${repo_filter:+ in repo ${repo_filter}}"
+
+  local -a codex_cmd=(
+    nix shell "$HIVE_CODEX_NIXPKG" -c
+    npx -y "$HIVE_CODEX_NPM_PACKAGE"
+  )
+  if [ "$#" -gt 0 ]; then
+    codex_cmd+=( "$@" )
   fi
 
-  docker exec "${exec_args[@]}" "$cname" sh -c "$*"
+  docker_exec_shell "$cname" "${codex_cmd[@]}"
 }
 
 # ---------------------------------------------------------------------------
@@ -374,6 +478,7 @@ commands:
   ls [--repo <path|slug>]                            list running agents
   attach [--repo <path|slug>] <agent-id>             shell into a container
   exec [--repo <path|slug>] <agent-id> <command>     run a command in a container
+  codex [--repo <path|slug>] <agent-id> [args...]    run Codex CLI in a container
   logs [--repo <path|slug>] <agent-id>               tail container logs
   down [--repo <path|slug>] [--keep-worktrees]       stop matching containers and clean up
 EOF
@@ -388,6 +493,7 @@ case "$1" in
   ls)     shift; cmd_ls "$@" ;;
   attach) shift; cmd_attach "$@" ;;
   exec)   shift; cmd_exec "$@" ;;
+  codex)  shift; cmd_codex "$@" ;;
   logs)   shift; cmd_logs "$@" ;;
   down)   shift; cmd_down "$@" ;;
   *)      usage ;;
