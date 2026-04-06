@@ -2,7 +2,7 @@
 
 ## Status
 
-Initial planning + prompt/skill scaffolding.
+Planning + prompt/skill scaffolding + first runnable worker launcher.
 
 ## Objective
 
@@ -21,7 +21,8 @@ Build a pi extension that uses `hive` to coordinate long-running parallel worker
    - generate system prompts from templates
    - launch `pi --mode json -p --no-session`
    - capture structured output for progress tracking
-4. Hive containers do not automatically inherit host-global `~/.pi/agent` resources, so a future runtime extension should inject worker prompts from the host side rather than assuming in-container discovery.
+4. Hive containers do not automatically inherit host-global `~/.pi/agent` resources, so the runtime extension should inject worker prompts from the host side rather than assuming in-container discovery.
+5. For this repo, the most reliable worker invocation path is `nix develop -c pi --mode json -p --no-session` inside the worker worktree.
 
 ## Proposed architecture
 
@@ -128,12 +129,13 @@ Done in this commit:
 
 ### Milestone 2
 
-Add a host-side extension command/tool that can:
+Implemented in this commit via the `hive_worker` tool:
 
-- dispatch workers through `hive`
-- inject worker prompts
+- dispatch one worker through `hive`
+- inject the worker prompt into the worker worktree
 - capture JSON logs
-- track worker states
+- write `.hive/status.json`
+- poll a worker snapshot later
 
 ### Milestone 3
 
@@ -149,4 +151,10 @@ Add ergonomic progress rendering in pi via custom messages or a small status wid
 
 ## Immediate next step
 
-Implement the host-side launcher first. That is the narrowest slice that turns the prompt/skill contract into a runnable system.
+Build the orchestrator-side queue manager on top of `hive_worker`:
+
+- create `.hive/orchestrator/plan.md`
+- create `.hive/orchestrator/queue.json`
+- dispatch multiple workers
+- poll them in a bounded loop
+- merge completed work incrementally

@@ -9,7 +9,7 @@ Operate with these rules:
 
 - Decompose the goal into independent, low-coupling subtasks that can be completed by non-interactive hive workers.
 - Own merge queue management, conflict resolution, integration sequencing, and final verification.
-- Use `hive` to launch, inspect, and manage workers.
+- Use the `hive_worker` tool to launch and poll workers; use raw `hive` commands directly only when the tool is insufficient.
 - Keep a live tracker under `.hive/orchestrator/` in the host worktree.
 - Report progress incrementally whenever a worker is launched, blocked, finishes review, is merged, or needs follow-up.
 - Prefer correctness first, then tests, then API/logic changes, then refactors and polish.
@@ -30,7 +30,7 @@ Required workflow:
    - explicit done condition
    - explicit verification command(s)
    - a short handoff contract
-4. Poll workers in a bounded sleep/check loop.
+4. Poll workers with `hive_worker` action `poll` in a bounded sleep/check loop.
 5. When a worker reports done:
    - inspect its status artifact and latest commit(s)
    - integrate it into the host main worktree

@@ -13,25 +13,30 @@ Done in this commit:
 
 ## Phase 1: host-side worker launcher
 
-Build a real extension command/tool that:
+Implemented in this commit via the `hive_worker` tool:
 
-1. reads the worker template from this package
-2. writes a temp system-prompt file
-3. launches a worker via `hive exec` or `hive up --cmd`
-4. runs `pi --mode json -p --no-session` in the worker worktree
-5. stores machine-readable logs for polling
+1. read the worker template from this package
+2. write launcher files into the worker worktree under `.hive/`
+3. ensure the worker exists via `hive up`
+4. launch a detached worker through `hive exec`
+5. run `pi --mode json -p --no-session` in the worker worktree
+6. store machine-readable logs for polling
 
-This should follow pi's `subagent` example closely, but replace direct local `pi` subprocesses with hive-managed worktrees.
+This follows pi's `subagent` example closely, but replaces direct local `pi` subprocesses with hive-managed worktrees.
 
 ## Phase 2: orchestration state + poller
 
-Add host-side commands/tools for:
+Partially implemented in this commit:
+
+- polling one worker status snapshot
+- parsing JSON logs into recent event summaries
+- tracking worker lifecycle files in `.hive/`
+
+Still to add:
 
 - creating the orchestrator queue files
-- polling worker status
-- parsing JSON logs
-- tracking worker lifecycle
-- emitting incremental progress messages
+- multi-worker polling loops
+- incremental orchestrator progress messages
 
 ## Phase 3: merge queue automation
 

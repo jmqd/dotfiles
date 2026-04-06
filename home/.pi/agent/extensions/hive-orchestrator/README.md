@@ -1,13 +1,18 @@
 # hive-orchestrator
 
-Pi extension scaffold for long-running `hive`-backed parallel work.
+Pi extension for long-running `hive`-backed parallel work.
 
-## What this commit adds
+## What exists now
 
 - `/hive-orchestrator` prompt template for the top-level orchestrator worker
 - `/hive-worker` prompt template for a non-interactive hive worker
 - `hive-swarm` skill with the core operating contract and reference docs
-- a small extension entrypoint that exposes those resources via `resources_discover`
+- a `hive_worker` tool that can:
+  - launch one worker in a hive worktree
+  - write `.hive/status.json`
+  - capture the worker's pi JSON event stream to `.hive/worker-events.jsonl`
+  - poll the worker's status/log snapshot later
+- an extension entrypoint that exposes the resources and registers the tool
 
 ## Why this shape
 
@@ -17,17 +22,29 @@ The prompt templates and skill define the behavior we want from:
 - the orchestrator: split work, dispatch workers, poll progress, merge finished work, resolve conflicts, and run final checks
 - the workers: take one clean subtask to completion, run review on their own changes, fix issues, and report a structured done state
 
-## Important implementation note
+## Runtime shape
 
-A future automation layer should follow pi's `subagent` example pattern:
+The launcher follows pi's `subagent` example pattern:
 
-- generate worker system prompts from these templates
-- launch worker `pi` runs in `hive` worktrees via `hive exec` or `hive up --cmd`
-- prefer `pi --mode json -p --no-session` for machine-readable logs
+- generate a worker system prompt from the worker template
+- launch a detached worker `pi` run in a hive worktree
+- use `pi --mode json -p --no-session` for machine-readable logs
 - keep the orchestrator on the host side so it can merge into the main worktree and run final checks
 
 That matters because hive containers do not automatically inherit host-global `~/.pi/agent` resources.
 The reliable path is to have the host extension inject the worker prompt/template into each worker invocation.
+
+## Current worker artifacts
+
+Each launched worker worktree gets:
+
+- `.hive/status.json`
+- `.hive/worker-launch.json`
+- `.hive/worker-system-prompt.md`
+- `.hive/worker-events.jsonl`
+- `.hive/worker-stderr.log`
+- `.hive/worker.pid`
+- `.hive/worker-exit-code`
 
 ## Resource layout
 
