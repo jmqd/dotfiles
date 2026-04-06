@@ -10,6 +10,15 @@ state_dir="$tmp_dir/state"
 repo_dir="$tmp_dir/repo"
 home_dir="$tmp_dir/home"
 mkdir -p "$fake_bin" "$state_dir" "$repo_dir/.git" "$home_dir"
+mkdir -p "$home_dir/.codex"
+
+cat >"$home_dir/.codex/auth.json" <<'EOF'
+{"token":"test-token"}
+EOF
+
+cat >"$home_dir/.codex/config.toml" <<'EOF'
+model = "gpt-5.4"
+EOF
 
 export PATH="$fake_bin:$PATH"
 export HIVE_FAKE_STATE="$state_dir"
@@ -330,15 +339,27 @@ assert_contains "$run_log" '--cap-drop=ALL'
 assert_contains "$run_log" '/nix/store:/nix/store:ro'
 assert_contains "$run_log" 'hive-repo-agent-01'
 assert_contains "$run_log" 'hive-repo-agent-02'
+assert_contains "$run_log" "$HIVE_STATE/worktrees/repo/agent-01:$HIVE_STATE/worktrees/repo/agent-01"
+assert_contains "$run_log" "$repo_dir/.git:$repo_dir/.git"
+assert_contains "$run_log" "$HIVE_STATE/homes/repo/agent-01:/root"
 assert_contains "$run_log" 'sh -lc while :; do sleep 3600; done'
+
+[ -f "$HIVE_STATE/homes/repo/agent-01/.codex/auth.json" ]
+[ -f "$HIVE_STATE/homes/repo/agent-01/.codex/config.toml" ]
+assert_contains "$(cat "$HIVE_STATE/homes/repo/agent-01/.codex/auth.json")" 'test-token'
+assert_contains "$(cat "$HIVE_STATE/homes/repo/agent-01/.codex/config.toml")" 'gpt-5.4'
 
 ls_output="$(hive ls --repo "$repo_dir")"
 assert_contains "$ls_output" 'hive-repo-agent-01'
 assert_contains "$ls_output" 'hive-repo-agent-02'
 
 exec_output="$(hive exec --repo "$repo_dir" 01 pwd)"
-assert_contains "$exec_output" 'executed:hive-repo-agent-01:sh -c pwd'
-assert_contains "$(cat "$state_dir/exec.log")" 'flags= name=hive-repo-agent-01 cmd=sh -c pwd'
+assert_contains "$exec_output" 'executed:hive-repo-agent-01:bash -lc pwd'
+assert_contains "$(cat "$state_dir/exec.log")" 'flags= name=hive-repo-agent-01 cmd=bash -lc pwd'
+
+codex_output="$(hive codex --repo "$repo_dir" 01 exec --help)"
+assert_contains "$codex_output" 'executed:hive-repo-agent-01:bash -lc'
+assert_contains "$codex_output" 'nix shell nixpkgs#nodejs -c npx -y @openai/codex exec --help'
 
 logs_output="$(hive logs --repo "$repo_dir" 01)"
 assert_contains "$logs_output" 'logs:hive-repo-agent-01'
