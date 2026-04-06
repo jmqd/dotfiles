@@ -171,8 +171,9 @@ pub fn render_help_text(command: &mut clap::Command) -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Cli, Commands, CommonArgs, DoctorArgs, GenerateCompletionsArgs, SearchArgs, SearchCommands,
-        SearchQueryArgs, SearchScopeArgs, render_help_text,
+        Cli, Commands, CommonArgs, DoctorArgs, GenerateCompletionsArgs, SearchArgs, SearchCodeArgs,
+        SearchCommands, SearchCommitsArgs, SearchQueryArgs, SearchReindexArgs, SearchScopeArgs,
+        SearchStatusArgs, render_help_text,
     };
     use crate::output::OutputMode;
     use clap::CommandFactory;
@@ -227,6 +228,80 @@ mod tests {
             }
             other => panic!("unexpected command: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_search_code_subcommand() {
+        let cli = Cli::try_parse_from(["flow", "search", "code", "--path", "src", "review"])
+            .expect("parse succeeds");
+
+        match cli.command {
+            Commands::Search(SearchArgs {
+                command:
+                    SearchCommands::Code(SearchCodeArgs {
+                        scope,
+                        terms,
+                    }),
+            }) => {
+                assert_eq!(scope.path.as_deref(), Some("src"));
+                assert_eq!(terms, vec!["review"]);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_search_commits_subcommand() {
+        let cli = Cli::try_parse_from([
+            "flow",
+            "search",
+            "commits",
+            "--author",
+            "jmq",
+            "--since",
+            "2026-04-01",
+            "review",
+        ])
+        .expect("parse succeeds");
+
+        match cli.command {
+            Commands::Search(SearchArgs {
+                command:
+                    SearchCommands::Commits(SearchCommitsArgs {
+                        author,
+                        since,
+                        terms,
+                        ..
+                    }),
+            }) => {
+                assert_eq!(author.as_deref(), Some("jmq"));
+                assert_eq!(since.as_deref(), Some("2026-04-01"));
+                assert_eq!(terms, vec!["review"]);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_search_reindex_subcommand() {
+        let cli = Cli::try_parse_from(["flow", "search", "reindex"]).expect("parse succeeds");
+        assert!(matches!(
+            cli.command,
+            Commands::Search(SearchArgs {
+                command: SearchCommands::Reindex(SearchReindexArgs {})
+            })
+        ));
+    }
+
+    #[test]
+    fn parses_search_status_subcommand() {
+        let cli = Cli::try_parse_from(["flow", "search", "status"]).expect("parse succeeds");
+        assert!(matches!(
+            cli.command,
+            Commands::Search(SearchArgs {
+                command: SearchCommands::Status(SearchStatusArgs {})
+            })
+        ));
     }
 
     #[test]
