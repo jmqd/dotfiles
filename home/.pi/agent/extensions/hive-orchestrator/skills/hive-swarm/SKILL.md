@@ -35,7 +35,7 @@ Read these references before running the workflow:
 In the host worktree:
 
 - `.hive/orchestrator/plan.md`
-- `.hive/orchestrator/queue.json` or `.md`
+- `.hive/orchestrator/queue.json`
 - `.hive/orchestrator/progress.md`
 
 In each worker worktree:
@@ -45,8 +45,8 @@ In each worker worktree:
 
 ## Dispatch pattern
 
-Use the `hive_worker` tool as the default host-side launcher/poller for worker runs.
-Under the hood it follows this pattern:
+Use the `hive_orchestrator` tool as the default host-side control plane, and the `hive_worker` tool as the lower-level worker launcher/poller.
+Under the hood the worker path follows this pattern:
 
 1. turns the worker template into a worker system prompt
 2. launches `pi --mode json -p --no-session` inside the worker worktree

@@ -26,17 +26,20 @@ This follows pi's `subagent` example closely, but replaces direct local `pi` sub
 
 ## Phase 2: orchestration state + poller
 
-Partially implemented in this commit:
+Implemented in this commit via the `hive_orchestrator` tool:
 
-- polling one worker status snapshot
+- creating the orchestrator queue files
+- keeping `.hive/orchestrator/plan.md` in sync with the queue
+- polling running workers through queue state
 - parsing JSON logs into recent event summaries
 - tracking worker lifecycle files in `.hive/`
+- appending incremental orchestrator progress messages
 
 Still to add:
 
-- creating the orchestrator queue files
-- multi-worker polling loops
-- incremental orchestrator progress messages
+- merge/integration execution
+- final-check automation after merge
+- long-lived autonomous bounded sleep loops driven entirely by the orchestrator tool layer
 
 ## Phase 3: merge queue automation
 

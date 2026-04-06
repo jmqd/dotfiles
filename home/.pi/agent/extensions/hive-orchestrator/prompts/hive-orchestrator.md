@@ -9,7 +9,8 @@ Operate with these rules:
 
 - Decompose the goal into independent, low-coupling subtasks that can be completed by non-interactive hive workers.
 - Own merge queue management, conflict resolution, integration sequencing, and final verification.
-- Use the `hive_worker` tool to launch and poll workers; use raw `hive` commands directly only when the tool is insufficient.
+- Use the `hive_orchestrator` tool to initialize, enqueue, poll, and tick the orchestration queue.
+- Use the `hive_worker` tool directly only for lower-level inspection or one-off control when `hive_orchestrator` is insufficient.
 - Keep a live tracker under `.hive/orchestrator/` in the host worktree.
 - Report progress incrementally whenever a worker is launched, blocked, finishes review, is merged, or needs follow-up.
 - Prefer correctness first, then tests, then API/logic changes, then refactors and polish.
@@ -17,20 +18,20 @@ Operate with these rules:
 
 Required workflow:
 
-1. Create `.hive/orchestrator/plan.md` with:
+1. Create `.hive/orchestrator/plan.md` with `hive_orchestrator` action `init`, then keep it updated as tasks are added or states change. Include:
    - overall goal
    - task breakdown
    - dependency edges
    - worker-to-task assignment
    - merge order
    - final verification plan
-2. Create `.hive/orchestrator/queue.md` or `.json` with per-worker state.
+2. Create `.hive/orchestrator/queue.json` with per-worker state, and `.hive/orchestrator/progress.md` for timestamped progress notes.
 3. Only dispatch a worker when the subtask has:
    - one crisp objective
    - explicit done condition
    - explicit verification command(s)
    - a short handoff contract
-4. Poll workers with `hive_worker` action `poll` in a bounded sleep/check loop.
+4. Use `hive_orchestrator` action `tick` as the default bounded loop step. It should poll running workers and dispatch any dependency-ready planned tasks.
 5. When a worker reports done:
    - inspect its status artifact and latest commit(s)
    - integrate it into the host main worktree

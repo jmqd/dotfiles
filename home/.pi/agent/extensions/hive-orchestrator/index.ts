@@ -20,6 +20,19 @@ import {
 	writeWorkerLaunchFiles,
 	type WorkerSnapshot,
 } from "./core.ts";
+import {
+	addTasksToQueue,
+	createOrchestratorQueue,
+	getOrchestratorPaths,
+	isTaskReadyForDispatch,
+	loadQueue,
+	renderQueueSummary,
+	syncTaskWithWorker,
+	writeOrchestratorArtifacts,
+	type OrchestratorProgressEntry,
+	type OrchestratorQueue,
+	type OrchestratorTaskInput,
+} from "./orchestrator.ts";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
 const workerPromptTemplatePath = join(baseDir, "prompts", "hive-worker.md");
@@ -30,6 +43,14 @@ type HiveWorkerDetails = {
 	action: "launch" | "poll";
 	worker: WorkerSnapshot;
 	containerBootstrap?: string;
+};
+
+type HiveOrchestratorDetails = {
+	action: "init" | "enqueue" | "poll" | "tick";
+	queue: OrchestratorQueue;
+	recentChanges: string[];
+	polledTaskIds: string[];
+	dispatchedTaskIds: string[];
 };
 
 const HiveWorkerParams = Type.Object({
@@ -56,6 +77,44 @@ const HiveWorkerParams = Type.Object({
 	),
 	additionalInstructions: Type.Optional(
 		Type.String({ description: "Extra launcher-provided instructions appended to the worker system prompt." }),
+	),
+});
+
+const OrchestratorTaskItem = Type.Object({
+	title: Type.Optional(Type.String({ description: "Short title for the subtask." })),
+	task: Type.String({ description: "Full worker task prompt for this subtask." }),
+	agent: Type.String({ description: "Worker id like 01 or agent-01." }),
+	verificationCommands: Type.Optional(
+		Type.Array(Type.String(), { description: "Focused verification commands for this task." }),
+	),
+	dependsOn: Type.Optional(Type.Array(Type.String(), { description: "Task ids that must finish before this one can launch." })),
+	handoff: Type.Optional(Type.String({ description: "Short handoff contract for the worker." })),
+});
+
+const HiveOrchestratorParams = Type.Object({
+	action: StringEnum(["init", "enqueue", "poll", "tick"] as const, {
+		description: "Initialize the orchestrator, enqueue tasks, poll running workers, or tick the queue forward.",
+	}),
+	repo: Type.Optional(Type.String({ description: "Repository path. Defaults to the current git root." })),
+	goal: Type.Optional(Type.String({ description: "Top-level orchestration goal. Required for action=init." })),
+	finalCheckCommands: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "Final repository-level verification commands. Defaults to ['just check'].",
+		}),
+	),
+	pollIntervalSeconds: Type.Optional(
+		Type.Number({
+			description: "Recommended orchestrator poll interval in seconds. Defaults to 30.",
+			minimum: 1,
+		}),
+	),
+	overwrite: Type.Optional(Type.Boolean({ description: "Allow action=init to overwrite an existing queue." })),
+	tasks: Type.Optional(Type.Array(OrchestratorTaskItem, { description: "Tasks to enqueue." })),
+	dispatchLimit: Type.Optional(
+		Type.Number({
+			description: "Maximum number of ready tasks to dispatch during tick. Defaults to all ready tasks.",
+			minimum: 1,
+		}),
 	),
 });
 
@@ -211,7 +270,7 @@ async function launchWorker(
 	const startScript = buildDetachedStartScript({ runScript });
 	const launchResult = await execOrThrow(
 		pi,
-		hiveCommand,
+		resolveHiveCommand(repoRoot),
 		["exec", "--repo", repoRoot, agent, "bash", "-lc", startScript],
 		repoRoot,
 		signal,
@@ -242,6 +301,210 @@ async function pollWorker(
 	return { action: "poll", worker: snapshot };
 }
 
+function toProgressEntries(texts: string[], timestamp: string): OrchestratorProgressEntry[] {
+	return texts.map((text) => ({ timestamp, text }));
+}
+
+async function loadQueueOrThrow(repoRoot: string) {
+	const paths = getOrchestratorPaths(repoRoot);
+	const queue = await loadQueue(paths);
+	if (!queue) throw new Error(`Missing orchestrator queue: ${paths.queueFile}. Run hive_orchestrator init first.`);
+	return { paths, queue };
+}
+
+async function refreshQueueFromWorkers(
+	pi: ExtensionAPI,
+	ctx: { cwd: string },
+	queue: OrchestratorQueue,
+	repoRoot: string,
+	signal?: AbortSignal,
+): Promise<{ queue: OrchestratorQueue; recentChanges: string[]; polledTaskIds: string[] }> {
+	const now = new Date().toISOString();
+	const tasks = [...queue.tasks];
+	const recentChanges: string[] = [];
+	const polledTaskIds: string[] = [];
+
+	for (let index = 0; index < tasks.length; index++) {
+		const task = tasks[index];
+		if (task.state !== "running") continue;
+		const workerDetails = await pollWorker(pi, ctx, { repo: repoRoot, agent: task.agent }, signal);
+		const synced = syncTaskWithWorker(task, workerDetails.worker, now);
+		tasks[index] = synced.task;
+		polledTaskIds.push(task.id);
+		if (synced.note) recentChanges.push(synced.note);
+	}
+
+	return {
+		queue: {
+			...queue,
+			tasks,
+			updatedAt: now,
+		},
+		recentChanges,
+		polledTaskIds,
+	};
+}
+
+async function initOrchestrator(
+	pi: ExtensionAPI,
+	ctx: { cwd: string },
+	params: {
+		repo?: string;
+		goal: string;
+		finalCheckCommands?: string[];
+		pollIntervalSeconds?: number;
+		overwrite?: boolean;
+	},
+	signal?: AbortSignal,
+): Promise<HiveOrchestratorDetails> {
+	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
+	const paths = getOrchestratorPaths(repoRoot);
+	const existing = await loadQueue(paths);
+	if (existing && !params.overwrite) {
+		throw new Error(`Orchestrator queue already exists: ${paths.queueFile}. Use overwrite=true to replace it.`);
+	}
+
+	const now = new Date().toISOString();
+	const queue = createOrchestratorQueue(repoRoot, {
+		goal: params.goal,
+		pollIntervalSeconds: params.pollIntervalSeconds,
+		finalCheckCommands: params.finalCheckCommands,
+		now,
+	});
+	const recentChanges = [`Initialized orchestrator queue for goal: ${params.goal}`];
+	await withFileMutationQueue(paths.queueFile, async () => {
+		await writeOrchestratorArtifacts(paths, queue, toProgressEntries(recentChanges, now));
+	});
+	return { action: "init", queue, recentChanges, polledTaskIds: [], dispatchedTaskIds: [] };
+}
+
+async function enqueueOrchestratorTasks(
+	pi: ExtensionAPI,
+	ctx: { cwd: string },
+	params: { repo?: string; tasks: OrchestratorTaskInput[] },
+	signal?: AbortSignal,
+): Promise<HiveOrchestratorDetails> {
+	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
+	const { paths, queue } = await loadQueueOrThrow(repoRoot);
+	const now = new Date().toISOString();
+	const result = addTasksToQueue(queue, params.tasks, now);
+	const recentChanges = result.added.map((task) => `Enqueued ${task.id} ${task.agent}: ${task.title}`);
+	await withFileMutationQueue(paths.queueFile, async () => {
+		await writeOrchestratorArtifacts(paths, result.queue, toProgressEntries(recentChanges, now));
+	});
+	return {
+		action: "enqueue",
+		queue: result.queue,
+		recentChanges,
+		polledTaskIds: [],
+		dispatchedTaskIds: [],
+	};
+}
+
+async function pollOrchestrator(
+	pi: ExtensionAPI,
+	ctx: { cwd: string },
+	params: { repo?: string },
+	signal?: AbortSignal,
+): Promise<HiveOrchestratorDetails> {
+	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
+	const { paths, queue } = await loadQueueOrThrow(repoRoot);
+	const refreshed = await refreshQueueFromWorkers(pi, ctx, queue, repoRoot, signal);
+	await withFileMutationQueue(paths.queueFile, async () => {
+		await writeOrchestratorArtifacts(paths, refreshed.queue, toProgressEntries(refreshed.recentChanges, refreshed.queue.updatedAt));
+	});
+	return {
+		action: "poll",
+		queue: refreshed.queue,
+		recentChanges: refreshed.recentChanges,
+		polledTaskIds: refreshed.polledTaskIds,
+		dispatchedTaskIds: [],
+	};
+}
+
+async function tickOrchestrator(
+	pi: ExtensionAPI,
+	ctx: { cwd: string },
+	params: { repo?: string; dispatchLimit?: number },
+	signal?: AbortSignal,
+	onUpdate?: (partial: { content: Array<{ type: "text"; text: string }>; details: HiveOrchestratorDetails }) => void,
+): Promise<HiveOrchestratorDetails> {
+	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
+	const { paths, queue } = await loadQueueOrThrow(repoRoot);
+	const refreshed = await refreshQueueFromWorkers(pi, ctx, queue, repoRoot, signal);
+	let nextQueue = refreshed.queue;
+	const recentChanges = [...refreshed.recentChanges];
+	const dispatchedTaskIds: string[] = [];
+
+	const readyTasks = nextQueue.tasks.filter((task) => isTaskReadyForDispatch(nextQueue, task));
+	const limitedReadyTasks =
+		typeof params.dispatchLimit === "number" ? readyTasks.slice(0, Math.max(0, Math.floor(params.dispatchLimit))) : readyTasks;
+
+	for (const task of limitedReadyTasks) {
+		try {
+			const workerDetails = await launchWorker(
+				pi,
+				ctx,
+				{
+					repo: repoRoot,
+					agent: task.agent,
+					task: task.task,
+					verificationCommands: task.verificationCommands,
+					additionalInstructions: task.handoff,
+				},
+				signal,
+				(partial) => {
+					onUpdate?.({
+						content: partial.content,
+						details: {
+							action: "tick",
+							queue: nextQueue,
+							recentChanges,
+							polledTaskIds: refreshed.polledTaskIds,
+							dispatchedTaskIds,
+						},
+					});
+				},
+			);
+
+			const taskIndex = nextQueue.tasks.findIndex((item) => item.id === task.id);
+			if (taskIndex !== -1) {
+				const synced = syncTaskWithWorker(nextQueue.tasks[taskIndex], workerDetails.worker, new Date().toISOString());
+				nextQueue = {
+					...nextQueue,
+					tasks: nextQueue.tasks.map((item, index) => (index === taskIndex ? synced.task : item)),
+					updatedAt: new Date().toISOString(),
+				};
+			}
+			dispatchedTaskIds.push(task.id);
+			recentChanges.push(`Dispatched ${task.id} ${task.agent}: ${task.title}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			recentChanges.push(`Dispatch failed for ${task.id}: ${message}`);
+			nextQueue = {
+				...nextQueue,
+				tasks: nextQueue.tasks.map((item) =>
+					item.id === task.id ? { ...item, workerSummary: `Launch failed: ${message}`, lastPolledAt: new Date().toISOString() } : item,
+				),
+				updatedAt: new Date().toISOString(),
+			};
+		}
+	}
+
+	const progressTimestamp = nextQueue.updatedAt;
+	await withFileMutationQueue(paths.queueFile, async () => {
+		await writeOrchestratorArtifacts(paths, nextQueue, toProgressEntries(recentChanges, progressTimestamp));
+	});
+
+	return {
+		action: "tick",
+		queue: nextQueue,
+		recentChanges,
+		polledTaskIds: refreshed.polledTaskIds,
+		dispatchedTaskIds,
+	};
+}
+
 export default function hiveOrchestrator(pi: ExtensionAPI) {
 	pi.on("resources_discover", () => {
 		return {
@@ -267,15 +530,21 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 				if (!params.task?.trim()) {
 					throw new Error("action=launch requires task");
 				}
-				const details = await launchWorker(pi, ctx, {
-					repo: params.repo,
-					agent: params.agent,
-					task: params.task,
-					model: params.model,
-					tools: params.tools,
-					verificationCommands: params.verificationCommands,
-					additionalInstructions: params.additionalInstructions,
-				}, signal, onUpdate as any);
+				const details = await launchWorker(
+					pi,
+					ctx,
+					{
+						repo: params.repo,
+						agent: params.agent,
+						task: params.task,
+						model: params.model,
+						tools: params.tools,
+						verificationCommands: params.verificationCommands,
+						additionalInstructions: params.additionalInstructions,
+					},
+					signal,
+					onUpdate as any,
+				);
 				return {
 					content: [{ type: "text", text: formatWorkerSummary(details.worker) }],
 					details,
@@ -313,11 +582,84 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 			return new Text(text, 0, 0);
 		},
 
-		renderResult(result, _options, _theme) {
-			const details = result.details as HiveWorkerDetails | undefined;
+		renderResult(result) {
 			const text = result.content[0];
 			const body = text?.type === "text" ? text.text : "(no output)";
-			if (!details) return new Text(body, 0, 0);
+			return new Text(body, 0, 0);
+		},
+	});
+
+	pi.registerTool({
+		name: "hive_orchestrator",
+		label: "Hive Orchestrator",
+		description:
+			"Initialize and manage a repo-local hive orchestration queue under .hive/orchestrator, enqueue worker tasks, poll running workers, and tick ready tasks forward.",
+		promptSnippet: "Initialize, update, and tick the hive orchestrator queue for multi-worker coordination.",
+		promptGuidelines: [
+			"Use hive_orchestrator with action='init' before dispatching a new swarm.",
+			"Use action='enqueue' to record clean worker subtasks in .hive/orchestrator/queue.json before launching them.",
+			"Use action='tick' to poll running workers and dispatch any dependency-ready planned tasks.",
+		],
+		parameters: HiveOrchestratorParams,
+
+		async execute(_toolCallId, params, signal, onUpdate, ctx) {
+			let details: HiveOrchestratorDetails;
+			switch (params.action) {
+				case "init": {
+					if (!params.goal?.trim()) throw new Error("action=init requires goal");
+					details = await initOrchestrator(
+						pi,
+						ctx,
+						{
+							repo: params.repo,
+							goal: params.goal,
+							finalCheckCommands: params.finalCheckCommands,
+							pollIntervalSeconds: params.pollIntervalSeconds,
+							overwrite: params.overwrite,
+						},
+						signal,
+					);
+					break;
+				}
+				case "enqueue": {
+					if (!params.tasks || params.tasks.length === 0) throw new Error("action=enqueue requires tasks");
+					details = await enqueueOrchestratorTasks(pi, ctx, { repo: params.repo, tasks: params.tasks }, signal);
+					break;
+				}
+				case "poll": {
+					details = await pollOrchestrator(pi, ctx, { repo: params.repo }, signal);
+					break;
+				}
+				case "tick": {
+					details = await tickOrchestrator(pi, ctx, { repo: params.repo, dispatchLimit: params.dispatchLimit }, signal, onUpdate as any);
+					break;
+				}
+			}
+
+			return {
+				content: [{ type: "text", text: renderQueueSummary(details.queue, details.recentChanges) }],
+				details,
+			};
+		},
+
+		renderCall(args, theme) {
+			const repo = args.repo ? String(args.repo) : "<current-repo>";
+			let text =
+				theme.fg("toolTitle", theme.bold("hive_orchestrator ")) +
+				theme.fg("accent", String(args.action)) +
+				theme.fg("muted", ` in ${repo}`);
+			if (args.action === "init" && typeof args.goal === "string") {
+				text += `\n  ${theme.fg("dim", args.goal.length > 90 ? `${args.goal.slice(0, 90)}...` : args.goal)}`;
+			}
+			if (args.action === "enqueue" && Array.isArray(args.tasks)) {
+				text += `\n  ${theme.fg("dim", `${args.tasks.length} task(s)` )}`;
+			}
+			return new Text(text, 0, 0);
+		},
+
+		renderResult(result) {
+			const text = result.content[0];
+			const body = text?.type === "text" ? text.text : "(no output)";
 			return new Text(body, 0, 0);
 		},
 	});

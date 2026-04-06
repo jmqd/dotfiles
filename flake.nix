@@ -167,7 +167,9 @@
             nativeBuildInputs = [ pkgs.nodejs ];
           } ''
             cd ${./.}
-            node --test home/.pi/agent/extensions/hive-orchestrator/core.test.ts
+            node --test \
+              home/.pi/agent/extensions/hive-orchestrator/core.test.ts \
+              home/.pi/agent/extensions/hive-orchestrator/orchestrator.test.ts
             touch $out
           '';
 
