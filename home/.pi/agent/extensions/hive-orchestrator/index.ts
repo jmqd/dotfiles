@@ -45,6 +45,7 @@ import {
 const baseDir = dirname(fileURLToPath(import.meta.url));
 const workerPromptTemplatePath = join(baseDir, "prompts", "hive-worker.md");
 const orchestratorPromptTemplatePath = join(baseDir, "prompts", "hive-orchestrator.md");
+const hiveRunSystemPromptPath = join(baseDir, "planning", "hive-run-system.md");
 const hiveSkillPath = join(baseDir, "skills", "hive-swarm", "SKILL.md");
 
 type HiveWorkerDetails = {
@@ -812,7 +813,20 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function buildHiveRunPrompt(goal: string): string {
+	return [
+		`Goal: ${goal}`,
+		"",
+		"Run the hive orchestration workflow for this repository.",
+		"First inspect enough of the repo to create a solid plan.",
+		"Then decide the recommended worker concurrency and other key orchestration decisions.",
+		"Write those decisions to .hive/orchestrator/planning-notes.md.",
+		"Then initialize or resume the orchestrator queue, enqueue the right tasks, and run at least one tick.",
+	].join("\n");
+}
+
 export default function hiveOrchestrator(pi: ExtensionAPI) {
+	let pendingHiveRun = false;
 	pi.on("resources_discover", () => {
 		return {
 			promptPaths: [orchestratorPromptTemplatePath, workerPromptTemplatePath],
@@ -820,8 +834,40 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		};
 	});
 
+	pi.on("before_agent_start", async (event) => {
+		if (!pendingHiveRun) return undefined;
+		pendingHiveRun = false;
+		const systemAppend = await fs.readFile(hiveRunSystemPromptPath, "utf8");
+		return {
+			systemPrompt: `${event.systemPrompt}\n\n${systemAppend.trim()}`,
+		};
+	});
+
 	pi.registerMessageRenderer("hive-orchestrator-report", (message) => {
 		return new Text(typeof message.content === "string" ? message.content : String(message.content ?? ""), 0, 0);
+	});
+
+	pi.registerCommand("hive-run", {
+		description: "Plan and start a hive run for a top-level goal",
+		handler: async (args, ctx) => {
+			const goal = args.trim();
+			if (!goal) {
+				ctx.ui.notify("Usage: /hive-run <goal>", "error");
+				return;
+			}
+			if (!ctx.model) {
+				ctx.ui.notify("No model selected", "error");
+				return;
+			}
+			pendingHiveRun = true;
+			try {
+				await pi.sendUserMessage(buildHiveRunPrompt(goal), { deliverAs: "followUp" });
+				ctx.ui.notify("Started hive-run workflow", "success");
+			} catch (error) {
+				pendingHiveRun = false;
+				ctx.ui.notify(`Hive run failed to start: ${error instanceof Error ? error.message : String(error)}`, "error");
+			}
+		},
 	});
 
 	pi.registerCommand("hive-init", {
