@@ -25,6 +25,7 @@ Pi extension for long-running `hive`-backed parallel work.
   - `/hive-status`
   - `/hive-tick`
   - `/hive-loop [seconds]`
+  - `/hive-stop`
 - an extension entrypoint that exposes the resources and registers the tools/commands
 
 ## Why this shape
@@ -65,6 +66,7 @@ High level:
 - use `/hive-status` to poll and display queue state
 - use `/hive-tick` to run one poll/integrate/dispatch step
 - use `/hive-loop 30` to keep ticking every 30 seconds until the queue drains or needs attention
+- use `/hive-stop` to request stop for a running loop without waiting for the full sleep interval
 
 `/hive-run` uses a dedicated one-turn workflow system prompt that forces:
 
@@ -72,6 +74,8 @@ High level:
 - an explicit concurrency decision
 - planning notes in `.hive/orchestrator/planning-notes.md`
 - queue initialization/resume + first tick
+
+The extension also keeps a small live queue widget in the UI when a queue is present.
 
 You can also explicitly tell the model:
 

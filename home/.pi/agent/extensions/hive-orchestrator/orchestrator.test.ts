@@ -14,6 +14,7 @@ import {
 	loadQueue,
 	renderOrchestratorPlan,
 	renderQueueSummary,
+	renderQueueWidget,
 	shouldAutoCreateFollowUpTask,
 	syncTaskWithWorker,
 	workerSnapshotToTaskState,
@@ -250,6 +251,10 @@ test("renderOrchestratorPlan and summary include branch and integration details"
 	assert.match(summary, /Branch: main/);
 	assert.match(summary, /merged cafebabe1234/);
 	assert.match(summary, /merged task-001/);
+
+	const widget = renderQueueWidget(mergedQueue);
+	assert.match(widget[0], /Hive main/);
+	assert.match(widget[1], /Goal:/);
 });
 
 test("writeOrchestratorArtifacts writes queue, plan, and progress files", async () => {

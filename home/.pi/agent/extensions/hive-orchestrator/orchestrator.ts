@@ -368,6 +368,29 @@ export function renderQueueSummary(queue: OrchestratorQueue, recentChanges: stri
 	return lines.join("\n");
 }
 
+export function renderQueueWidget(queue: OrchestratorQueue, maxItems = 4): string[] {
+	const counts = summarizeQueueCounts(queue);
+	const header = `Hive ${queue.integrationBranch} p:${counts.planned} r:${counts.running} d:${counts.done} b:${counts.blocked} f:${counts.failed} m:${counts.merged}`;
+	const goal = queue.goal.length > 72 ? `${queue.goal.slice(0, 69)}...` : queue.goal;
+	const priority = new Map<OrchestratorTaskState, number>([
+		["blocked", 0],
+		["failed", 1],
+		["done", 2],
+		["running", 3],
+		["planned", 4],
+		["merged", 5],
+	]);
+	const taskLines = queue.tasks
+		.filter((task) => task.state !== "merged")
+		.sort((a, b) => (priority.get(a.state) ?? 99) - (priority.get(b.state) ?? 99))
+		.slice(0, maxItems)
+		.map((task) => {
+			const title = task.title.length > 48 ? `${task.title.slice(0, 45)}...` : task.title;
+			return `${task.id} [${task.state}] ${task.agent} ${title}`;
+		});
+	return [header, `Goal: ${goal}`, ...taskLines];
+}
+
 export function workerSnapshotToTaskState(worker: WorkerSnapshot): OrchestratorTaskState {
 	const statusState = typeof worker.status?.state === "string" ? worker.status.state : undefined;
 	if (statusState === "blocked") return "blocked";
