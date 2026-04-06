@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
+import os from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -22,6 +23,7 @@ import {
 } from "./core.ts";
 import {
 	addTasksToQueue,
+	applyTaskIntegrationResult,
 	createOrchestratorQueue,
 	getOrchestratorPaths,
 	isTaskReadyForDispatch,
@@ -31,7 +33,9 @@ import {
 	writeOrchestratorArtifacts,
 	type OrchestratorProgressEntry,
 	type OrchestratorQueue,
+	type OrchestratorTask,
 	type OrchestratorTaskInput,
+	type TaskIntegrationResult,
 } from "./orchestrator.ts";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
@@ -51,6 +55,7 @@ type HiveOrchestratorDetails = {
 	recentChanges: string[];
 	polledTaskIds: string[];
 	dispatchedTaskIds: string[];
+	integratedTaskIds: string[];
 };
 
 const HiveWorkerParams = Type.Object({
@@ -87,7 +92,7 @@ const OrchestratorTaskItem = Type.Object({
 	verificationCommands: Type.Optional(
 		Type.Array(Type.String(), { description: "Focused verification commands for this task." }),
 	),
-	dependsOn: Type.Optional(Type.Array(Type.String(), { description: "Task ids that must finish before this one can launch." })),
+	dependsOn: Type.Optional(Type.Array(Type.String(), { description: "Task ids that must finish merging before this one can launch." })),
 	handoff: Type.Optional(Type.String({ description: "Short handoff contract for the worker." })),
 });
 
@@ -141,6 +146,7 @@ function formatWorkerSummary(worker: WorkerSnapshot): string {
 	if (worker.task) lines.push(`Task: ${worker.task}`);
 	if (typeof worker.status?.summary === "string") lines.push(`Summary: ${worker.status.summary}`);
 	if (typeof worker.status?.nextAction === "string") lines.push(`Next: ${worker.status.nextAction}`);
+	if (typeof worker.status?.headSha === "string") lines.push(`Worker head: ${worker.status.headSha}`);
 	if (worker.exitCode != null) lines.push(`Exit code: ${worker.exitCode}`);
 	if (worker.launchedAt) lines.push(`Launched: ${worker.launchedAt}`);
 	if (worker.statusParseError) lines.push(`Status parse error: ${worker.statusParseError}`);
@@ -173,10 +179,43 @@ async function execOrThrow(
 	return result;
 }
 
+async function execBashOrThrow(
+	pi: ExtensionAPI,
+	cwd: string,
+	command: string,
+	signal?: AbortSignal,
+	timeout?: number,
+) {
+	const result = await pi.exec("bash", ["-lc", `set -euo pipefail\n${command}`], { cwd, signal, timeout });
+	if (result.code !== 0) {
+		throw new Error(`bash -lc ${JSON.stringify(command)} failed: ${result.stderr || result.stdout}`);
+	}
+	return result;
+}
+
 async function resolveRepoRoot(pi: ExtensionAPI, cwd: string, repoArg: string | undefined, signal?: AbortSignal) {
 	const requestedPath = repoArg ? resolve(cwd, stripAtPrefix(repoArg)) : cwd;
 	const result = await execOrThrow(pi, "git", ["-C", requestedPath, "rev-parse", "--show-toplevel"], cwd, signal, 5000);
 	return result.stdout.trim();
+}
+
+async function getCurrentBranch(pi: ExtensionAPI, repoRoot: string, signal?: AbortSignal): Promise<string> {
+	const result = await execOrThrow(pi, "git", ["-C", repoRoot, "branch", "--show-current"], repoRoot, signal, 5000);
+	const branch = result.stdout.trim();
+	if (!branch) throw new Error(`Repository is in detached HEAD state: ${repoRoot}`);
+	return branch;
+}
+
+async function getHeadSha(pi: ExtensionAPI, cwd: string, signal?: AbortSignal): Promise<string> {
+	const result = await execOrThrow(pi, "git", ["-C", cwd, "rev-parse", "HEAD"], cwd, signal, 5000);
+	return result.stdout.trim();
+}
+
+async function ensureCleanWorkingTree(pi: ExtensionAPI, cwd: string, label: string, signal?: AbortSignal) {
+	const result = await execOrThrow(pi, "git", ["-C", cwd, "status", "--porcelain"], cwd, signal, 5000);
+	if (result.stdout.trim()) {
+		throw new Error(`${label} has uncommitted changes:\n${result.stdout.trim()}`);
+	}
 }
 
 async function isWorkerProcessRunning(
@@ -270,7 +309,7 @@ async function launchWorker(
 	const startScript = buildDetachedStartScript({ runScript });
 	const launchResult = await execOrThrow(
 		pi,
-		resolveHiveCommand(repoRoot),
+		hiveCommand,
 		["exec", "--repo", repoRoot, agent, "bash", "-lc", startScript],
 		repoRoot,
 		signal,
@@ -345,6 +384,149 @@ async function refreshQueueFromWorkers(
 	};
 }
 
+async function resolveWorkerHeadSha(pi: ExtensionAPI, worker: WorkerSnapshot, signal?: AbortSignal): Promise<string> {
+	const statusHeadSha = typeof worker.status?.headSha === "string" ? worker.status.headSha.trim() : "";
+	if (statusHeadSha) return statusHeadSha;
+	return await getHeadSha(pi, worker.worktreeDir, signal);
+}
+
+async function runFinalChecks(pi: ExtensionAPI, cwd: string, commands: string[], signal?: AbortSignal) {
+	for (const command of commands) {
+		await execBashOrThrow(pi, cwd, command, signal);
+	}
+}
+
+async function tryAbortCherryPick(pi: ExtensionAPI, cwd: string, signal?: AbortSignal) {
+	await pi.exec("git", ["-C", cwd, "cherry-pick", "--abort"], { cwd, signal, timeout: 5000 });
+}
+
+async function withTemporaryIntegrationWorktree<T>(
+	pi: ExtensionAPI,
+	repoRoot: string,
+	taskId: string,
+	signal: AbortSignal | undefined,
+	fn: (worktreePath: string) => Promise<T>,
+): Promise<T> {
+	const worktreePath = join(os.tmpdir(), `pi-hive-integrate-${path.basename(repoRoot)}-${taskId}-${Date.now()}`);
+	await execOrThrow(pi, "git", ["-C", repoRoot, "worktree", "add", "--detach", worktreePath, "HEAD"], repoRoot, signal, 30_000);
+	try {
+		return await fn(worktreePath);
+	} finally {
+		await pi.exec("git", ["-C", repoRoot, "worktree", "remove", "--force", worktreePath], {
+			cwd: repoRoot,
+			signal,
+			timeout: 30_000,
+		});
+	}
+}
+
+async function integrateTask(
+	pi: ExtensionAPI,
+	ctx: { cwd: string },
+	queue: OrchestratorQueue,
+	task: OrchestratorTask,
+	signal?: AbortSignal,
+): Promise<TaskIntegrationResult> {
+	const repoRoot = queue.repoRoot;
+	const currentBranch = await getCurrentBranch(pi, repoRoot, signal);
+	if (currentBranch !== queue.integrationBranch) {
+		return {
+			state: "blocked",
+			message: `current branch is ${currentBranch}, expected ${queue.integrationBranch}`,
+			workerHeadSha: task.workerHeadSha,
+		};
+	}
+
+	await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+	const workerDetails = await pollWorker(pi, ctx, { repo: repoRoot, agent: task.agent }, signal);
+	const worker = workerDetails.worker;
+	if (worker.isRunning) {
+		return {
+			state: "blocked",
+			message: `worker ${task.agent} is still running`,
+			workerHeadSha: task.workerHeadSha,
+		};
+	}
+
+	await ensureCleanWorkingTree(pi, worker.worktreeDir, `worker worktree ${worker.worktreeDir}`, signal);
+	const workerHeadSha = await resolveWorkerHeadSha(pi, worker, signal);
+	const hostHeadBefore = await getHeadSha(pi, repoRoot, signal);
+	const diffCheck = await pi.exec("git", ["-C", repoRoot, "diff", "--quiet", hostHeadBefore, workerHeadSha], {
+		cwd: repoRoot,
+		signal,
+		timeout: 5000,
+	});
+	if (diffCheck.code === 0) {
+		return {
+			state: "merged",
+			message: `no-op: ${workerHeadSha.slice(0, 12)} already matches ${queue.integrationBranch}`,
+			mergedCommitSha: hostHeadBefore,
+			workerHeadSha,
+		};
+	}
+	if (diffCheck.code !== 1) {
+		return {
+			state: "failed",
+			message: `failed to diff host against worker head ${workerHeadSha}: ${diffCheck.stderr || diffCheck.stdout}`,
+			workerHeadSha,
+		};
+	}
+
+	try {
+		await withTemporaryIntegrationWorktree(pi, repoRoot, task.id, signal, async (integrationWorktree) => {
+			const cherryPick = await pi.exec(
+				"git",
+				["-C", integrationWorktree, "cherry-pick", "-x", workerHeadSha],
+				{ cwd: integrationWorktree, signal, timeout: 60_000 },
+			);
+			if (cherryPick.code !== 0) {
+				await tryAbortCherryPick(pi, integrationWorktree, signal);
+				throw new Error(`temp cherry-pick failed: ${cherryPick.stderr || cherryPick.stdout}`);
+			}
+
+			await runFinalChecks(pi, integrationWorktree, queue.finalCheckCommands, signal);
+		});
+	} catch (error) {
+		return {
+			state: "blocked",
+			message: error instanceof Error ? error.message : String(error),
+			workerHeadSha,
+		};
+	}
+
+	await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+	const hostHeadStill = await getHeadSha(pi, repoRoot, signal);
+	if (hostHeadStill !== hostHeadBefore) {
+		return {
+			state: "blocked",
+			message: `host branch moved during integration attempt (${hostHeadBefore.slice(0, 12)} -> ${hostHeadStill.slice(0, 12)})`,
+			workerHeadSha,
+		};
+	}
+
+	const hostCherryPick = await pi.exec("git", ["-C", repoRoot, "cherry-pick", "-x", workerHeadSha], {
+		cwd: repoRoot,
+		signal,
+		timeout: 60_000,
+	});
+	if (hostCherryPick.code !== 0) {
+		await tryAbortCherryPick(pi, repoRoot, signal);
+		return {
+			state: "blocked",
+			message: `host cherry-pick failed: ${hostCherryPick.stderr || hostCherryPick.stdout}`,
+			workerHeadSha,
+		};
+	}
+
+	const mergedCommitSha = await getHeadSha(pi, repoRoot, signal);
+	return {
+		state: "merged",
+		message: `cherry-picked ${workerHeadSha.slice(0, 12)} onto ${queue.integrationBranch} as ${mergedCommitSha.slice(0, 12)} after ${queue.finalCheckCommands.length} check(s)`,
+		mergedCommitSha,
+		workerHeadSha,
+	};
+}
+
 async function initOrchestrator(
 	pi: ExtensionAPI,
 	ctx: { cwd: string },
@@ -364,18 +546,20 @@ async function initOrchestrator(
 		throw new Error(`Orchestrator queue already exists: ${paths.queueFile}. Use overwrite=true to replace it.`);
 	}
 
+	const integrationBranch = await getCurrentBranch(pi, repoRoot, signal);
 	const now = new Date().toISOString();
 	const queue = createOrchestratorQueue(repoRoot, {
 		goal: params.goal,
+		integrationBranch,
 		pollIntervalSeconds: params.pollIntervalSeconds,
 		finalCheckCommands: params.finalCheckCommands,
 		now,
 	});
-	const recentChanges = [`Initialized orchestrator queue for goal: ${params.goal}`];
+	const recentChanges = [`Initialized orchestrator queue for goal: ${params.goal} on branch ${integrationBranch}`];
 	await withFileMutationQueue(paths.queueFile, async () => {
 		await writeOrchestratorArtifacts(paths, queue, toProgressEntries(recentChanges, now));
 	});
-	return { action: "init", queue, recentChanges, polledTaskIds: [], dispatchedTaskIds: [] };
+	return { action: "init", queue, recentChanges, polledTaskIds: [], dispatchedTaskIds: [], integratedTaskIds: [] };
 }
 
 async function enqueueOrchestratorTasks(
@@ -398,6 +582,7 @@ async function enqueueOrchestratorTasks(
 		recentChanges,
 		polledTaskIds: [],
 		dispatchedTaskIds: [],
+		integratedTaskIds: [],
 	};
 }
 
@@ -419,6 +604,7 @@ async function pollOrchestrator(
 		recentChanges: refreshed.recentChanges,
 		polledTaskIds: refreshed.polledTaskIds,
 		dispatchedTaskIds: [],
+		integratedTaskIds: [],
 	};
 }
 
@@ -435,22 +621,38 @@ async function tickOrchestrator(
 	let nextQueue = refreshed.queue;
 	const recentChanges = [...refreshed.recentChanges];
 	const dispatchedTaskIds: string[] = [];
+	const integratedTaskIds: string[] = [];
+
+	const integrationCandidates = nextQueue.tasks.filter((task) => task.state === "done");
+	for (const task of integrationCandidates) {
+		const result = await integrateTask(pi, ctx, nextQueue, task, signal);
+		const applied = applyTaskIntegrationResult(task, result, new Date().toISOString());
+		nextQueue = {
+			...nextQueue,
+			tasks: nextQueue.tasks.map((item) => (item.id === task.id ? applied.task : item)),
+			updatedAt: new Date().toISOString(),
+		};
+		recentChanges.push(applied.note);
+		if (result.state === "merged") integratedTaskIds.push(task.id);
+	}
 
 	const readyTasks = nextQueue.tasks.filter((task) => isTaskReadyForDispatch(nextQueue, task));
 	const limitedReadyTasks =
 		typeof params.dispatchLimit === "number" ? readyTasks.slice(0, Math.max(0, Math.floor(params.dispatchLimit))) : readyTasks;
 
 	for (const task of limitedReadyTasks) {
+		const currentTask = nextQueue.tasks.find((item) => item.id === task.id);
+		if (!currentTask || !isTaskReadyForDispatch(nextQueue, currentTask)) continue;
 		try {
 			const workerDetails = await launchWorker(
 				pi,
 				ctx,
 				{
 					repo: repoRoot,
-					agent: task.agent,
-					task: task.task,
-					verificationCommands: task.verificationCommands,
-					additionalInstructions: task.handoff,
+					agent: currentTask.agent,
+					task: currentTask.task,
+					verificationCommands: currentTask.verificationCommands,
+					additionalInstructions: currentTask.handoff,
 				},
 				signal,
 				(partial) => {
@@ -462,12 +664,13 @@ async function tickOrchestrator(
 							recentChanges,
 							polledTaskIds: refreshed.polledTaskIds,
 							dispatchedTaskIds,
+							integratedTaskIds,
 						},
 					});
 				},
 			);
 
-			const taskIndex = nextQueue.tasks.findIndex((item) => item.id === task.id);
+			const taskIndex = nextQueue.tasks.findIndex((item) => item.id === currentTask.id);
 			if (taskIndex !== -1) {
 				const synced = syncTaskWithWorker(nextQueue.tasks[taskIndex], workerDetails.worker, new Date().toISOString());
 				nextQueue = {
@@ -476,15 +679,22 @@ async function tickOrchestrator(
 					updatedAt: new Date().toISOString(),
 				};
 			}
-			dispatchedTaskIds.push(task.id);
-			recentChanges.push(`Dispatched ${task.id} ${task.agent}: ${task.title}`);
+			dispatchedTaskIds.push(currentTask.id);
+			recentChanges.push(`Dispatched ${currentTask.id} ${currentTask.agent}: ${currentTask.title}`);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			recentChanges.push(`Dispatch failed for ${task.id}: ${message}`);
+			recentChanges.push(`Dispatch failed for ${currentTask.id}: ${message}`);
 			nextQueue = {
 				...nextQueue,
 				tasks: nextQueue.tasks.map((item) =>
-					item.id === task.id ? { ...item, workerSummary: `Launch failed: ${message}`, lastPolledAt: new Date().toISOString() } : item,
+					item.id === currentTask.id
+						? {
+								...item,
+								state: "failed",
+								integrationMessage: `Launch failed: ${message}`,
+								lastPolledAt: new Date().toISOString(),
+							}
+						: item,
 				),
 				updatedAt: new Date().toISOString(),
 			};
@@ -502,6 +712,7 @@ async function tickOrchestrator(
 		recentChanges,
 		polledTaskIds: refreshed.polledTaskIds,
 		dispatchedTaskIds,
+		integratedTaskIds,
 	};
 }
 
@@ -593,12 +804,12 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		name: "hive_orchestrator",
 		label: "Hive Orchestrator",
 		description:
-			"Initialize and manage a repo-local hive orchestration queue under .hive/orchestrator, enqueue worker tasks, poll running workers, and tick ready tasks forward.",
-		promptSnippet: "Initialize, update, and tick the hive orchestrator queue for multi-worker coordination.",
+			"Initialize and manage a repo-local hive orchestration queue under .hive/orchestrator, enqueue worker tasks, poll running workers, integrate done workers onto the host branch, run final checks in a temp worktree, and dispatch ready tasks.",
+		promptSnippet: "Initialize, update, and tick the hive orchestrator queue for multi-worker coordination and integration.",
 		promptGuidelines: [
 			"Use hive_orchestrator with action='init' before dispatching a new swarm.",
 			"Use action='enqueue' to record clean worker subtasks in .hive/orchestrator/queue.json before launching them.",
-			"Use action='tick' to poll running workers and dispatch any dependency-ready planned tasks.",
+			"Use action='tick' as the default queue step: it polls running workers, integrates done workers after final checks, and dispatches dependency-ready planned tasks.",
 		],
 		parameters: HiveOrchestratorParams,
 
@@ -652,7 +863,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 				text += `\n  ${theme.fg("dim", args.goal.length > 90 ? `${args.goal.slice(0, 90)}...` : args.goal)}`;
 			}
 			if (args.action === "enqueue" && Array.isArray(args.tasks)) {
-				text += `\n  ${theme.fg("dim", `${args.tasks.length} task(s)` )}`;
+				text += `\n  ${theme.fg("dim", `${args.tasks.length} task(s)`)}`;
 			}
 			return new Text(text, 0, 0);
 		},

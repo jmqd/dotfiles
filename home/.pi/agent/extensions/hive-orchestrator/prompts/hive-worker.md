@@ -37,8 +37,9 @@ Required workflow:
    - If that is not directly invokable from the current worker run, use an equivalent host-side or nested pi review pass against the current worktree and consume the full review output.
 6. Fix the review findings that matter.
 7. Rerun verification.
-8. Update `.hive/status.json` with a done-ready summary.
-9. Leave a terse final report with:
+8. Create a small, reviewable commit for the finished change in the worker worktree.
+9. Record the resulting `HEAD` commit SHA as `headSha` in `.hive/status.json`, along with a done-ready summary.
+10. Leave a terse final report with:
    - what changed
    - files touched
    - checks run
@@ -49,6 +50,7 @@ Blocked-state rules:
 
 - Only stop early for a real blocker.
 - If blocked, write the blocker clearly into `.hive/status.json` with the smallest concrete unblock request.
+- Do not claim `done` without leaving a clean, committed `headSha` for the orchestrator to integrate.
 - Do not leave the worktree in an ambiguous half-done state without recording what remains.
 
 The orchestrator will merge and verify your work later, so optimize for a clean, reviewable, low-surprise result.

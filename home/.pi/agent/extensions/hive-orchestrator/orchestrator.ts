@@ -30,8 +30,13 @@ export type OrchestratorTask = {
 	workerSummary?: string;
 	workerNextAction?: string;
 	workerExitCode?: number | null;
+	workerHeadSha?: string;
 	workerStatusPath?: string;
 	workerEventLogPath?: string;
+	integrationAttemptedAt?: string;
+	integrationMessage?: string;
+	mergedAt?: string;
+	mergedCommitSha?: string;
 };
 
 export type OrchestratorQueue = {
@@ -39,6 +44,7 @@ export type OrchestratorQueue = {
 	goal: string;
 	repoRoot: string;
 	repoSlug: string;
+	integrationBranch: string;
 	createdAt: string;
 	updatedAt: string;
 	pollIntervalSeconds: number;
@@ -60,6 +66,19 @@ export type OrchestratorProgressEntry = {
 	text: string;
 };
 
+export type TaskIntegrationResult =
+	| {
+			state: "merged";
+			message: string;
+			mergedCommitSha: string;
+			workerHeadSha?: string;
+	  }
+	| {
+			state: "blocked" | "failed";
+			message: string;
+			workerHeadSha?: string;
+	  };
+
 export function getOrchestratorPaths(repoRoot: string): OrchestratorPaths {
 	const normalizedRepoRoot = path.resolve(repoRoot);
 	const repoSlug = path.basename(normalizedRepoRoot);
@@ -78,11 +97,13 @@ export function createOrchestratorQueue(
 	repoRoot: string,
 	{
 		goal,
+		integrationBranch,
 		pollIntervalSeconds = 30,
 		finalCheckCommands = ["just check"],
 		now = new Date().toISOString(),
 	}: {
 		goal: string;
+		integrationBranch: string;
 		pollIntervalSeconds?: number;
 		finalCheckCommands?: string[];
 		now?: string;
@@ -94,6 +115,7 @@ export function createOrchestratorQueue(
 		goal,
 		repoRoot: normalizedRepoRoot,
 		repoSlug: path.basename(normalizedRepoRoot),
+		integrationBranch,
 		createdAt: now,
 		updatedAt: now,
 		pollIntervalSeconds,
@@ -150,16 +172,25 @@ export function addTasksToQueue(
 	};
 }
 
+function isAgentAvailableForDispatch(queue: OrchestratorQueue, task: OrchestratorTask): boolean {
+	return !queue.tasks.some(
+		(item) =>
+			item.id !== task.id &&
+			item.agent === task.agent &&
+			(item.state === "running" || item.state === "done" || item.state === "blocked" || item.state === "failed"),
+	);
+}
+
 export function isTaskReadyForDispatch(queue: OrchestratorQueue, task: OrchestratorTask): boolean {
 	if (task.state !== "planned") return false;
 	const dependencyMap = new Map(queue.tasks.map((item) => [item.id, item]));
 	for (const dependencyId of task.dependsOn) {
 		const dependency = dependencyMap.get(dependencyId);
 		if (!dependency) return false;
-		if (dependency.state !== "done" && dependency.state !== "merged") return false;
+		if (dependency.state !== "merged") return false;
 	}
 
-	return !queue.tasks.some((item) => item.id !== task.id && item.agent === task.agent && item.state === "running");
+	return isAgentAvailableForDispatch(queue, task);
 }
 
 export function summarizeQueueCounts(queue: OrchestratorQueue): Record<OrchestratorTaskState, number> {
@@ -180,6 +211,10 @@ export function renderOrchestratorPlan(queue: OrchestratorQueue): string {
 		"",
 		queue.goal,
 		"",
+		"## Integration branch",
+		"",
+		`- ${queue.integrationBranch}`,
+		"",
 		"## Task breakdown",
 		"",
 	];
@@ -197,6 +232,7 @@ export function renderOrchestratorPlan(queue: OrchestratorQueue): string {
 				sections.push(`  - Verification: ${task.verificationCommands.join("; ")}`);
 			}
 			if (task.handoff) sections.push(`  - Handoff: ${task.handoff}`);
+			if (task.integrationMessage) sections.push(`  - Integration: ${task.integrationMessage}`);
 		}
 	}
 
@@ -221,6 +257,7 @@ export function renderQueueSummary(queue: OrchestratorQueue, recentChanges: stri
 	const lines = [
 		`Goal: ${queue.goal}`,
 		`Repo: ${queue.repoRoot}`,
+		`Branch: ${queue.integrationBranch}`,
 		`Tasks: ${queue.tasks.length} total | planned=${counts.planned} running=${counts.running} done=${counts.done} blocked=${counts.blocked} failed=${counts.failed} merged=${counts.merged}`,
 		`Poll interval: ${queue.pollIntervalSeconds}s`,
 		`Final checks: ${queue.finalCheckCommands.join(", ")}`,
@@ -230,8 +267,15 @@ export function renderQueueSummary(queue: OrchestratorQueue, recentChanges: stri
 		lines.push("Queue:");
 		for (const task of queue.tasks) {
 			const parts = [`- ${task.id}`, `[${task.state}]`, `${task.agent}`, task.title];
-			if (task.workerSummary) parts.push(`— ${task.workerSummary}`);
-			else if (task.workerNextAction) parts.push(`— next: ${task.workerNextAction}`);
+			if (task.state === "merged" && task.mergedCommitSha) {
+				parts.push(`— merged ${task.mergedCommitSha.slice(0, 12)}`);
+			} else if (task.integrationMessage) {
+				parts.push(`— ${task.integrationMessage}`);
+			} else if (task.workerSummary) {
+				parts.push(`— ${task.workerSummary}`);
+			} else if (task.workerNextAction) {
+				parts.push(`— next: ${task.workerNextAction}`);
+			}
 			lines.push(parts.join(" "));
 		}
 	}
@@ -262,6 +306,7 @@ export function syncTaskWithWorker(
 	const nextState = workerSnapshotToTaskState(worker);
 	const workerSummary = typeof worker.status?.summary === "string" ? worker.status.summary : undefined;
 	const workerNextAction = typeof worker.status?.nextAction === "string" ? worker.status.nextAction : undefined;
+	const workerHeadSha = typeof worker.status?.headSha === "string" ? worker.status.headSha : task.workerHeadSha;
 	const nextTask: OrchestratorTask = {
 		...task,
 		state: nextState,
@@ -272,13 +317,15 @@ export function syncTaskWithWorker(
 		workerSummary,
 		workerNextAction,
 		workerExitCode: worker.exitCode,
+		workerHeadSha,
 		workerStatusPath: worker.paths.statusFile,
 		workerEventLogPath: worker.paths.eventLogFile,
 	};
 
 	const stateChanged = task.state !== nextState;
 	const summaryChanged = workerSummary && workerSummary !== task.workerSummary;
-	if (!stateChanged && !summaryChanged) return { task: nextTask };
+	const headChanged = workerHeadSha && workerHeadSha !== task.workerHeadSha;
+	if (!stateChanged && !summaryChanged && !headChanged) return { task: nextTask };
 
 	if (stateChanged) {
 		return {
@@ -287,9 +334,50 @@ export function syncTaskWithWorker(
 		};
 	}
 
+	if (summaryChanged) {
+		return {
+			task: nextTask,
+			note: `${task.id} ${task.title}: ${workerSummary}`,
+		};
+	}
+
 	return {
 		task: nextTask,
-		note: `${task.id} ${task.title}: ${workerSummary}`,
+		note: `${task.id} ${task.title}: updated worker head ${workerHeadSha?.slice(0, 12)}`,
+	};
+}
+
+export function applyTaskIntegrationResult(
+	task: OrchestratorTask,
+	result: TaskIntegrationResult,
+	now = new Date().toISOString(),
+): { task: OrchestratorTask; note: string } {
+	if (result.state === "merged") {
+		return {
+			task: {
+				...task,
+				state: "merged",
+				integrationAttemptedAt: now,
+				integrationMessage: result.message,
+				mergedAt: now,
+				mergedCommitSha: result.mergedCommitSha,
+				workerHeadSha: result.workerHeadSha ?? task.workerHeadSha,
+				finishedAt: task.finishedAt ?? now,
+			},
+			note: `${task.id} ${task.title}: merged (${result.message})`,
+		};
+	}
+
+	return {
+		task: {
+			...task,
+			state: result.state,
+			integrationAttemptedAt: now,
+			integrationMessage: result.message,
+			workerHeadSha: result.workerHeadSha ?? task.workerHeadSha,
+			finishedAt: now,
+		},
+		note: `${task.id} ${task.title}: ${result.state} (${result.message})`,
 	};
 }
 

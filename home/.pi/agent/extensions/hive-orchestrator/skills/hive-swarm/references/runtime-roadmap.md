@@ -37,9 +37,9 @@ Implemented in this commit via the `hive_orchestrator` tool:
 
 Still to add:
 
-- merge/integration execution
-- final-check automation after merge
-- long-lived autonomous bounded sleep loops driven entirely by the orchestrator tool layer
+- smarter conflict-resolution flows beyond basic cherry-pick failure handling
+- optional host-side auto-loop helpers that sleep and re-tick for hours without manual prompting
+- stronger review/fixup enforcement signals before integration
 
 ## Phase 3: merge queue automation
 

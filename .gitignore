@@ -5,4 +5,5 @@ result
 emacs/var/
 emacs/eln-cache/
 blobs/*.zip
+.hive/
 .trueflow/
