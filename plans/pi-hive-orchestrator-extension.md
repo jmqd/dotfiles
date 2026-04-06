@@ -2,7 +2,7 @@
 
 ## Status
 
-Planning + prompt/skill scaffolding + runnable worker launcher + first orchestrator queue manager.
+Planning + prompt/skill scaffolding + runnable worker launcher + orchestrator queue manager + automated integration/check path.
 
 ## Objective
 
@@ -139,13 +139,15 @@ Implemented in this commit via the `hive_worker` tool:
 
 ### Milestone 3
 
-Partially implemented in this commit via the `hive_orchestrator` tool:
+Implemented in this commit via the `hive_orchestrator` tool:
 
 - initialize `.hive/orchestrator/plan.md`
 - initialize `.hive/orchestrator/queue.json`
 - initialize `.hive/orchestrator/progress.md`
 - enqueue tasks
 - poll running workers
+- verify done workers in a temporary integration worktree
+- cherry-pick verified worker commits onto the host branch
 - dispatch dependency-ready planned tasks during `tick`
 
 ### Milestone 4
@@ -158,10 +160,8 @@ Add ergonomic progress rendering in pi via custom messages or a small status wid
 
 ## Immediate next step
 
-Add merge/integration behavior on top of `hive_orchestrator`:
+Add more robust conflict-handling and autonomous looping on top of `hive_orchestrator`:
 
-- inspect completed worker heads
-- merge them into the host main worktree
-- run `just check`
-- record merged vs blocked integration outcomes in the queue
-- keep polling and merging until the queue drains
+- teach the orchestrator to create follow-up worker tasks automatically after blocked integrations
+- add optional bounded sleep/re-tick helper flows for long unattended runs
+- improve merge conflict recovery beyond simple cherry-pick blocking
