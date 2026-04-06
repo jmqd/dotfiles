@@ -11,6 +11,7 @@ in
     ./direnv.nix
     ./emacs.nix
     ./files.nix
+    ./flow-search.nix
     ./gpg.nix
     ./git.nix
     ./ssh.nix

@@ -15,9 +15,15 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1.0"
+base64 = "0.22"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4.5", features = ["derive"] }
 clap_complete = "4.5"
+dirs = "6.0"
+rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tempfile = "3.20"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+walkdir = "2.5"
