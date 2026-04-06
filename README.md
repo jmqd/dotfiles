@@ -4,6 +4,12 @@
 find ~ -name ".*" -maxdepth 1
 ```
 
+## flow search
+
+User-facing documentation for the shipped `flow search` feature lives in
+[`docs/flow-search.md`](docs/flow-search.md).
+
+
 ## bootstrap
 
 ```bash
