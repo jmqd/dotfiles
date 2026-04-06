@@ -18,6 +18,7 @@ import {
 	loadWorkerSnapshot,
 	normalizeAgentName,
 	stripAtPrefix,
+	validateWorkerDoneStatus,
 	writeWorkerLaunchFiles,
 	type WorkerSnapshot,
 } from "./core.ts";
@@ -384,12 +385,6 @@ async function refreshQueueFromWorkers(
 	};
 }
 
-async function resolveWorkerHeadSha(pi: ExtensionAPI, worker: WorkerSnapshot, signal?: AbortSignal): Promise<string> {
-	const statusHeadSha = typeof worker.status?.headSha === "string" ? worker.status.headSha.trim() : "";
-	if (statusHeadSha) return statusHeadSha;
-	return await getHeadSha(pi, worker.worktreeDir, signal);
-}
-
 async function runFinalChecks(pi: ExtensionAPI, cwd: string, commands: string[], signal?: AbortSignal) {
 	for (const command of commands) {
 		await execBashOrThrow(pi, cwd, command, signal);
@@ -449,7 +444,16 @@ async function integrateTask(
 	}
 
 	await ensureCleanWorkingTree(pi, worker.worktreeDir, `worker worktree ${worker.worktreeDir}`, signal);
-	const workerHeadSha = await resolveWorkerHeadSha(pi, worker, signal);
+	const actualWorkerHeadSha = await getHeadSha(pi, worker.worktreeDir, signal);
+	const validation = validateWorkerDoneStatus(worker.status, actualWorkerHeadSha);
+	if (!validation.ok) {
+		return {
+			state: "blocked",
+			message: `worker is not ready for integration: ${validation.errors.join("; ")}`,
+			workerHeadSha: task.workerHeadSha,
+		};
+	}
+	const workerHeadSha = validation.headSha ?? actualWorkerHeadSha;
 	const hostHeadBefore = await getHeadSha(pi, repoRoot, signal);
 	const diffCheck = await pi.exec("git", ["-C", repoRoot, "diff", "--quiet", hostHeadBefore, workerHeadSha], {
 		cwd: repoRoot,

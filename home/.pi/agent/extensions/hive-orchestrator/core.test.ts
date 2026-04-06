@@ -10,6 +10,7 @@ import {
 	buildWorkerSystemPrompt,
 	createInitialWorkerStatus,
 	getHiveStateDir,
+	validateWorkerDoneStatus,
 	getWorkerPaths,
 	loadWorkerSnapshot,
 	normalizeAgentName,
@@ -100,12 +101,70 @@ test("createInitialWorkerStatus starts in booting state", () => {
 		summary: "Booting worker run",
 		assumptions: [],
 		checks: ["just check"],
-		review: { status: "pending" },
+		review: {
+			status: "pending",
+			scope: "worker delta",
+			completedAt: null,
+			summary: null,
+		},
+		finalVerification: {
+			status: "pending",
+			commands: ["just check"],
+			completedAt: null,
+		},
 		headSha: null,
 		updatedAt: "2026-04-06T00:00:00.000Z",
 		nextAction: "Start implementation",
 	});
 });
+
+
+test("validateWorkerDoneStatus enforces committed reviewed done-state", () => {
+	const valid = validateWorkerDoneStatus(
+		{
+			state: "done",
+			summary: "Ready to merge",
+			nextAction: "Wait for orchestrator merge",
+			updatedAt: "2026-04-06T00:00:00Z",
+			checks: ["just check"],
+			headSha: "deadbeef",
+			review: {
+				status: "passed",
+				scope: "worker delta",
+				completedAt: "2026-04-06T00:00:00Z",
+				summary: "Addressed correctness and testing feedback",
+			},
+			finalVerification: {
+				status: "passed",
+				commands: ["just check"],
+				completedAt: "2026-04-06T00:00:00Z",
+			},
+		},
+		"deadbeef",
+	);
+	assert.deepEqual(valid, { ok: true, errors: [], headSha: "deadbeef" });
+
+	const invalid = validateWorkerDoneStatus(
+		{
+			state: "done",
+			summary: "Ready to merge",
+			nextAction: "Wait",
+			updatedAt: "2026-04-06T00:00:00Z",
+			checks: ["just check"],
+			headSha: "deadbeef",
+			review: { status: "pending", scope: "worker delta" },
+			finalVerification: { status: "pending", commands: [] },
+		},
+		"cafebabe",
+	);
+	assert.equal(invalid.ok, false);
+	assert.match(invalid.errors.join("\n"), /headSha .* does not match current HEAD/);
+	assert.match(invalid.errors.join("\n"), /review\.status must be passed or done/);
+	assert.match(invalid.errors.join("\n"), /review\.completedAt is required/);
+	assert.match(invalid.errors.join("\n"), /review\.summary is required/);
+	assert.match(invalid.errors.join("\n"), /finalVerification\.status must be passed or done/);
+	assert.match(invalid.errors.join("\n"), /finalVerification\.completedAt is required/);
+	});
 
 test("summarizeJsonEventLog extracts assistant and tool updates", () => {
 	const raw = [
