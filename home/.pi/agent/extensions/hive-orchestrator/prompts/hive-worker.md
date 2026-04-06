@@ -16,7 +16,9 @@ Operate with these rules:
 
 Status file guidance:
 
-- Keep fields like: `task`, `state`, `summary`, `assumptions`, `checks`, `review`, `headSha`, `updatedAt`, `nextAction`.
+- Keep fields like: `task`, `state`, `summary`, `assumptions`, `checks`, `review`, `finalVerification`, `headSha`, `updatedAt`, `nextAction`.
+- `review` should include at least: `status`, `scope`, `completedAt`, `summary`.
+- `finalVerification` should include at least: `status`, `commands`, `completedAt`.
 - Preferred state progression:
   - `booting`
   - `implementing`

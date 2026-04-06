@@ -57,6 +57,12 @@ export type WorkerSnapshot = {
 	paths: WorkerPaths;
 };
 
+export type WorkerCompletionValidation = {
+	ok: boolean;
+	errors: string[];
+	headSha?: string;
+};
+
 export function stripAtPrefix(value: string): string {
 	return value.startsWith("@") ? value.slice(1) : value;
 }
@@ -214,10 +220,81 @@ export function createInitialWorkerStatus(
 		checks: verificationCommands,
 		review: {
 			status: "pending",
+			scope: "worker delta",
+			completedAt: null,
+			summary: null,
+		},
+		finalVerification: {
+			status: "pending",
+			commands: verificationCommands,
+			completedAt: null,
 		},
 		headSha: null,
 		updatedAt: now,
 		nextAction: "Start implementation",
+	};
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPassedStatus(value: unknown): boolean {
+	return value === "passed" || value === "done";
+}
+
+export function validateWorkerDoneStatus(status: Record<string, unknown> | null, actualHeadSha?: string): WorkerCompletionValidation {
+	const errors: string[] = [];
+	if (!isPlainObject(status)) {
+		return { ok: false, errors: ["missing or invalid .hive/status.json object"] };
+	}
+
+	if (status.state !== "done") errors.push(`worker state must be done, got ${JSON.stringify(status.state)}`);
+	if (typeof status.summary !== "string" || status.summary.trim() === "") errors.push("worker summary is required");
+	if (typeof status.nextAction !== "string" || status.nextAction.trim() === "") errors.push("worker nextAction is required");
+	if (typeof status.updatedAt !== "string" || status.updatedAt.trim() === "") errors.push("worker updatedAt is required");
+	if (!Array.isArray(status.checks)) errors.push("worker checks must be an array");
+
+	const headSha = typeof status.headSha === "string" && status.headSha.trim() !== "" ? status.headSha.trim() : undefined;
+	if (!headSha) {
+		errors.push("worker headSha is required");
+	} else if (actualHeadSha && headSha !== actualHeadSha) {
+		errors.push(`worker headSha ${headSha} does not match current HEAD ${actualHeadSha}`);
+	}
+
+	const review = status.review;
+	if (!isPlainObject(review)) {
+		errors.push("worker review object is required");
+	} else {
+		if (!isPassedStatus(review.status)) errors.push(`worker review.status must be passed or done, got ${JSON.stringify(review.status)}`);
+		if (typeof review.scope !== "string" || review.scope.trim() === "") errors.push("worker review.scope is required");
+		if (typeof review.completedAt !== "string" || review.completedAt.trim() === "") {
+			errors.push("worker review.completedAt is required");
+		}
+		if (typeof review.summary !== "string" || review.summary.trim() === "") errors.push("worker review.summary is required");
+	}
+
+	const finalVerification = status.finalVerification;
+	if (!isPlainObject(finalVerification)) {
+		errors.push("worker finalVerification object is required");
+	} else {
+		if (!isPassedStatus(finalVerification.status)) {
+			errors.push(
+				`worker finalVerification.status must be passed or done, got ${JSON.stringify(finalVerification.status)}`,
+			);
+		}
+		if (!Array.isArray(finalVerification.commands) || finalVerification.commands.some((command) => typeof command !== "string")) {
+			errors.push("worker finalVerification.commands must be an array of strings");
+		}
+		if (typeof finalVerification.completedAt !== "string" || finalVerification.completedAt.trim() === "") {
+			errors.push("worker finalVerification.completedAt is required");
+		}
+	}
+
+	return {
+		ok: errors.length === 0,
+		errors,
+		headSha,
 	};
 }
 
