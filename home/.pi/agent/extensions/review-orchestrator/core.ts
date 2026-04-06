@@ -43,8 +43,12 @@ export function extractText(content: TextContentItem[]): string {
 		.join("\n");
 }
 
+function normalizeCommitRevision(value: string): string {
+	return value.replace(/^head(?=$|[~^])/i, "HEAD");
+}
+
 export function normalizeScopeKind(value: string): ScopeKind {
-	switch ((value || "").trim()) {
+	switch ((value || "").trim().toLowerCase()) {
 		case "working":
 		case "uncommitted":
 			return "uncommitted";
@@ -52,7 +56,7 @@ export function normalizeScopeKind(value: string): ScopeKind {
 		case "range":
 		case "file":
 		case "commit":
-			return value.trim() as ScopeKind;
+			return value.trim().toLowerCase() as ScopeKind;
 		case "head":
 			return "commit";
 		default:
@@ -62,22 +66,26 @@ export function normalizeScopeKind(value: string): ScopeKind {
 
 export function parseScope(args: string, defaultScope: ScopeKind): ScopeSpec | null {
 	const trimmed = args.trim();
-	if (!trimmed) return { kind: defaultScope };
-	if (trimmed === "staged") return { kind: "staged" };
-	if (trimmed === "working" || trimmed === "uncommitted") return { kind: "uncommitted" };
-	if (trimmed === "repo") return { kind: "repo" };
-	if (trimmed === "commit" || trimmed === "head") return { kind: "commit", value: "HEAD" };
-	if (trimmed.startsWith("range ")) {
-		const value = trimmed.slice("range ".length).trim();
+	const lowered = trimmed.toLowerCase();
+	if (!trimmed) return defaultScope === "commit" ? { kind: "commit", value: "HEAD" } : { kind: defaultScope };
+	if (lowered === "staged") return { kind: "staged" };
+	if (lowered === "working" || lowered === "uncommitted") return { kind: "uncommitted" };
+	if (lowered === "repo") return { kind: "repo" };
+	if (lowered === "commit" || lowered === "head") return { kind: "commit", value: "HEAD" };
+	if (lowered.startsWith("range ")) {
+		const value = trimmed.slice(trimmed.indexOf(" ") + 1).trim();
 		return value ? { kind: "range", value } : null;
 	}
-	if (trimmed.startsWith("file ")) {
-		const value = trimmed.slice("file ".length).trim();
+	if (lowered.startsWith("file ")) {
+		const value = trimmed.slice(trimmed.indexOf(" ") + 1).trim();
 		return value ? { kind: "file", value } : null;
 	}
-	if (trimmed.startsWith("commit ")) {
-		const value = trimmed.slice("commit ".length).trim();
-		return value ? { kind: "commit", value } : null;
+	if (lowered.startsWith("commit ")) {
+		const value = trimmed.slice(trimmed.indexOf(" ") + 1).trim();
+		return value ? { kind: "commit", value: normalizeCommitRevision(value) } : null;
+	}
+	if (/^head(?:$|[~^])/i.test(trimmed)) {
+		return { kind: "commit", value: normalizeCommitRevision(trimmed) };
 	}
 	return null;
 }
