@@ -12,7 +12,12 @@ Pi extension for long-running `hive`-backed parallel work.
   - write `.hive/status.json`
   - capture the worker's pi JSON event stream to `.hive/worker-events.jsonl`
   - poll the worker's status/log snapshot later
-- an extension entrypoint that exposes the resources and registers the tool
+- a `hive_orchestrator` tool that can:
+  - initialize `.hive/orchestrator/plan.md`, `queue.json`, and `progress.md`
+  - enqueue clean worker subtasks
+  - poll running workers through the queue
+  - tick the queue forward by polling and dispatching dependency-ready tasks
+- an extension entrypoint that exposes the resources and registers the tools
 
 ## Why this shape
 
@@ -33,6 +38,14 @@ The launcher follows pi's `subagent` example pattern:
 
 That matters because hive containers do not automatically inherit host-global `~/.pi/agent` resources.
 The reliable path is to have the host extension inject the worker prompt/template into each worker invocation.
+
+## Current orchestrator artifacts
+
+The orchestrator keeps these host-worktree files:
+
+- `.hive/orchestrator/plan.md`
+- `.hive/orchestrator/queue.json`
+- `.hive/orchestrator/progress.md`
 
 ## Current worker artifacts
 
