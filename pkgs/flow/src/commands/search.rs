@@ -6,6 +6,7 @@ use crate::context::Ctx;
 use crate::logging::tracing;
 use crate::search::config::{SearchConfig, SearchState};
 use crate::search::dirty;
+use crate::search::lock::FileLock;
 use crate::search::metadata::{self, CommitMatch, CommitSearchFilters};
 use crate::search::repo::{
     DiscoveredRepo, discover_repos, repo_from_working_dir, repo_has_head, resolve_repo_selector,
@@ -89,6 +90,7 @@ pub struct StatusOutput {
     pub service_running: bool,
     pub index_ready: bool,
     pub metadata_ready: bool,
+    pub discovered_repo_count: usize,
     pub indexed_repo_count: usize,
     pub commit_count: usize,
     pub last_reindex_at: Option<String>,
@@ -315,6 +317,7 @@ fn execute_reindex(
     tools: &SearchTools,
     _args: SearchReindexArgs,
 ) -> anyhow::Result<ReindexOutput> {
+    let _lock = FileLock::acquire(&config.reindex_lock_path)?;
     let discovered_repos = discover_repos(config)?;
     let mut indexable_repos = Vec::new();
     let mut warnings = Vec::new();
@@ -337,7 +340,8 @@ fn execute_reindex(
     let last_reindex_at = Utc::now().to_rfc3339();
     config.write_state(&SearchState {
         last_reindex_at: Some(last_reindex_at.clone()),
-        repo_count: discovered_repos.len(),
+        discovered_repo_count: discovered_repos.len(),
+        indexed_repo_count: zoekt_stats.indexed_repo_count,
         commit_count: metadata_stats.commit_count,
     })?;
 
@@ -371,7 +375,8 @@ fn execute_status(config: &SearchConfig, _args: SearchStatusArgs) -> anyhow::Res
         service_running: is_service_running(&config.zoekt_listen),
         index_ready: config.index_exists()?,
         metadata_ready: config.metadata_exists(),
-        indexed_repo_count: state.repo_count,
+        discovered_repo_count: state.discovered_repo_count,
+        indexed_repo_count: state.indexed_repo_count,
         commit_count: state.commit_count,
         last_reindex_at: state.last_reindex_at,
     })
@@ -607,6 +612,11 @@ fn format_status(output: &StatusOutput) -> String {
     let _ = writeln!(&mut rendered, "metadata_ready: {}", output.metadata_ready);
     let _ = writeln!(
         &mut rendered,
+        "discovered_repo_count: {}",
+        output.discovered_repo_count
+    );
+    let _ = writeln!(
+        &mut rendered,
         "indexed_repo_count: {}",
         output.indexed_repo_count
     );
@@ -621,7 +631,9 @@ fn format_status(output: &StatusOutput) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SearchOutput, SearchResult, SearchResultsOutput, format_text};
+    use super::{
+        SearchOutput, SearchResult, SearchResultsOutput, StatusOutput, format_status, format_text,
+    };
 
     #[test]
     fn formats_grouped_search_text() {
@@ -663,5 +675,27 @@ mod tests {
         assert!(rendered.contains("Commit matches"));
         assert!(rendered.contains("Dirty working tree matches"));
         assert!(rendered.contains("Warnings"));
+    }
+
+    #[test]
+    fn formats_status_with_distinct_repo_counts() {
+        let rendered = format_status(&StatusOutput {
+            roots: vec!["/src".to_owned()],
+            state_dir: "/state".to_owned(),
+            zoekt_index_dir: "/state/zoekt/index".to_owned(),
+            metadata_db_path: "/state/metadata/commits.sqlite".to_owned(),
+            repos_manifest_path: "/state/metadata/repos.json".to_owned(),
+            service_endpoint: "127.0.0.1:6070".to_owned(),
+            service_running: true,
+            index_ready: true,
+            metadata_ready: true,
+            discovered_repo_count: 5,
+            indexed_repo_count: 3,
+            commit_count: 42,
+            last_reindex_at: Some("2026-04-06T00:00:00Z".to_owned()),
+        });
+
+        assert!(rendered.contains("discovered_repo_count: 5"));
+        assert!(rendered.contains("indexed_repo_count: 3"));
     }
 }

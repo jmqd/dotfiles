@@ -1,5 +1,6 @@
 pub mod config;
 pub mod dirty;
+pub mod lock;
 pub mod metadata;
 pub mod repo;
 pub mod zoekt;
