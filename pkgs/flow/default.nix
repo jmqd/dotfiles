@@ -13,6 +13,7 @@ rustPlatform.buildRustPackage rec {
   cargoLock.lockFile = ./Cargo.lock;
 
   nativeBuildInputs = [ makeWrapper ];
+  nativeCheckInputs = [ git ];
 
   postInstall = ''
     wrapProgram "$out/bin/flow" \
