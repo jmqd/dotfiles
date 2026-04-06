@@ -31,6 +31,7 @@ import {
 	isTaskReadyForDispatch,
 	loadQueue,
 	renderQueueSummary,
+	renderQueueWidget,
 	shouldAutoCreateFollowUpTask,
 	summarizeQueueCounts,
 	syncTaskWithWorker,
@@ -813,6 +814,33 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function sleepWithAbort(totalMs: number, shouldAbort: () => boolean): Promise<boolean> {
+	const stepMs = 1000;
+	let remaining = totalMs;
+	while (remaining > 0) {
+		if (shouldAbort()) return true;
+		const currentStep = Math.min(stepMs, remaining);
+		await sleep(currentStep);
+		remaining -= currentStep;
+	}
+	return shouldAbort();
+}
+
+function updateHiveWidget(ctx: { hasUI: boolean; ui: { setWidget: Function } }, queue: OrchestratorQueue | null) {
+	if (!ctx.hasUI) return;
+	ctx.ui.setWidget("hive-orchestrator", queue ? renderQueueWidget(queue) : undefined, { placement: "belowEditor" });
+}
+
+async function refreshHiveWidget(pi: ExtensionAPI, ctx: { cwd: string; hasUI: boolean; ui: { setWidget: Function } }) {
+	try {
+		const repoRoot = await resolveRepoRoot(pi, ctx.cwd, undefined);
+		const queue = await loadQueue(getOrchestratorPaths(repoRoot));
+		updateHiveWidget(ctx, queue);
+	} catch {
+		updateHiveWidget(ctx, null);
+	}
+}
+
 function buildHiveRunPrompt(goal: string): string {
 	return [
 		`Goal: ${goal}`,
@@ -827,11 +855,18 @@ function buildHiveRunPrompt(goal: string): string {
 
 export default function hiveOrchestrator(pi: ExtensionAPI) {
 	let pendingHiveRun = false;
+	let hiveLoopActive = false;
+	let hiveLoopAbortRequested = false;
 	pi.on("resources_discover", () => {
 		return {
 			promptPaths: [orchestratorPromptTemplatePath, workerPromptTemplatePath],
 			skillPaths: [hiveSkillPath],
 		};
+	});
+
+	pi.on("session_start", async (_event, ctx) => {
+		hiveLoopAbortRequested = false;
+		await refreshHiveWidget(pi, ctx);
 	});
 
 	pi.on("before_agent_start", async (event) => {
@@ -880,6 +915,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 			}
 			try {
 				const details = await initOrchestrator(pi, ctx, { goal }, undefined);
+				updateHiveWidget(ctx, details.queue);
 				await sendOrchestratorReport(pi, "Hive init", details);
 				ctx.ui.notify("Initialized hive orchestrator queue", "success");
 			} catch (error) {
@@ -893,6 +929,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			try {
 				const details = await pollOrchestrator(pi, ctx, {}, undefined);
+				updateHiveWidget(ctx, details.queue);
 				await sendOrchestratorReport(pi, "Hive status", details);
 				ctx.ui.notify("Updated hive queue status", "info");
 			} catch (error) {
@@ -907,6 +944,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 			ctx.ui.setStatus("hive-loop", "Running hive tick...");
 			try {
 				const details = await tickOrchestrator(pi, ctx, {}, undefined);
+				updateHiveWidget(ctx, details.queue);
 				await sendOrchestratorReport(pi, "Hive tick", details);
 				ctx.ui.notify("Completed hive tick", "success");
 			} catch (error) {
@@ -919,6 +957,11 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 
 	pi.registerCommand("hive-loop", {
 		description: "Run repeated hive ticks until the queue drains or needs attention",
+		getArgumentCompletions: (prefix) => {
+			const items = ["5", "10", "30", "60", "120"].map((value) => ({ value, label: `${value}s` }));
+			const filtered = items.filter((item) => item.value.startsWith(prefix.trim()));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args, ctx) => {
 			const trimmed = args.trim();
 			const intervalSeconds = trimmed ? Number.parseInt(trimmed, 10) : 30;
@@ -926,14 +969,25 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /hive-loop [seconds]", "error");
 				return;
 			}
+			if (hiveLoopActive) {
+				ctx.ui.notify("Hive loop is already running. Use /hive-stop to request stop.", "warning");
+				return;
+			}
 
 			let iteration = 0;
+			hiveLoopActive = true;
+			hiveLoopAbortRequested = false;
 			ctx.ui.notify(`Starting hive loop (${intervalSeconds}s)`, "info");
 			try {
 				while (true) {
+					if (hiveLoopAbortRequested) {
+						ctx.ui.notify("Hive loop stopped by user", "warning");
+						return;
+					}
 					iteration += 1;
 					ctx.ui.setStatus("hive-loop", `Hive loop: tick ${iteration}`);
 					const details = await tickOrchestrator(pi, ctx, {}, undefined);
+					updateHiveWidget(ctx, details.queue);
 					await sendOrchestratorReport(pi, `Hive loop tick ${iteration}`, details);
 					const stop = shouldStopHiveLoop(details.queue);
 					if (stop.stop) {
@@ -941,13 +995,31 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 						return;
 					}
 					ctx.ui.setStatus("hive-loop", `Hive loop sleeping for ${intervalSeconds}s`);
-					await sleep(intervalSeconds * 1000);
+					const aborted = await sleepWithAbort(intervalSeconds * 1000, () => hiveLoopAbortRequested);
+					if (aborted) {
+						ctx.ui.notify("Hive loop stopped by user", "warning");
+						return;
+					}
 				}
 			} catch (error) {
 				ctx.ui.notify(`Hive loop failed: ${error instanceof Error ? error.message : String(error)}`, "error");
 			} finally {
+				hiveLoopActive = false;
+				hiveLoopAbortRequested = false;
 				ctx.ui.setStatus("hive-loop", "");
 			}
+		},
+	});
+
+	pi.registerCommand("hive-stop", {
+		description: "Request stop for a running hive loop",
+		handler: async (_args, ctx) => {
+			if (!hiveLoopActive) {
+				ctx.ui.notify("Hive loop is not running", "info");
+				return;
+			}
+			hiveLoopAbortRequested = true;
+			ctx.ui.notify("Requested hive loop stop", "warning");
 		},
 	});
 
