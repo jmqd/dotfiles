@@ -453,6 +453,7 @@ mod tests {
             metadata_db_path: state_dir.join("metadata/commits.sqlite"),
             repos_manifest_path: state_dir.join("metadata/repos.json"),
             state_path: state_dir.join("state.json"),
+            reindex_lock_path: state_dir.join("reindex.lock"),
             state_dir,
             zoekt_listen: "127.0.0.1:6070".to_owned(),
             excluded_dir_names: vec![
