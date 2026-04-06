@@ -36,7 +36,9 @@ test("normalizeScopeKind maps aliases and defaults unknown values to staged", ()
 	assert.equal(normalizeScopeKind("range"), "range");
 	assert.equal(normalizeScopeKind("file"), "file");
 	assert.equal(normalizeScopeKind("commit"), "commit");
+	assert.equal(normalizeScopeKind("CoMmIt"), "commit");
 	assert.equal(normalizeScopeKind("head"), "commit");
+	assert.equal(normalizeScopeKind("HEAD"), "commit");
 	assert.equal(normalizeScopeKind(" staged "), "staged");
 	assert.equal(normalizeScopeKind(""), "staged");
 	assert.equal(normalizeScopeKind("nonsense"), "staged");
@@ -44,16 +46,22 @@ test("normalizeScopeKind maps aliases and defaults unknown values to staged", ()
 
 test("parseScope handles supported scopes and aliases", () => {
 	assert.deepEqual(parseScope("", "repo"), { kind: "repo" });
+	assert.deepEqual(parseScope("", "commit"), { kind: "commit", value: "HEAD" });
 	assert.deepEqual(parseScope("staged", "repo"), { kind: "staged" });
 	assert.deepEqual(parseScope("working", "staged"), { kind: "uncommitted" });
 	assert.deepEqual(parseScope("uncommitted", "staged"), { kind: "uncommitted" });
 	assert.deepEqual(parseScope("repo", "staged"), { kind: "repo" });
 	assert.deepEqual(parseScope("commit", "staged"), { kind: "commit", value: "HEAD" });
+	assert.deepEqual(parseScope("CoMmIt", "staged"), { kind: "commit", value: "HEAD" });
 	assert.deepEqual(parseScope("head", "staged"), { kind: "commit", value: "HEAD" });
+	assert.deepEqual(parseScope("HEAD", "staged"), { kind: "commit", value: "HEAD" });
+	assert.deepEqual(parseScope("HEAD~2", "staged"), { kind: "commit", value: "HEAD~2" });
 	assert.deepEqual(parseScope("commit HEAD~2", "staged"), { kind: "commit", value: "HEAD~2" });
+	assert.deepEqual(parseScope("commit head~2", "staged"), { kind: "commit", value: "HEAD~2" });
 	assert.deepEqual(parseScope("range HEAD~3..HEAD", "staged"), { kind: "range", value: "HEAD~3..HEAD" });
+	assert.deepEqual(parseScope("RANGE HEAD~3..HEAD", "staged"), { kind: "range", value: "HEAD~3..HEAD" });
 	assert.deepEqual(parseScope("file src/main.ts", "staged"), { kind: "file", value: "src/main.ts" });
-	assert.deepEqual(parseScope("file @src/main.ts", "staged"), { kind: "file", value: "@src/main.ts" });
+	assert.deepEqual(parseScope("FILE @src/main.ts", "staged"), { kind: "file", value: "@src/main.ts" });
 	assert.equal(parseScope("range", "staged"), null);
 	assert.equal(parseScope("range   ", "staged"), null);
 	assert.equal(parseScope("file", "staged"), null);
