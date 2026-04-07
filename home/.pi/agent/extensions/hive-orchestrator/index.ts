@@ -855,6 +855,33 @@ async function refreshHiveWidget(pi: ExtensionAPI, ctx: { cwd: string; hasUI: bo
 	}
 }
 
+function normalizeLoopIntervalSeconds(value: number | undefined): number | null {
+	if (typeof value !== "number" || !Number.isFinite(value)) return null;
+	const normalized = Math.max(1, Math.floor(value));
+	return Number.isInteger(normalized) ? normalized : null;
+}
+
+async function resolveHiveLoopIntervalSeconds(
+	pi: ExtensionAPI,
+	ctx: { cwd: string },
+	explicitSeconds?: number,
+	signal?: AbortSignal,
+): Promise<number> {
+	const normalizedExplicit = normalizeLoopIntervalSeconds(explicitSeconds);
+	if (normalizedExplicit !== null) return normalizedExplicit;
+
+	try {
+		const repoRoot = await resolveRepoRoot(pi, ctx.cwd, undefined, signal);
+		const queue = await loadQueue(getOrchestratorPaths(repoRoot));
+		const normalizedQueued = normalizeLoopIntervalSeconds(queue?.pollIntervalSeconds);
+		if (normalizedQueued !== null) return normalizedQueued;
+	} catch {
+		// Fall back to the historical default when there is no queue yet or repo resolution fails.
+	}
+
+	return 30;
+}
+
 function buildHiveRunPrompt(goal: string): string {
 	return [
 		`Goal: ${goal}`,
@@ -869,8 +896,141 @@ function buildHiveRunPrompt(goal: string): string {
 
 export default function hiveOrchestrator(pi: ExtensionAPI) {
 	let pendingHiveRun = false;
+	let autoStartHiveLoopAfterCurrentAgent = false;
 	let hiveLoopActive = false;
 	let hiveLoopAbortRequested = false;
+
+	const waitForHiveLoopTurnSlot = async (ctx: {
+		isIdle: () => boolean;
+		hasPendingMessages: () => boolean;
+		ui: { setStatus: (id: string, status?: string) => void };
+	}): Promise<boolean> => {
+		while ((!ctx.isIdle() || ctx.hasPendingMessages()) && !hiveLoopAbortRequested) {
+			ctx.ui.setStatus("hive-loop", "Hive loop waiting for agent idle");
+			const aborted = await sleepWithAbort(1000, () => hiveLoopAbortRequested);
+			if (aborted) return true;
+		}
+		return hiveLoopAbortRequested;
+	};
+
+	const runHiveLoop = async (
+		ctx: {
+			cwd: string;
+			hasUI: boolean;
+			ui: {
+				notify: (message: string, level: "info" | "success" | "warning" | "error") => void;
+				setStatus: (id: string, status?: string) => void;
+				setWidget: Function;
+			};
+			isIdle: () => boolean;
+			hasPendingMessages: () => boolean;
+		},
+		options: { intervalSeconds?: number; source: "command" | "hive-run" },
+	): Promise<boolean> => {
+		if (hiveLoopActive) {
+			if (options.source === "command") {
+				ctx.ui.notify("Hive loop is already running. Use /hive-stop to request stop.", "warning");
+			}
+			return false;
+		}
+
+		const intervalSeconds = await resolveHiveLoopIntervalSeconds(pi, ctx, options.intervalSeconds);
+		let iteration = 0;
+		hiveLoopActive = true;
+		hiveLoopAbortRequested = false;
+		ctx.ui.notify(
+			options.source === "hive-run"
+				? `Auto-starting hive loop (${intervalSeconds}s)`
+				: `Starting hive loop (${intervalSeconds}s)`,
+			"info",
+		);
+
+		try {
+			while (true) {
+				if (hiveLoopAbortRequested) {
+					ctx.ui.notify("Hive loop stopped by user", "warning");
+					return true;
+				}
+
+				const abortedWhileWaiting = await waitForHiveLoopTurnSlot(ctx);
+				if (abortedWhileWaiting) {
+					ctx.ui.notify("Hive loop stopped by user", "warning");
+					return true;
+				}
+
+				iteration += 1;
+				ctx.ui.setStatus("hive-loop", `Hive loop: tick ${iteration}`);
+				const details = await tickOrchestrator(pi, ctx, {}, undefined);
+				updateHiveWidget(ctx, details.queue);
+				await sendOrchestratorReport(pi, `Hive loop tick ${iteration}`, details);
+				const stop = shouldStopHiveLoop(details.queue);
+				if (stop.stop) {
+					ctx.ui.notify(`Hive loop stopped: ${stop.reason}`, stop.reason === "queue drained" ? "success" : "warning");
+					return true;
+				}
+
+				ctx.ui.setStatus("hive-loop", `Hive loop sleeping for ${intervalSeconds}s`);
+				const aborted = await sleepWithAbort(intervalSeconds * 1000, () => hiveLoopAbortRequested);
+				if (aborted) {
+					ctx.ui.notify("Hive loop stopped by user", "warning");
+					return true;
+				}
+			}
+		} catch (error) {
+			ctx.ui.notify(`Hive loop failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+			return false;
+		} finally {
+			hiveLoopActive = false;
+			hiveLoopAbortRequested = false;
+			ctx.ui.setStatus("hive-loop", "");
+			await refreshHiveWidget(pi, ctx).catch(() => undefined);
+		}
+	};
+
+	const maybeAutoStartHiveLoopAfterHiveRun = async (ctx: {
+		cwd: string;
+		hasUI: boolean;
+		ui: {
+			notify: (message: string, level: "info" | "success" | "warning" | "error") => void;
+			setStatus: (id: string, status?: string) => void;
+			setWidget: Function;
+		};
+		isIdle: () => boolean;
+		hasPendingMessages: () => boolean;
+	}) => {
+		if (hiveLoopActive) {
+			ctx.ui.notify("Hive-run finished; existing hive loop is still running", "info");
+			return;
+		}
+
+		try {
+			const repoRoot = await resolveRepoRoot(pi, ctx.cwd, undefined);
+			const queue = await loadQueue(getOrchestratorPaths(repoRoot));
+			updateHiveWidget(ctx, queue);
+			if (!queue) {
+				ctx.ui.notify("Hive-run finished without creating or resuming a queue", "info");
+				return;
+			}
+
+			const stop = shouldStopHiveLoop(queue);
+			if (stop.stop) {
+				ctx.ui.notify(
+					`Hive-run finished; not starting auto loop: ${stop.reason}`,
+					stop.reason === "queue drained" ? "success" : "warning",
+				);
+				return;
+			}
+
+			const intervalSeconds = normalizeLoopIntervalSeconds(queue.pollIntervalSeconds) ?? 30;
+			void runHiveLoop(ctx, { intervalSeconds, source: "hive-run" });
+		} catch (error) {
+			ctx.ui.notify(
+				`Failed to auto-start hive loop after /hive-run: ${error instanceof Error ? error.message : String(error)}`,
+				"error",
+			);
+		}
+	};
+
 	pi.on("resources_discover", () => {
 		return {
 			promptPaths: [orchestratorPromptTemplatePath, workerPromptTemplatePath],
@@ -879,17 +1039,32 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		pendingHiveRun = false;
+		autoStartHiveLoopAfterCurrentAgent = false;
 		hiveLoopAbortRequested = false;
 		await refreshHiveWidget(pi, ctx);
+	});
+
+	pi.on("session_shutdown", async () => {
+		pendingHiveRun = false;
+		autoStartHiveLoopAfterCurrentAgent = false;
+		hiveLoopAbortRequested = true;
 	});
 
 	pi.on("before_agent_start", async (event) => {
 		if (!pendingHiveRun) return undefined;
 		pendingHiveRun = false;
+		autoStartHiveLoopAfterCurrentAgent = true;
 		const systemAppend = await fs.readFile(hiveRunSystemPromptPath, "utf8");
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n${systemAppend.trim()}`,
 		};
+	});
+
+	pi.on("agent_end", async (_event, ctx) => {
+		if (!autoStartHiveLoopAfterCurrentAgent) return;
+		autoStartHiveLoopAfterCurrentAgent = false;
+		await maybeAutoStartHiveLoopAfterHiveRun(ctx);
 	});
 
 	pi.registerMessageRenderer("hive-orchestrator-report", (message) => {
@@ -911,9 +1086,10 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 			pendingHiveRun = true;
 			try {
 				await pi.sendUserMessage(buildHiveRunPrompt(goal), { deliverAs: "followUp" });
-				ctx.ui.notify("Started hive-run workflow", "success");
+				ctx.ui.notify("Started hive-run planning workflow; a live queue will auto-start the host loop.", "success");
 			} catch (error) {
 				pendingHiveRun = false;
+				autoStartHiveLoopAfterCurrentAgent = false;
 				ctx.ui.notify(`Hive run failed to start: ${error instanceof Error ? error.message : String(error)}`, "error");
 			}
 		},
@@ -970,7 +1146,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("hive-loop", {
-		description: "Run repeated hive ticks until the queue drains or needs attention",
+		description: "Run repeated hive ticks until the queue drains or needs attention (defaults to queue poll interval)",
 		getArgumentCompletions: (prefix) => {
 			const items = ["5", "10", "30", "60", "120"].map((value) => ({ value, label: `${value}s` }));
 			const filtered = items.filter((item) => item.value.startsWith(prefix.trim()));
@@ -978,50 +1154,12 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		},
 		handler: async (args, ctx) => {
 			const trimmed = args.trim();
-			const intervalSeconds = trimmed ? Number.parseInt(trimmed, 10) : 30;
-			if (!Number.isInteger(intervalSeconds) || intervalSeconds <= 0) {
+			const explicitInterval = trimmed ? Number.parseInt(trimmed, 10) : undefined;
+			if (trimmed && (!Number.isInteger(explicitInterval) || explicitInterval <= 0)) {
 				ctx.ui.notify("Usage: /hive-loop [seconds]", "error");
 				return;
 			}
-			if (hiveLoopActive) {
-				ctx.ui.notify("Hive loop is already running. Use /hive-stop to request stop.", "warning");
-				return;
-			}
-
-			let iteration = 0;
-			hiveLoopActive = true;
-			hiveLoopAbortRequested = false;
-			ctx.ui.notify(`Starting hive loop (${intervalSeconds}s)`, "info");
-			try {
-				while (true) {
-					if (hiveLoopAbortRequested) {
-						ctx.ui.notify("Hive loop stopped by user", "warning");
-						return;
-					}
-					iteration += 1;
-					ctx.ui.setStatus("hive-loop", `Hive loop: tick ${iteration}`);
-					const details = await tickOrchestrator(pi, ctx, {}, undefined);
-					updateHiveWidget(ctx, details.queue);
-					await sendOrchestratorReport(pi, `Hive loop tick ${iteration}`, details);
-					const stop = shouldStopHiveLoop(details.queue);
-					if (stop.stop) {
-						ctx.ui.notify(`Hive loop stopped: ${stop.reason}`, stop.reason === "queue drained" ? "success" : "warning");
-						return;
-					}
-					ctx.ui.setStatus("hive-loop", `Hive loop sleeping for ${intervalSeconds}s`);
-					const aborted = await sleepWithAbort(intervalSeconds * 1000, () => hiveLoopAbortRequested);
-					if (aborted) {
-						ctx.ui.notify("Hive loop stopped by user", "warning");
-						return;
-					}
-				}
-			} catch (error) {
-				ctx.ui.notify(`Hive loop failed: ${error instanceof Error ? error.message : String(error)}`, "error");
-			} finally {
-				hiveLoopActive = false;
-				hiveLoopAbortRequested = false;
-				ctx.ui.setStatus("hive-loop", "");
-			}
+			await runHiveLoop(ctx, { intervalSeconds: explicitInterval, source: "command" });
 		},
 	});
 
