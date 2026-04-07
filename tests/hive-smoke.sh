@@ -384,6 +384,26 @@ setup_case() {
 	export HIVE_STATE="$case_dir/hive-state"
 }
 
+sha256_prefix() {
+	local value="$1"
+	if command -v sha256sum >/dev/null 2>&1; then
+		printf '%s' "$value" | sha256sum | awk '{print substr($1, 1, 16)}'
+	elif command -v shasum >/dev/null 2>&1; then
+		printf '%s' "$value" | shasum -a 256 | awk '{print substr($1, 1, 16)}'
+	elif command -v openssl >/dev/null 2>&1; then
+		printf '%s' "$value" | openssl dgst -sha256 -r | awk '{print substr($1, 1, 16)}'
+	else
+		echo 'missing sha256 tool for hive smoke test' >&2
+		exit 1
+	fi
+}
+
+repo_key_for() {
+	local repo_root
+	repo_root="$(cd "$1" && pwd -P)"
+	printf '%s-%s' "$(basename "$repo_root")" "$(sha256_prefix "$repo_root")"
+}
+
 hive() {
 	local backend="$1"
 	shift
@@ -393,72 +413,79 @@ hive() {
 run_docker_backend_smoke() {
 	setup_case docker
 
+	local repo_key repo_root_physical
+	repo_key="$(repo_key_for "$repo_dir")"
+	repo_root_physical="$(cd "$repo_dir" && pwd -P)"
+
 	hive docker up --repo "$repo_dir" --agents 2 --cmd "echo hi" --host-store-ro --hardened
 
-	assert_exists "$HIVE_STATE/worktrees/repo/agent-01/.git"
-	assert_exists "$HIVE_STATE/worktrees/repo/agent-02/.git"
-	assert_eventually_exists "$HIVE_STATE/logs/repo-agent-01.log"
-	assert_eventually_exists "$HIVE_STATE/logs/repo-agent-02.log"
+	assert_exists "$HIVE_STATE/worktrees/$repo_key/agent-01/.git"
+	assert_exists "$HIVE_STATE/worktrees/$repo_key/agent-02/.git"
+	assert_eventually_exists "$HIVE_STATE/logs/$repo_key-agent-01.log"
+	assert_eventually_exists "$HIVE_STATE/logs/$repo_key-agent-02.log"
 
 	local run_log
 	run_log="$(cat "$state_dir/docker.log")"
 	assert_contains "$run_log" '--cap-drop=ALL'
 	assert_contains "$run_log" '/nix/store:/nix/store:ro'
-	assert_contains "$run_log" 'hive-repo-agent-01'
-	assert_contains "$run_log" 'hive-repo-agent-02'
-	assert_contains "$run_log" "$HIVE_STATE/worktrees/repo/agent-01:$HIVE_STATE/worktrees/repo/agent-01"
-	assert_contains "$run_log" "$repo_dir/.git:$repo_dir/.git"
+	assert_contains "$run_log" "hive-$repo_key-agent-01"
+	assert_contains "$run_log" "hive-$repo_key-agent-02"
+	assert_contains "$run_log" "$HIVE_STATE/worktrees/$repo_key/agent-01:$HIVE_STATE/worktrees/$repo_key/agent-01"
+	assert_contains "$run_log" "$repo_root_physical/.git:$repo_root_physical/.git"
 	assert_contains "$run_log" 'sh -lc while :; do sleep 3600; done'
 
 	local ls_output
 	ls_output="$(hive docker ls --repo "$repo_dir")"
-	assert_contains "$ls_output" 'hive-repo-agent-01'
-	assert_contains "$ls_output" 'hive-repo-agent-02'
+	assert_contains "$ls_output" "hive-$repo_key-agent-01"
+	assert_contains "$ls_output" "hive-$repo_key-agent-02"
 
 	local exec_output
 	exec_output="$(hive docker exec --repo "$repo_dir" 01 pwd)"
-	assert_contains "$exec_output" 'executed:hive-repo-agent-01:bash -lc pwd'
-	assert_contains "$(cat "$state_dir/exec.log")" 'flags= name=hive-repo-agent-01 cmd=bash -lc pwd'
+	assert_contains "$exec_output" "executed:hive-$repo_key-agent-01:bash -lc pwd"
+	assert_contains "$(cat "$state_dir/exec.log")" "flags= name=hive-$repo_key-agent-01 cmd=bash -lc pwd"
 
 	local logs_output
 	logs_output="$(hive docker logs --repo "$repo_dir" 01)"
-	assert_contains "$logs_output" 'logs:hive-repo-agent-01'
+	assert_contains "$logs_output" "logs:hive-$repo_key-agent-01"
 
 	local down_output
 	down_output="$(hive docker down --repo "$repo_dir")"
-	assert_contains "$down_output" 'containers stopped for repo repo'
-	assert_contains "$down_output" 'worktrees cleaned for repo repo'
+	assert_contains "$down_output" "containers stopped for repo $repo_key"
+	assert_contains "$down_output" "worktrees cleaned for repo $repo_key"
 	assert_not_contains "$down_output" 'host agents stopped'
 
-	assert_missing "$HIVE_STATE/worktrees/repo/agent-01"
-	assert_missing "$HIVE_STATE/worktrees/repo/agent-02"
-	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/repo/agent-01"
-	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/repo/agent-02"
+	assert_missing "$HIVE_STATE/worktrees/$repo_key/agent-01"
+	assert_missing "$HIVE_STATE/worktrees/$repo_key/agent-02"
+	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/$repo_key/agent-01"
+	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/$repo_key/agent-02"
 }
 
 run_host_backend_smoke() {
 	setup_case host
 
+	local repo_key
+	repo_key="$(repo_key_for "$repo_dir")"
+
 	hive host up --repo "$repo_dir" --agents 2 --cmd "echo hi" --host-store-ro --hardened
 
-	assert_exists "$HIVE_STATE/worktrees/repo/agent-01/.git"
-	assert_exists "$HIVE_STATE/worktrees/repo/agent-02/.git"
-	assert_eventually_exists "$HIVE_STATE/logs/repo-agent-01.log"
-	assert_eventually_exists "$HIVE_STATE/logs/repo-agent-02.log"
-	assert_exists "$HIVE_STATE/host/repo/agent-01.worktree"
-	assert_exists "$HIVE_STATE/host/repo/agent-02.worktree"
-	assert_contains "$(cat "$HIVE_STATE/host/repo/agent-01.worktree")" "$HIVE_STATE/worktrees/repo/agent-01"
-	assert_contains "$(cat "$HIVE_STATE/host/repo/agent-02.worktree")" "$HIVE_STATE/worktrees/repo/agent-02"
+	assert_exists "$HIVE_STATE/worktrees/$repo_key/agent-01/.git"
+	assert_exists "$HIVE_STATE/worktrees/$repo_key/agent-02/.git"
+	assert_eventually_exists "$HIVE_STATE/logs/$repo_key-agent-01.log"
+	assert_eventually_exists "$HIVE_STATE/logs/$repo_key-agent-02.log"
+	assert_exists "$HIVE_STATE/host/$repo_key/agent-01.worktree"
+	assert_exists "$HIVE_STATE/host/$repo_key/agent-02.worktree"
+	assert_contains "$(cat "$HIVE_STATE/host/$repo_key/agent-01.worktree")" "$HIVE_STATE/worktrees/$repo_key/agent-01"
+	assert_contains "$(cat "$HIVE_STATE/host/$repo_key/agent-02.worktree")" "$HIVE_STATE/worktrees/$repo_key/agent-02"
 
 	local ls_output
 	ls_output="$(hive host ls --repo "$repo_dir")"
-	assert_contains "$ls_output" 'hive-repo-agent-01'
-	assert_contains "$ls_output" 'hive-repo-agent-02'
-	assert_contains "$ls_output" 'repo'
+	assert_contains "$ls_output" "hive-$repo_key-agent-01"
+	assert_contains "$ls_output" "hive-$repo_key-agent-02"
+	assert_contains "$ls_output" "$repo_key"
 
 	local exec_output
 	exec_output="$(hive host exec --repo "$repo_dir" 01 pwd)"
-	assert_contains "$exec_output" "$HIVE_STATE/worktrees/repo/agent-01"
+	assert_contains "$exec_output" "$HIVE_STATE/worktrees/$repo_key/agent-01"
 
 	local logs_output
 	logs_output="$(hive host logs --repo "$repo_dir" 01)"
@@ -466,16 +493,16 @@ run_host_backend_smoke() {
 
 	local down_output
 	down_output="$(hive host down --repo "$repo_dir")"
-	assert_contains "$down_output" 'host agents stopped for repo repo'
-	assert_contains "$down_output" 'worktrees cleaned for repo repo'
+	assert_contains "$down_output" "host agents stopped for repo $repo_key"
+	assert_contains "$down_output" "worktrees cleaned for repo $repo_key"
 	assert_not_contains "$down_output" 'containers stopped'
 
-	assert_missing "$HIVE_STATE/worktrees/repo/agent-01"
-	assert_missing "$HIVE_STATE/worktrees/repo/agent-02"
-	assert_missing "$HIVE_STATE/host/repo/agent-01.worktree"
-	assert_missing "$HIVE_STATE/host/repo/agent-02.worktree"
-	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/repo/agent-01"
-	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/repo/agent-02"
+	assert_missing "$HIVE_STATE/worktrees/$repo_key/agent-01"
+	assert_missing "$HIVE_STATE/worktrees/$repo_key/agent-02"
+	assert_missing "$HIVE_STATE/host/$repo_key/agent-01.worktree"
+	assert_missing "$HIVE_STATE/host/$repo_key/agent-02.worktree"
+	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/$repo_key/agent-01"
+	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/$repo_key/agent-02"
 }
 
 run_docker_backend_smoke
