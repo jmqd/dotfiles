@@ -52,6 +52,30 @@ test("splitFrontmatter and renderPromptTemplate support prompt-template style ar
 	assert.equal(rendered, "Task: alpha\nAll: alpha beta gamma\nTail: beta gamma");
 });
 
+test("renderPromptTemplate clamps empty and out-of-range prompt expressions", () => {
+	const rendered = renderPromptTemplate(
+		"Zero start: ${@:0:2}\nZero length: ${@:2:0}\nMissing arg: $4\nPast end: ${@:5}",
+		["alpha", "beta", "gamma"],
+	);
+	assert.equal(rendered, "Zero start: alpha beta\nZero length: \nMissing arg: \nPast end: ");
+});
+
+test("renderPromptTemplate leaves unsupported slice syntax untouched and supports multi-digit args", () => {
+	const rendered = renderPromptTemplate("Tenth: $10\nInvalid: ${@:x}", [
+		"one",
+		"two",
+		"three",
+		"four",
+		"five",
+		"six",
+		"seven",
+		"eight",
+		"nine",
+		"ten",
+	]);
+	assert.equal(rendered, "Tenth: ten\nInvalid: ${@:x}");
+});
+
 test("buildWorkerSystemPrompt strips frontmatter and appends launcher context", () => {
 	const prompt = buildWorkerSystemPrompt(
 		"---\ndescription: worker\n---\nAssigned subtask: $@\n",
@@ -192,32 +216,95 @@ test("tailText returns the end of long stderr output", () => {
 	assert.equal(tailed, "c\nd");
 });
 
-test("loadWorkerSnapshot reads worker metadata from filesystem", async () => {
+async function setupTempWorkerPaths(agent = "01") {
 	const tempDir = await mkdtemp(path.join(os.tmpdir(), "hive-worker-core-"));
-	const paths = getWorkerPaths("/repo/project", "01", { hiveStateDir: tempDir });
+	const paths = getWorkerPaths("/repo/project", agent, { hiveStateDir: tempDir });
 	await mkdir(path.dirname(paths.launchFile), { recursive: true });
-	await writeFile(paths.launchFile, JSON.stringify({ task: "fix auth", launchedAt: "2026-04-06T00:00:00Z" }), "utf8");
-	await writeFile(
-		paths.statusFile,
-		JSON.stringify({ task: "fix auth", state: "implementing", summary: "Touch auth module" }),
-		"utf8",
-	);
-	await writeFile(
-		paths.eventLogFile,
-		[
+	return paths;
+}
+
+async function writeWorkerFiles(
+	paths: ReturnType<typeof getWorkerPaths>,
+	{
+		launchFileText,
+		statusFileText,
+		eventLogFileText,
+		stderrFileText,
+		exitCodeText,
+		pidText,
+	}: {
+		launchFileText?: string;
+		statusFileText?: string;
+		eventLogFileText?: string;
+		stderrFileText?: string;
+		exitCodeText?: string;
+		pidText?: string;
+	},
+) {
+	if (launchFileText !== undefined) await writeFile(paths.launchFile, launchFileText, "utf8");
+	if (statusFileText !== undefined) await writeFile(paths.statusFile, statusFileText, "utf8");
+	if (eventLogFileText !== undefined) await writeFile(paths.eventLogFile, eventLogFileText, "utf8");
+	if (stderrFileText !== undefined) await writeFile(paths.stderrFile, stderrFileText, "utf8");
+	if (exitCodeText !== undefined) await writeFile(paths.exitCodeFile, exitCodeText, "utf8");
+	if (pidText !== undefined) await writeFile(paths.pidFile, pidText, "utf8");
+}
+
+test("loadWorkerSnapshot surfaces malformed status JSON and ignores nonnumeric pid/exit files", async () => {
+	const paths = await setupTempWorkerPaths();
+	await writeWorkerFiles(paths, {
+		launchFileText: JSON.stringify({ task: "fix auth", launchedAt: "2026-04-06T00:00:00Z" }),
+		statusFileText: "{\"task\":",
+		exitCodeText: "not-a-number\n",
+		pidText: "12x\n",
+	});
+
+	const assumeRunning = true;
+	const snapshot = await loadWorkerSnapshot(paths, assumeRunning);
+	assert.equal(snapshot.isRunning, true);
+	assert.equal(snapshot.task, "fix auth");
+	assert.equal(snapshot.status, null);
+	assert.equal(snapshot.exitCode, null);
+	assert.equal(snapshot.pid, null);
+	assert.equal(snapshot.launch?.task, "fix auth");
+	assert.equal(typeof snapshot.statusParseError, "string");
+	assert.equal(snapshot.launchParseError, undefined);
+});
+
+test("loadWorkerSnapshot surfaces malformed launch JSON and keeps status-derived task data", async () => {
+	const paths = await setupTempWorkerPaths();
+	await writeWorkerFiles(paths, {
+		launchFileText: "{bad json",
+		statusFileText: JSON.stringify({ task: "fix docs", state: "booting", summary: "Starting" }),
+	});
+
+	const assumeRunning = false;
+	const snapshot = await loadWorkerSnapshot(paths, assumeRunning);
+	assert.equal(snapshot.task, "fix docs");
+	assert.equal(snapshot.status?.state, "booting");
+	assert.equal(snapshot.launch, null);
+	assert.equal(snapshot.statusParseError, undefined);
+	assert.equal(typeof snapshot.launchParseError, "string");
+});
+
+test("loadWorkerSnapshot reads worker metadata from filesystem", async () => {
+	const paths = await setupTempWorkerPaths();
+	await writeWorkerFiles(paths, {
+		launchFileText: JSON.stringify({ task: "fix auth", launchedAt: "2026-04-06T00:00:00Z" }),
+		statusFileText: JSON.stringify({ task: "fix auth", state: "implementing", summary: "Touch auth module" }),
+		eventLogFileText: [
 			JSON.stringify({ type: "tool_execution_start", toolName: "read", args: { path: "src/auth.ts" } }),
 			JSON.stringify({
 				type: "message_end",
 				message: { role: "assistant", content: [{ type: "text", text: "Updated auth handling" }] },
 			}),
 		].join("\n"),
-		"utf8",
-	);
-	await writeFile(paths.stderrFile, "warn one\nwarn two\n", "utf8");
-	await writeFile(paths.exitCodeFile, "0\n", "utf8");
-	await writeFile(paths.pidFile, "123\n", "utf8");
+		stderrFileText: "warn one\nwarn two\n",
+		exitCodeText: "0\n",
+		pidText: "123\n",
+	});
 
-	const snapshot = await loadWorkerSnapshot(paths, false);
+	const assumeRunning = false;
+	const snapshot = await loadWorkerSnapshot(paths, assumeRunning);
 	assert.equal(snapshot.task, "fix auth");
 	assert.equal(snapshot.isRunning, false);
 	assert.equal(snapshot.exitCode, 0);

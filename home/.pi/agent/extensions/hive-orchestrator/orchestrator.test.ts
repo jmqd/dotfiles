@@ -160,6 +160,38 @@ test("syncTaskWithWorker updates task metadata and captures worker head sha", ()
 	assert.match(sync.note || "", /planned -> done/);
 });
 
+test("syncTaskWithWorker updates poll metadata without a note when worker evidence is unchanged", () => {
+	const base = createOrchestratorQueue("/repo/project", {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+	const { added } = addTasksToQueue(base, [{ task: "fix login", agent: "01" }], "2026-04-06T00:01:00Z");
+	const sync = syncTaskWithWorker(
+		{
+			...added[0],
+			state: "running",
+			launchedAt: "2026-04-06T00:01:00Z",
+			lastPolledAt: "2026-04-06T00:02:00Z",
+			workerHeadSha: "abc123",
+		},
+		makeWorkerSnapshot({ isRunning: true, exitCode: null, launchedAt: "2026-04-06T00:01:00Z", status: null }),
+		"2026-04-06T00:03:00Z",
+	);
+	assert.equal(sync.note, undefined);
+	assert.equal(sync.task.state, "running");
+	assert.equal(sync.task.launchedAt, "2026-04-06T00:01:00Z");
+	assert.equal(sync.task.lastPolledAt, "2026-04-06T00:03:00Z");
+	assert.equal(sync.task.finishedAt, undefined);
+	assert.equal(sync.task.workerState, "running");
+	assert.equal(sync.task.workerSummary, undefined);
+	assert.equal(sync.task.workerNextAction, undefined);
+	assert.equal(sync.task.workerExitCode, null);
+	assert.equal(sync.task.workerHeadSha, "abc123");
+	assert.equal(sync.task.workerStatusPath, "/tmp/worktree/.hive/status.json");
+	assert.equal(sync.task.workerEventLogPath, "/tmp/worktree/.hive/worker-events.jsonl");
+});
+
 test("applyTaskIntegrationResult records merged and blocked outcomes", () => {
 	const base = createOrchestratorQueue("/repo/project", {
 		goal: "goal",
@@ -259,6 +291,41 @@ test("follow-up tasks are auto-generated for recoverable integration failures", 
 	assert.equal(followUp.followUp.agent, blocked.task.agent);
 	assert.deepEqual(followUp.queue.tasks.find((task) => task.id === "task-002")?.dependsOn, [followUp.followUp.id]);
 	assert.equal(followUp.queue.tasks.find((task) => task.id === blocked.task.id)?.replacementTaskId, followUp.followUp.id);
+});
+
+test("createAutoFollowUpTask preserves unrelated dependencies while rewriting blocked edges", () => {
+	const base = createOrchestratorQueue("/repo/project", {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+	const { queue } = addTasksToQueue(
+		base,
+		[
+			{ task: "prep auth", agent: "01" },
+			{ task: "fix login", agent: "02", dependsOn: ["task-001"] },
+			{ task: "update docs", agent: "03", dependsOn: ["task-001", "task-002"] },
+		],
+		"2026-04-06T00:01:00Z",
+	);
+	const blockedTask = {
+		...queue.tasks[1],
+		state: "blocked" as const,
+		dependsOn: ["task-001", "task-002"],
+		integrationAttempts: 2,
+		workerHeadSha: "deadbeef",
+	};
+	const followUp = createAutoFollowUpTask(
+		{ ...queue, tasks: [queue.tasks[0], blockedTask, queue.tasks[2]] },
+		blockedTask,
+		{ state: "blocked", reason: "integration_conflict", message: "conflict in auth.ts", workerHeadSha: "deadbeef" },
+		"2026-04-06T00:03:00Z",
+	);
+	assert.deepEqual(followUp.followUp.dependsOn, ["task-001"]);
+	assert.match(followUp.followUp.title, /\(follow-up 3\)$/);
+	assert.deepEqual(followUp.queue.tasks.find((task) => task.id === "task-003")?.dependsOn, ["task-001", followUp.followUp.id]);
+	assert.deepEqual(followUp.queue.tasks.find((task) => task.id === "task-001")?.dependsOn, []);
+	assert.equal(followUp.queue.tasks.find((task) => task.id === blockedTask.id)?.replacementTaskId, followUp.followUp.id);
 });
 
 test("renderOrchestratorPlan and summary include branch and integration details", () => {
