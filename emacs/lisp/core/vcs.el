@@ -3,6 +3,7 @@
 (use-package magit
   :commands (magit-status)
   :config
+  (setq magit-display-buffer-function #'magit-display-buffer-fullframe-status-v1)
   (setq magit-list-refs-sortby "-committerdate")
   (dolist
       (map-symbol
