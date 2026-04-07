@@ -35,6 +35,9 @@ worktree)
 	case "${1:-}" in
 	add)
 		shift
+		while [ "${1:-}" = "--force" ]; do
+			shift
+		done
 		if [ "${1:-}" = "--detach" ]; then
 			shift
 		fi
@@ -45,9 +48,9 @@ worktree)
 		;;
 	remove)
 		shift
-		if [ "${1:-}" = "--force" ]; then
+		while [ "${1:-}" = "--force" ]; do
 			shift
-		fi
+		done
 		worktree="$1"
 		rm -rf "$worktree"
 		printf 'remove|%s\n' "$worktree" >>"$state_dir/git.log"
