@@ -32,20 +32,27 @@ Read these references before running the workflow:
 
 ## Minimum artifacts
 
-In the host worktree:
+In the host worktree, repo-local orchestrator state lives under `.hive/orchestrator/`:
 
 - `.hive/orchestrator/plan.md`
 - `.hive/orchestrator/queue.json`
 - `.hive/orchestrator/progress.md`
 
-In each worker worktree:
+Optional planning workflow output:
+
+- `.hive/orchestrator/planning-notes.md` — written by `/hive-run` during planning; useful context, but not runtime scheduler state
+
+In each worker worktree, the worker run keeps separate `.hive/*` artifacts:
 
 - `.hive/status.json`
 - optional `.hive/final-report.md`
 
+Do not conflate these worker-local files with the repo-local `.hive/orchestrator/*` state.
+
 ## Dispatch pattern
 
 Use the `hive_orchestrator` tool as the default host-side control plane, and the `hive_worker` tool as the lower-level worker launcher/poller.
+In interactive pi sessions, `/hive-loop` repeatedly runs host-side ticks, and `/hive-stop` asks that loop to stop.
 Under the hood the worker path follows this pattern:
 
 1. turns the worker template into a worker system prompt
