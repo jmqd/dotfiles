@@ -8,6 +8,7 @@ import {
 	addTasksToQueue,
 	applyTaskDispatchFailure,
 	applyTaskIntegrationResult,
+	checkWorkerCommitAlreadyIntegrated,
 	createAutoFollowUpTask,
 	createOrchestratorQueue,
 	getOrchestratorPaths,
@@ -359,6 +360,82 @@ test("retryable integration blocks can be retried on later ticks", () => {
 		}),
 		false,
 	);
+});
+
+test("checkWorkerCommitAlreadyIntegrated short-circuits when the worker commit is contained", async () => {
+	const signal = new AbortController().signal;
+	const calls: Array<{ args: string[]; options: { cwd?: string; signal?: AbortSignal; timeout?: number } | undefined }> = [];
+	const pi = {
+		exec: async (
+			_command: string,
+			args: string[],
+			options?: { cwd?: string; signal?: AbortSignal; timeout?: number },
+		) => {
+			calls.push({ args, options });
+			assert.match(args.join(" "), /merge-base --is-ancestor contained host/);
+			return { code: 0, stdout: "", stderr: "" };
+		},
+	};
+
+	const result = await checkWorkerCommitAlreadyIntegrated(pi as never, "/repo/project", "host", "contained", signal);
+	assert.deepEqual(result, { state: "already_integrated" });
+	assert.equal(calls.length, 1);
+	assert.deepEqual(calls[0].options, { cwd: "/repo/project", signal, timeout: 5000 });
+});
+
+test("checkWorkerCommitAlreadyIntegrated does not treat a tree-equal non-ancestor commit as already integrated", async () => {
+	const signal = new AbortController().signal;
+	const calls: Array<{ args: string[]; options: { cwd?: string; signal?: AbortSignal; timeout?: number } | undefined }> = [];
+	const pi = {
+		exec: async (
+			_command: string,
+			args: string[],
+			options?: { cwd?: string; signal?: AbortSignal; timeout?: number },
+		) => {
+			calls.push({ args, options });
+			if (args[2] === "merge-base") return { code: 1, stdout: "", stderr: "" };
+			if (args[2] === "diff") return { code: 0, stdout: "", stderr: "" };
+			assert.fail(`unexpected git command: ${args.join(" ")}`);
+		},
+	};
+
+	const result = await checkWorkerCommitAlreadyIntegrated(pi as never, "/repo/project", "host", "tree-equal", signal);
+	assert.deepEqual(result, { state: "needs_integration" });
+	assert.deepEqual(
+		calls.map((call) => ({ args: call.args.slice(2).join(" "), options: call.options })),
+		[
+			{ args: "merge-base --is-ancestor tree-equal host", options: { cwd: "/repo/project", signal, timeout: 5000 } },
+			{ args: "diff --quiet host tree-equal", options: { cwd: "/repo/project", signal, timeout: 5000 } },
+		],
+	);
+});
+
+test("checkWorkerCommitAlreadyIntegrated reports containment-check failures", async () => {
+	const pi = {
+		exec: async () => ({ code: 128, stdout: "", stderr: "fatal: bad revision" }),
+	};
+
+	const result = await checkWorkerCommitAlreadyIntegrated(pi as never, "/repo/project", "host", "broken");
+	assert.equal(result.state, "failed");
+	if (result.state !== "failed") assert.fail("expected failure");
+	assert.equal(result.reason, "diff_failed");
+	assert.match(result.message, /failed to check whether host head host contains worker head broken/);
+});
+
+test("checkWorkerCommitAlreadyIntegrated reports diff failures after a non-contained commit", async () => {
+	const pi = {
+		exec: async (_command: string, args: string[]) => {
+			if (args[2] === "merge-base") return { code: 1, stdout: "", stderr: "" };
+			if (args[2] === "diff") return { code: 129, stdout: "", stderr: "fatal: diff failed" };
+			assert.fail(`unexpected git command: ${args.join(" ")}`);
+		},
+	};
+
+	const result = await checkWorkerCommitAlreadyIntegrated(pi as never, "/repo/project", "host", "needs-merge");
+	assert.equal(result.state, "failed");
+	if (result.state !== "failed") assert.fail("expected failure");
+	assert.equal(result.reason, "diff_failed");
+	assert.match(result.message, /failed to diff host against worker head needs-merge/);
 });
 
 test("follow-up tasks are auto-generated for recoverable integration failures", () => {
