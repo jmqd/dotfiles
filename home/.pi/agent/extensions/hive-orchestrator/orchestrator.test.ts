@@ -19,6 +19,7 @@ import {
 	shouldRetryBlockedIntegrationTask,
 	syncTaskWithWorker,
 	workerSnapshotToTaskState,
+	withExistingOrchestratorQueueTransaction,
 	writeOrchestratorArtifacts,
 } from "./orchestrator.ts";
 
@@ -377,4 +378,92 @@ test("writeOrchestratorArtifacts writes queue, plan, and progress files", async 
 	assert.equal(loaded?.integrationBranch, "main");
 	assert.match(await readFile(paths.planFile, "utf8"), /Hive orchestrator plan/);
 	assert.match(await readFile(paths.progressFile, "utf8"), /Initialized queue/);
+});
+
+test("withExistingOrchestratorQueueTransaction reloads the freshest queue state for overlapping mutations", async () => {
+	const repoRoot = await mkdtemp(path.join(os.tmpdir(), "hive-orchestrator-transaction-"));
+	const paths = getOrchestratorPaths(repoRoot);
+	const base = createOrchestratorQueue(repoRoot, {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+	const seeded = addTasksToQueue(base, [{ task: "fix login", agent: "01" }], "2026-04-06T00:01:00Z").queue;
+	await writeOrchestratorArtifacts(paths, seeded);
+
+	let releaseFirstMutation!: () => void;
+	const firstMutationReleased = new Promise<void>((resolve) => {
+		releaseFirstMutation = resolve;
+	});
+	let firstMutationEntered!: () => void;
+	const firstMutationHasEntered = new Promise<void>((resolve) => {
+		firstMutationEntered = resolve;
+	});
+	const secondMutationObservedStates: string[] = [];
+	let mutationQueue = Promise.resolve();
+	const withTestMutationQueue = <T>(_filePath: string, mutate: () => Promise<T>) => {
+		const run = mutationQueue.then(mutate, mutate);
+		mutationQueue = run.then(() => undefined, () => undefined);
+		return run;
+	};
+
+	const firstMutation = withExistingOrchestratorQueueTransaction(paths, withTestMutationQueue, async (queue) => {
+		assert.ok(queue);
+		firstMutationEntered();
+		await firstMutationReleased;
+		return {
+			queue: {
+				...queue,
+				tasks: queue.tasks.map((task) =>
+					task.id === "task-001"
+						? { ...task, state: "running" as const, launchedAt: "2026-04-06T00:02:00Z" }
+						: task,
+				),
+				updatedAt: "2026-04-06T00:02:00Z",
+			},
+			progressEntries: [{ timestamp: "2026-04-06T00:02:00Z", text: "Dispatched task-001 agent-01: fix login" }],
+			result: undefined,
+		};
+	});
+
+	await firstMutationHasEntered;
+	const secondMutation = withExistingOrchestratorQueueTransaction(paths, withTestMutationQueue, async (queue) => {
+		assert.ok(queue);
+		secondMutationObservedStates.push(queue.tasks[0].state);
+		const enqueued = addTasksToQueue(queue, [{ task: "add tests", agent: "02" }], "2026-04-06T00:03:00Z");
+		return {
+			queue: enqueued.queue,
+			progressEntries: [{ timestamp: "2026-04-06T00:03:00Z", text: "Enqueued task-002 agent-02: add tests" }],
+			result: undefined,
+		};
+	});
+
+	releaseFirstMutation();
+	await Promise.all([firstMutation, secondMutation]);
+
+	const queue = await loadQueue(paths);
+	assert.ok(queue);
+	assert.deepEqual(secondMutationObservedStates, ["running"]);
+	assert.deepEqual(
+		queue?.tasks.map((task) => ({ id: task.id, state: task.state })),
+		[
+			{ id: "task-001", state: "running" },
+			{ id: "task-002", state: "planned" },
+		],
+	);
+	const progress = await readFile(paths.progressFile, "utf8");
+	assert.match(progress, /Dispatched task-001 agent-01: fix login/);
+	assert.match(progress, /Enqueued task-002 agent-02: add tests/);
+});
+
+test("withExistingOrchestratorQueueTransaction requires an initialized queue", async () => {
+	const repoRoot = await mkdtemp(path.join(os.tmpdir(), "hive-orchestrator-missing-queue-"));
+	const paths = getOrchestratorPaths(repoRoot);
+	await assert.rejects(
+		withExistingOrchestratorQueueTransaction(paths, async (_filePath, mutate) => await mutate(), async (queue) => ({
+			queue,
+			result: undefined,
+		})),
+		/Missing orchestrator queue: .*\.hive\/orchestrator\/queue\.json\. Run hive_orchestrator init first\./,
+	);
 });
