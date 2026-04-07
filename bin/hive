@@ -260,13 +260,35 @@ cmd_up() {
     while [ "$i" -le "$agents" ]; do
       local agent
       agent="$(printf 'agent-%02d' "$i")"
-      local worktree
+      local worktree pid_file runtime_pid_file pid
       worktree="$(host_worktree_path "$slug" "$agent")"
+      pid_file="$(host_agent_pid_file "$slug" "$agent")"
+      runtime_pid_file="$worktree/.hive/worker.pid"
+      pid="$(cat "$runtime_pid_file" 2>/dev/null || cat "$pid_file" 2>/dev/null || true)"
+
+      if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        printf '%s\n' "$worktree" > "$(host_agent_worktree_file "$slug" "$agent")"
+        echo "${agent}: already running (host backend)"
+        i=$((i + 1))
+        continue
+      fi
+
+      if [ -e "$worktree/.git" ] || [ -d "$worktree" ]; then
+        local current_branch
+        current_branch="$(git -C "$worktree" branch --show-current 2>/dev/null || true)"
+        if [ -n "$current_branch" ]; then
+          printf '%s\n' "$worktree" > "$(host_agent_worktree_file "$slug" "$agent")"
+          echo "${agent}: occupied by branch ${current_branch} (host backend)"
+          i=$((i + 1))
+          continue
+        fi
+      fi
 
       if [ -e "$worktree/.git" ] || [ -d "$worktree" ]; then
         git -C "$repo" worktree remove --force "$worktree" 2>/dev/null || true
       fi
-      git -C "$repo" worktree add --detach "$worktree" HEAD
+      git -C "$repo" worktree prune --expire now >/dev/null 2>&1 || true
+      git -C "$repo" worktree add --force --force --detach "$worktree" HEAD
       printf '%s\n' "$worktree" > "$(host_agent_worktree_file "$slug" "$agent")"
       echo "${agent}: ready (host backend)"
 
@@ -320,7 +342,8 @@ cmd_up() {
     if [ -e "$worktree/.git" ] || [ -d "$worktree" ]; then
       git -C "$repo" worktree remove --force "$worktree" 2>/dev/null || true
     fi
-    git -C "$repo" worktree add --detach "$worktree" HEAD
+    git -C "$repo" worktree prune --expire now >/dev/null 2>&1 || true
+    git -C "$repo" worktree add --force --force --detach "$worktree" HEAD
 
     # Launch container.
     # Mount the worktree and shared git metadata at their host-absolute paths so
