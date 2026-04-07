@@ -10,6 +10,7 @@ import {
 	buildWorkerSystemPrompt,
 	createInitialWorkerStatus,
 	getHiveStateDir,
+	getRepoWorktreeKey,
 	validateWorkerDoneStatus,
 	getWorkerPaths,
 	loadWorkerSnapshot,
@@ -34,12 +35,24 @@ test("getHiveStateDir prefers env override", () => {
 	assert.equal(getHiveStateDir("/home/test", {} as NodeJS.ProcessEnv), "/home/test/.local/share/agent-hive");
 });
 
-test("getWorkerPaths mirrors hive worktree layout", () => {
+test("getWorkerPaths keys hive worktrees by stable repo-root-specific path", () => {
+	const repoWorktreeKey = getRepoWorktreeKey("/repo/project");
 	const paths = getWorkerPaths("/repo/project", "02", { hiveStateDir: "/state/hive" });
 	assert.equal(paths.repoSlug, "project");
 	assert.equal(paths.agent, "agent-02");
-	assert.equal(paths.worktreeDir, "/state/hive/worktrees/project/agent-02");
-	assert.equal(paths.statusFile, "/state/hive/worktrees/project/agent-02/.hive/status.json");
+	assert.equal(repoWorktreeKey, getRepoWorktreeKey("/repo/./project"));
+	assert.match(repoWorktreeKey, /^project-[0-9a-f]{16}$/);
+	assert.equal(paths.worktreeDir, `/state/hive/worktrees/${repoWorktreeKey}/agent-02`);
+	assert.equal(paths.statusFile, `/state/hive/worktrees/${repoWorktreeKey}/agent-02/.hive/status.json`);
+});
+
+test("getWorkerPaths avoids collisions for repos with the same basename", () => {
+	const first = getWorkerPaths("/repo-a/project", "01", { hiveStateDir: "/state/hive" });
+	const second = getWorkerPaths("/repo-b/project", "01", { hiveStateDir: "/state/hive" });
+	assert.equal(first.repoSlug, "project");
+	assert.equal(second.repoSlug, "project");
+	assert.notEqual(getRepoWorktreeKey("/repo-a/project"), getRepoWorktreeKey("/repo-b/project"));
+	assert.notEqual(first.worktreeDir, second.worktreeDir);
 });
 
 test("splitFrontmatter and renderPromptTemplate support prompt-template style args", () => {
