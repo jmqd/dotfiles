@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import type { WorkerSnapshot } from "./core.ts";
 import {
+	DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS,
 	addTasksToQueue,
 	applyTaskDispatchFailure,
 	applyTaskIntegrationResult,
@@ -13,10 +14,14 @@ import {
 	createOrchestratorQueue,
 	getOrchestratorPaths,
 	isTaskReadyForDispatch,
+	limitDispatchTasks,
+	loadPersistedHiveLoopIntervalSeconds,
 	loadQueue,
 	renderOrchestratorPlan,
 	renderQueueSummary,
 	renderQueueWidget,
+	resolveHiveLoopInterval,
+	resolveHiveLoopIntervalSeconds,
 	shouldAutoCreateFollowUpTask,
 	shouldRetryBlockedIntegrationTask,
 	syncTaskWithWorker,
@@ -41,6 +46,69 @@ test("createOrchestratorQueue seeds defaults", () => {
 	assert.equal(queue.integrationBranch, "main");
 	assert.equal(queue.finalCheckCommands[0], "just check");
 	assert.equal(queue.tasks.length, 0);
+});
+
+test("limitDispatchTasks applies integer limits and rejects non-integers", () => {
+	assert.deepEqual(limitDispatchTasks(["task-1", "task-2", "task-3"], 2), ["task-1", "task-2"]);
+	assert.deepEqual(limitDispatchTasks(["task-1", "task-2"], undefined), ["task-1", "task-2"]);
+	assert.throws(() => limitDispatchTasks(["task-1", "task-2"], 1.5), /dispatchLimit must be a positive integer/);
+});
+
+test("resolveHiveLoopIntervalSeconds uses strict explicit integer args before queue defaults", () => {
+	assert.equal(resolveHiveLoopIntervalSeconds("", 45), 45);
+	assert.equal(resolveHiveLoopIntervalSeconds(" 15 ", 45), 15);
+	assert.equal(resolveHiveLoopIntervalSeconds("15s", 45), null);
+	assert.equal(resolveHiveLoopIntervalSeconds("1.5", 45), null);
+	assert.equal(resolveHiveLoopIntervalSeconds("", 0), DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS);
+	assert.equal(resolveHiveLoopIntervalSeconds("", 1.5), DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS);
+	assert.equal(resolveHiveLoopIntervalSeconds("", undefined), DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS);
+	assert.equal(resolveHiveLoopIntervalSeconds("abc", 45), null);
+});
+
+
+test("resolveHiveLoopInterval only loads persisted queue defaults when no explicit arg is supplied", async () => {
+	let loads = 0;
+	const explicit = await resolveHiveLoopInterval("15", async () => {
+		loads += 1;
+		return 45;
+	});
+	assert.equal(explicit, 15);
+	assert.equal(loads, 0);
+
+	const persisted = await resolveHiveLoopInterval("", async () => {
+		loads += 1;
+		return 45;
+	});
+	assert.equal(persisted, 45);
+	assert.equal(loads, 1);
+
+	const invalidPersisted = await resolveHiveLoopInterval("", async () => {
+		loads += 1;
+		return 0;
+	});
+	assert.equal(invalidPersisted, DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS);
+	assert.equal(loads, 2);
+});
+
+test("loadPersistedHiveLoopIntervalSeconds returns only valid persisted queue intervals", async () => {
+	const repoRoot = await mkdtemp(path.join(os.tmpdir(), "hive-loop-interval-"));
+	assert.equal(await loadPersistedHiveLoopIntervalSeconds(repoRoot), undefined);
+
+	const paths = getOrchestratorPaths(repoRoot);
+	const baseQueue = createOrchestratorQueue(repoRoot, {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+
+	await writeOrchestratorArtifacts(paths, { ...baseQueue, pollIntervalSeconds: 45 });
+	assert.equal(await loadPersistedHiveLoopIntervalSeconds(repoRoot), 45);
+
+	await writeFile(paths.queueFile, `${JSON.stringify({ ...baseQueue, pollIntervalSeconds: 0 }, null, 2)}\n`, "utf8");
+	assert.equal(await loadPersistedHiveLoopIntervalSeconds(repoRoot), undefined);
+
+	await writeFile(paths.queueFile, `${JSON.stringify({ ...baseQueue, pollIntervalSeconds: 1.5 }, null, 2)}\n`, "utf8");
+	assert.equal(await loadPersistedHiveLoopIntervalSeconds(repoRoot), undefined);
 });
 
 test("addTasksToQueue normalizes agents and allocates task ids", () => {

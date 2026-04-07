@@ -31,9 +31,13 @@ import {
 	createOrchestratorQueue,
 	getOrchestratorPaths,
 	isTaskReadyForDispatch,
+	limitDispatchTasks,
+	loadPersistedHiveLoopIntervalSeconds,
 	loadQueue,
 	renderQueueSummary,
 	renderQueueWidget,
+	resolveHiveLoopInterval,
+	resolveHiveLoopIntervalSeconds,
 	shouldAutoCreateFollowUpTask,
 	shouldRetryBlockedIntegrationTask,
 	summarizeQueueCounts,
@@ -126,7 +130,7 @@ const HiveOrchestratorParams = Type.Object({
 	overwrite: Type.Optional(Type.Boolean({ description: "Allow action=init to overwrite an existing queue." })),
 	tasks: Type.Optional(Type.Array(OrchestratorTaskItem, { description: "Tasks to enqueue." })),
 	dispatchLimit: Type.Optional(
-		Type.Number({
+		Type.Integer({
 			description: "Maximum number of ready tasks to dispatch during tick. Defaults to all ready tasks.",
 			minimum: 1,
 		}),
@@ -721,8 +725,7 @@ async function tickOrchestrator(
 		}
 
 		const readyTasks = nextQueue.tasks.filter((task) => isTaskReadyForDispatch(nextQueue, task));
-		const limitedReadyTasks =
-			typeof params.dispatchLimit === "number" ? readyTasks.slice(0, Math.max(0, Math.floor(params.dispatchLimit))) : readyTasks;
+		const limitedReadyTasks = limitDispatchTasks(readyTasks, params.dispatchLimit);
 
 		for (const task of limitedReadyTasks) {
 			const currentTask = nextQueue.tasks.find((item) => item.id === task.id);
@@ -855,33 +858,6 @@ async function refreshHiveWidget(pi: ExtensionAPI, ctx: { cwd: string; hasUI: bo
 	}
 }
 
-function normalizeLoopIntervalSeconds(value: number | undefined): number | null {
-	if (typeof value !== "number" || !Number.isFinite(value)) return null;
-	const normalized = Math.max(1, Math.floor(value));
-	return Number.isInteger(normalized) ? normalized : null;
-}
-
-async function resolveHiveLoopIntervalSeconds(
-	pi: ExtensionAPI,
-	ctx: { cwd: string },
-	explicitSeconds?: number,
-	signal?: AbortSignal,
-): Promise<number> {
-	const normalizedExplicit = normalizeLoopIntervalSeconds(explicitSeconds);
-	if (normalizedExplicit !== null) return normalizedExplicit;
-
-	try {
-		const repoRoot = await resolveRepoRoot(pi, ctx.cwd, undefined, signal);
-		const queue = await loadQueue(getOrchestratorPaths(repoRoot));
-		const normalizedQueued = normalizeLoopIntervalSeconds(queue?.pollIntervalSeconds);
-		if (normalizedQueued !== null) return normalizedQueued;
-	} catch {
-		// Fall back to the historical default when there is no queue yet or repo resolution fails.
-	}
-
-	return 30;
-}
-
 function buildHiveRunPrompt(goal: string): string {
 	return [
 		`Goal: ${goal}`,
@@ -925,7 +901,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 			isIdle: () => boolean;
 			hasPendingMessages: () => boolean;
 		},
-		options: { intervalSeconds?: number; source: "command" | "hive-run" },
+		options: { intervalSeconds: number; source: "command" | "hive-run" },
 	): Promise<boolean> => {
 		if (hiveLoopActive) {
 			if (options.source === "command") {
@@ -934,7 +910,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 			return false;
 		}
 
-		const intervalSeconds = await resolveHiveLoopIntervalSeconds(pi, ctx, options.intervalSeconds);
+		const intervalSeconds = options.intervalSeconds;
 		let iteration = 0;
 		hiveLoopActive = true;
 		hiveLoopAbortRequested = false;
@@ -1021,7 +997,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 				return;
 			}
 
-			const intervalSeconds = normalizeLoopIntervalSeconds(queue.pollIntervalSeconds) ?? 30;
+			const intervalSeconds = resolveHiveLoopIntervalSeconds("", queue.pollIntervalSeconds) ?? 30;
 			void runHiveLoop(ctx, { intervalSeconds, source: "hive-run" });
 		} catch (error) {
 			ctx.ui.notify(
@@ -1153,13 +1129,20 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 			return filtered.length > 0 ? filtered : null;
 		},
 		handler: async (args, ctx) => {
-			const trimmed = args.trim();
-			const explicitInterval = trimmed ? Number.parseInt(trimmed, 10) : undefined;
-			if (trimmed && (!Number.isInteger(explicitInterval) || explicitInterval <= 0)) {
+			let intervalSeconds: number | null;
+			try {
+				intervalSeconds = await resolveHiveLoopInterval(args, async () =>
+					loadPersistedHiveLoopIntervalSeconds(await resolveRepoRoot(pi, ctx.cwd, undefined)),
+				);
+			} catch (error) {
+				ctx.ui.notify(`Hive loop failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+				return;
+			}
+			if (intervalSeconds == null) {
 				ctx.ui.notify("Usage: /hive-loop [seconds]", "error");
 				return;
 			}
-			await runHiveLoop(ctx, { intervalSeconds: explicitInterval, source: "command" });
+			await runHiveLoop(ctx, { intervalSeconds, source: "command" });
 		},
 	});
 
