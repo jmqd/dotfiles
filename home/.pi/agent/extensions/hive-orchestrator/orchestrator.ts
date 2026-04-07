@@ -26,6 +26,10 @@ export type OrchestratorTask = {
 	launchedAt?: string;
 	finishedAt?: string;
 	lastPolledAt?: string;
+	lastDispatchAttemptedAt?: string;
+	dispatchAttempts?: number;
+	lastDispatchError?: string;
+	workerRunning?: boolean;
 	workerState?: string;
 	workerSummary?: string;
 	workerNextAction?: string;
@@ -191,10 +195,15 @@ export function addTasksToQueue(
 	};
 }
 
+export function taskHasActiveWorkerExecution(task: OrchestratorTask): boolean {
+	if (typeof task.workerRunning === "boolean") return task.workerRunning;
+	// Older persisted queues will not have workerRunning yet. Treat legacy running tasks as occupying
+	// the agent until a poll records positive active/inactive evidence for that task.
+	return task.state === "running";
+}
+
 function isAgentAvailableForDispatch(queue: OrchestratorQueue, task: OrchestratorTask): boolean {
-	return !queue.tasks.some(
-		(item) => item.id !== task.id && item.agent === task.agent && (item.state === "running" || item.state === "done"),
-	);
+	return !queue.tasks.some((item) => item.id !== task.id && item.agent === task.agent && taskHasActiveWorkerExecution(item));
 }
 
 const retryableIntegrationBlockReasons = new Set<IntegrationFailureReason>([
@@ -362,6 +371,8 @@ export function renderQueueSummary(queue: OrchestratorQueue, recentChanges: stri
 				parts.push(`— merged ${task.mergedCommitSha.slice(0, 12)}`);
 			} else if (task.integrationMessage) {
 				parts.push(`— ${task.integrationMessage}`);
+			} else if (task.state === "planned" && task.lastDispatchError) {
+				parts.push(`— dispatch: ${task.lastDispatchError}`);
 			} else if (task.workerSummary) {
 				parts.push(`— ${task.workerSummary}`);
 			} else if (task.workerNextAction) {
@@ -402,14 +413,14 @@ export function renderQueueWidget(queue: OrchestratorQueue, maxItems = 4): strin
 	return [header, `Goal: ${goal}`, ...taskLines];
 }
 
-export function workerSnapshotToTaskState(worker: WorkerSnapshot): OrchestratorTaskState {
+export function workerSnapshotToTaskState(worker: WorkerSnapshot): OrchestratorTaskState | undefined {
 	const statusState = typeof worker.status?.state === "string" ? worker.status.state : undefined;
 	if (statusState === "blocked") return "blocked";
 	if (statusState === "done") return "done";
 	if (worker.isRunning) return "running";
 	if (worker.exitCode === 0) return "done";
 	if (worker.exitCode != null) return "failed";
-	return "running";
+	return undefined;
 }
 
 export function syncTaskWithWorker(
@@ -417,28 +428,40 @@ export function syncTaskWithWorker(
 	worker: WorkerSnapshot,
 	now = new Date().toISOString(),
 ): { task: OrchestratorTask; note?: string } {
-	const nextState = workerSnapshotToTaskState(worker);
-	const workerSummary = typeof worker.status?.summary === "string" ? worker.status.summary : undefined;
-	const workerNextAction = typeof worker.status?.nextAction === "string" ? worker.status.nextAction : undefined;
+	// Polling only advances task state when the worker snapshot provides positive evidence.
+	// Missing files / missing process evidence keep prior scheduler state intact.
+	const observedState = workerSnapshotToTaskState(worker);
+	const nextState = observedState ?? task.state;
+	const workerSummary = typeof worker.status?.summary === "string" ? worker.status.summary : task.workerSummary;
+	const workerNextAction = typeof worker.status?.nextAction === "string" ? worker.status.nextAction : task.workerNextAction;
 	const workerHeadSha = typeof worker.status?.headSha === "string" ? worker.status.headSha : task.workerHeadSha;
+	const workerState =
+		typeof worker.status?.state === "string"
+			? worker.status.state
+			: worker.isRunning
+				? "running"
+				: observedState ?? task.workerState;
 	const nextTask: OrchestratorTask = {
 		...task,
 		state: nextState,
 		launchedAt: task.launchedAt ?? worker.launchedAt ?? now,
-		finishedAt: nextState === "done" || nextState === "blocked" || nextState === "failed" ? now : task.finishedAt,
+		finishedAt:
+			nextState === "done" || nextState === "blocked" || nextState === "failed" ? task.finishedAt ?? now : task.finishedAt,
 		lastPolledAt: now,
-		workerState: typeof worker.status?.state === "string" ? worker.status.state : nextState,
+		workerRunning: worker.isRunning,
+		workerState,
 		workerSummary,
 		workerNextAction,
-		workerExitCode: worker.exitCode,
+		workerExitCode: worker.exitCode ?? task.workerExitCode ?? null,
 		workerHeadSha,
 		workerStatusPath: worker.paths.statusFile,
 		workerEventLogPath: worker.paths.eventLogFile,
+		lastDispatchError: observedState ? undefined : task.lastDispatchError,
 	};
 
 	const stateChanged = task.state !== nextState;
-	const summaryChanged = workerSummary && workerSummary !== task.workerSummary;
-	const headChanged = workerHeadSha && workerHeadSha !== task.workerHeadSha;
+	const summaryChanged = workerSummary !== task.workerSummary;
+	const headChanged = workerHeadSha !== task.workerHeadSha;
 	if (!stateChanged && !summaryChanged && !headChanged) return { task: nextTask };
 
 	if (stateChanged) {
@@ -448,7 +471,7 @@ export function syncTaskWithWorker(
 		};
 	}
 
-	if (summaryChanged) {
+	if (summaryChanged && workerSummary) {
 		return {
 			task: nextTask,
 			note: `${task.id} ${task.title}: ${workerSummary}`,
@@ -458,6 +481,37 @@ export function syncTaskWithWorker(
 	return {
 		task: nextTask,
 		note: `${task.id} ${task.title}: updated worker head ${workerHeadSha?.slice(0, 12)}`,
+	};
+}
+
+export function applyTaskDispatchFailure(
+	task: OrchestratorTask,
+	message: string,
+	now = new Date().toISOString(),
+): { task: OrchestratorTask; note: string } {
+	return {
+		task: {
+			...task,
+			state: "planned",
+			launchedAt: undefined,
+			finishedAt: undefined,
+			lastDispatchAttemptedAt: now,
+			dispatchAttempts: (task.dispatchAttempts ?? 0) + 1,
+			lastDispatchError: message,
+			lastPolledAt: now,
+			workerRunning: false,
+			workerState: undefined,
+			workerSummary: undefined,
+			workerNextAction: undefined,
+			workerExitCode: null,
+			workerHeadSha: undefined,
+			workerStatusPath: undefined,
+			workerEventLogPath: undefined,
+			integrationAttemptedAt: undefined,
+			integrationMessage: undefined,
+			blockedReason: undefined,
+		},
+		note: `${task.id} ${task.title}: dispatch failed (${message})`,
 	};
 }
 
@@ -478,8 +532,10 @@ export function applyTaskIntegrationResult(
 				blockedReason: undefined,
 				mergedAt: now,
 				mergedCommitSha: result.mergedCommitSha,
+				workerRunning: false,
 				workerHeadSha: result.workerHeadSha ?? task.workerHeadSha,
 				finishedAt: task.finishedAt ?? now,
+				lastDispatchError: undefined,
 			},
 			note: `${task.id} ${task.title}: merged (${result.message})`,
 		};
@@ -493,8 +549,10 @@ export function applyTaskIntegrationResult(
 			integrationAttempts,
 			integrationMessage: result.message,
 			blockedReason: result.reason,
+			workerRunning: false,
 			workerHeadSha: result.workerHeadSha ?? task.workerHeadSha,
 			finishedAt: now,
+			lastDispatchError: undefined,
 		},
 		note: `${task.id} ${task.title}: ${result.state} (${result.message})`,
 	};

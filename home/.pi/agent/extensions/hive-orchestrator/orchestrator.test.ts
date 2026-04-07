@@ -6,6 +6,7 @@ import test from "node:test";
 import type { WorkerSnapshot } from "./core.ts";
 import {
 	addTasksToQueue,
+	applyTaskDispatchFailure,
 	applyTaskIntegrationResult,
 	createAutoFollowUpTask,
 	createOrchestratorQueue,
@@ -65,7 +66,7 @@ test("addTasksToQueue normalizes agents and allocates task ids", () => {
 	assert.equal(queue.updatedAt, "2026-04-06T00:01:00Z");
 });
 
-test("isTaskReadyForDispatch requires merged dependencies and a free agent slot", () => {
+test("isTaskReadyForDispatch requires merged dependencies and only blocks on active worker execution", () => {
 	const base = createOrchestratorQueue("/repo/project", {
 		goal: "goal",
 		integrationBranch: "main",
@@ -82,13 +83,32 @@ test("isTaskReadyForDispatch requires merged dependencies and a free agent slot"
 	);
 	assert.equal(isTaskReadyForDispatch(queue, queue.tasks[0]), true);
 	assert.equal(isTaskReadyForDispatch(queue, queue.tasks[1]), false);
+	assert.equal(isTaskReadyForDispatch(queue, queue.tasks[2]), true);
+
+	const activeWorkerQueue = {
+		...queue,
+		tasks: [{ ...queue.tasks[0], state: "running" as const, workerRunning: true }, queue.tasks[1], queue.tasks[2]],
+	};
+	assert.equal(isTaskReadyForDispatch(activeWorkerQueue, activeWorkerQueue.tasks[2]), false);
+
+	const legacyRunningQueue = {
+		...queue,
+		tasks: [{ ...queue.tasks[0], state: "running" as const, workerRunning: undefined }, queue.tasks[1], queue.tasks[2]],
+	};
+	assert.equal(isTaskReadyForDispatch(legacyRunningQueue, legacyRunningQueue.tasks[2]), false);
+
+	const inactiveWorkerQueue = {
+		...activeWorkerQueue,
+		tasks: [{ ...activeWorkerQueue.tasks[0], workerRunning: false }, activeWorkerQueue.tasks[1], activeWorkerQueue.tasks[2]],
+	};
+	assert.equal(isTaskReadyForDispatch(inactiveWorkerQueue, inactiveWorkerQueue.tasks[2]), true);
 
 	const doneQueue = {
 		...queue,
 		tasks: [{ ...queue.tasks[0], state: "done" as const }, queue.tasks[1], queue.tasks[2]],
 	};
 	assert.equal(isTaskReadyForDispatch(doneQueue, doneQueue.tasks[1]), false);
-	assert.equal(isTaskReadyForDispatch(doneQueue, doneQueue.tasks[2]), false);
+	assert.equal(isTaskReadyForDispatch(doneQueue, doneQueue.tasks[2]), true);
 
 	const mergedQueue = {
 		...doneQueue,
@@ -137,10 +157,12 @@ function makeWorkerSnapshot(overrides: Partial<WorkerSnapshot>): WorkerSnapshot 
 	};
 }
 
-test("workerSnapshotToTaskState maps worker snapshots to queue states", () => {
+test("workerSnapshotToTaskState maps worker snapshots to queue states without synthesizing running work", () => {
 	assert.equal(workerSnapshotToTaskState(makeWorkerSnapshot({ status: { state: "blocked" } })), "blocked");
 	assert.equal(workerSnapshotToTaskState(makeWorkerSnapshot({ status: { state: "done" }, isRunning: false, exitCode: 0 })), "done");
 	assert.equal(workerSnapshotToTaskState(makeWorkerSnapshot({ isRunning: false, exitCode: 1, status: null })), "failed");
+	assert.equal(workerSnapshotToTaskState(makeWorkerSnapshot({ isRunning: false, exitCode: null, status: null, pid: null })), undefined);
+	assert.equal(workerSnapshotToTaskState(makeWorkerSnapshot({ isRunning: false, exitCode: null, status: { state: "booting" } })), undefined);
 });
 
 test("syncTaskWithWorker updates task metadata and captures worker head sha", () => {
@@ -151,13 +173,14 @@ test("syncTaskWithWorker updates task metadata and captures worker head sha", ()
 	});
 	const { added } = addTasksToQueue(base, [{ task: "fix login", agent: "01" }], "2026-04-06T00:01:00Z");
 	const sync = syncTaskWithWorker(
-		added[0],
+		{ ...added[0], lastDispatchError: "previous launch failed" },
 		makeWorkerSnapshot({ status: { state: "done", summary: "Ready to merge", headSha: "deadbeef" }, isRunning: false, exitCode: 0 }),
 		"2026-04-06T00:02:00Z",
 	);
 	assert.equal(sync.task.state, "done");
 	assert.equal(sync.task.workerSummary, "Ready to merge");
 	assert.equal(sync.task.workerHeadSha, "deadbeef");
+	assert.equal(sync.task.lastDispatchError, undefined);
 	assert.match(sync.note || "", /planned -> done/);
 });
 
@@ -184,6 +207,7 @@ test("syncTaskWithWorker updates poll metadata without a note when worker eviden
 	assert.equal(sync.task.launchedAt, "2026-04-06T00:01:00Z");
 	assert.equal(sync.task.lastPolledAt, "2026-04-06T00:03:00Z");
 	assert.equal(sync.task.finishedAt, undefined);
+	assert.equal(sync.task.workerRunning, true);
 	assert.equal(sync.task.workerState, "running");
 	assert.equal(sync.task.workerSummary, undefined);
 	assert.equal(sync.task.workerNextAction, undefined);
@@ -191,6 +215,83 @@ test("syncTaskWithWorker updates poll metadata without a note when worker eviden
 	assert.equal(sync.task.workerHeadSha, "abc123");
 	assert.equal(sync.task.workerStatusPath, "/tmp/worktree/.hive/status.json");
 	assert.equal(sync.task.workerEventLogPath, "/tmp/worktree/.hive/worker-events.jsonl");
+});
+
+test("syncTaskWithWorker preserves prior task state when polling lacks positive evidence", () => {
+	const base = createOrchestratorQueue("/repo/project", {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+	const { added } = addTasksToQueue(base, [{ task: "fix login", agent: "01" }], "2026-04-06T00:01:00Z");
+	const sync = syncTaskWithWorker(
+		{
+			...added[0],
+			state: "running",
+			workerRunning: true,
+			workerState: "running",
+			workerSummary: "Still working",
+			workerNextAction: "Wait for test run",
+			launchedAt: "2026-04-06T00:01:00Z",
+			lastDispatchError: "previous launch failed",
+		},
+		makeWorkerSnapshot({ isRunning: false, exitCode: null, status: null, pid: null, launchedAt: undefined }),
+		"2026-04-06T00:03:00Z",
+	);
+	assert.equal(sync.note, undefined);
+	assert.equal(sync.task.state, "running");
+	assert.equal(sync.task.workerRunning, false);
+	assert.equal(sync.task.workerState, "running");
+	assert.equal(sync.task.workerSummary, "Still working");
+	assert.equal(sync.task.workerNextAction, "Wait for test run");
+	assert.equal(sync.task.launchedAt, "2026-04-06T00:01:00Z");
+	assert.equal(sync.task.finishedAt, undefined);
+	assert.equal(sync.task.workerExitCode, null);
+	assert.equal(sync.task.lastDispatchError, "previous launch failed");
+});
+
+test("applyTaskDispatchFailure keeps transient launch failures retryable", () => {
+	const base = createOrchestratorQueue("/repo/project", {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+	const { queue } = addTasksToQueue(base, [{ task: "fix login", agent: "01" }], "2026-04-06T00:01:00Z");
+	const failedDispatch = applyTaskDispatchFailure(
+		{
+			...queue.tasks[0],
+			state: "running",
+			launchedAt: "2026-04-06T00:01:30Z",
+			finishedAt: "2026-04-06T00:01:45Z",
+			workerRunning: true,
+			workerState: "implementing",
+			workerSummary: "Touch auth module",
+			workerNextAction: "Run tests",
+			workerExitCode: 17,
+			workerHeadSha: "deadbeef",
+			workerStatusPath: "/tmp/worktree/.hive/status.json",
+			workerEventLogPath: "/tmp/worktree/.hive/worker-events.jsonl",
+			integrationMessage: "stale integration message",
+		},
+		"control plane timeout",
+		"2026-04-06T00:02:00Z",
+	);
+	assert.equal(failedDispatch.task.state, "planned");
+	assert.equal(failedDispatch.task.dispatchAttempts, 1);
+	assert.equal(failedDispatch.task.lastDispatchAttemptedAt, "2026-04-06T00:02:00Z");
+	assert.equal(failedDispatch.task.lastDispatchError, "control plane timeout");
+	assert.equal(failedDispatch.task.workerRunning, false);
+	assert.equal(failedDispatch.task.launchedAt, undefined);
+	assert.equal(failedDispatch.task.finishedAt, undefined);
+	assert.equal(failedDispatch.task.workerState, undefined);
+	assert.equal(failedDispatch.task.workerSummary, undefined);
+	assert.equal(failedDispatch.task.workerNextAction, undefined);
+	assert.equal(failedDispatch.task.workerExitCode, null);
+	assert.equal(failedDispatch.task.workerHeadSha, undefined);
+	assert.equal(failedDispatch.task.integrationMessage, undefined);
+	assert.equal(isTaskReadyForDispatch({ ...queue, tasks: [failedDispatch.task] }, failedDispatch.task), true);
+	assert.match(renderQueueSummary({ ...queue, tasks: [failedDispatch.task] }), /dispatch: control plane timeout/);
+	assert.doesNotMatch(renderQueueSummary({ ...queue, tasks: [failedDispatch.task] }), /Touch auth module/);
 });
 
 test("applyTaskIntegrationResult records merged and blocked outcomes", () => {

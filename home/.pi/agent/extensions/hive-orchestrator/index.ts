@@ -24,6 +24,7 @@ import {
 } from "./core.ts";
 import {
 	addTasksToQueue,
+	applyTaskDispatchFailure,
 	applyTaskIntegrationResult,
 	createAutoFollowUpTask,
 	createOrchestratorQueue,
@@ -774,19 +775,11 @@ async function tickOrchestrator(
 				recentChanges.push(`Dispatched ${currentTask.id} ${currentTask.agent}: ${currentTask.title}`);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
-				recentChanges.push(`Dispatch failed for ${currentTask.id}: ${message}`);
+				const failedDispatch = applyTaskDispatchFailure(currentTask, message, new Date().toISOString());
+				recentChanges.push(failedDispatch.note);
 				nextQueue = {
 					...nextQueue,
-					tasks: nextQueue.tasks.map((item) =>
-						item.id === currentTask.id
-							? {
-									...item,
-									state: "failed",
-									integrationMessage: `Launch failed: ${message}`,
-									lastPolledAt: new Date().toISOString(),
-								}
-							: item,
-					),
+					tasks: nextQueue.tasks.map((item) => (item.id === currentTask.id ? failedDispatch.task : item)),
 					updatedAt: new Date().toISOString(),
 				};
 			}
