@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -92,6 +93,13 @@ export function getHiveStateDir(homeDir = os.homedir(), env = process.env): stri
 	return env.HIVE_STATE || path.join(homeDir, ".local", "share", "agent-hive");
 }
 
+export function getRepoWorktreeKey(repoRoot: string): string {
+	const normalizedRepoRoot = path.resolve(repoRoot);
+	const repoSlug = path.basename(normalizedRepoRoot) || "repo";
+	const repoRootHash = createHash("sha256").update(normalizedRepoRoot).digest("hex").slice(0, 16);
+	return `${repoSlug}-${repoRootHash}`;
+}
+
 export function getWorkerPaths(
 	repoRoot: string,
 	agentInput: string,
@@ -102,8 +110,9 @@ export function getWorkerPaths(
 ): WorkerPaths {
 	const normalizedRepoRoot = path.resolve(repoRoot);
 	const repoSlug = path.basename(normalizedRepoRoot);
+	const repoWorktreeKey = getRepoWorktreeKey(normalizedRepoRoot);
 	const agent = normalizeAgentName(agentInput);
-	const worktreeDir = path.join(hiveStateDir, "worktrees", repoSlug, agent);
+	const worktreeDir = path.join(hiveStateDir, "worktrees", repoWorktreeKey, agent);
 	const hiveDir = path.join(worktreeDir, ".hive");
 
 	return {
