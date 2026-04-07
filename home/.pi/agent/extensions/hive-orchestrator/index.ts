@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import os from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { withFileMutationQueue, type ExtensionAPI } from "@mariozechner/pi-coding-agent";
@@ -33,6 +33,7 @@ import {
 	renderQueueSummary,
 	renderQueueWidget,
 	shouldAutoCreateFollowUpTask,
+	shouldRetryBlockedIntegrationTask,
 	summarizeQueueCounts,
 	syncTaskWithWorker,
 	writeOrchestratorArtifacts,
@@ -407,7 +408,7 @@ async function withTemporaryIntegrationWorktree<T>(
 	signal: AbortSignal | undefined,
 	fn: (worktreePath: string) => Promise<T>,
 ): Promise<T> {
-	const worktreePath = join(os.tmpdir(), `pi-hive-integrate-${path.basename(repoRoot)}-${taskId}-${Date.now()}`);
+	const worktreePath = join(os.tmpdir(), `pi-hive-integrate-${basename(repoRoot)}-${taskId}-${Date.now()}`);
 	await execOrThrow(pi, "git", ["-C", repoRoot, "worktree", "add", "--detach", worktreePath, "HEAD"], repoRoot, signal, 30_000);
 	try {
 		return await fn(worktreePath);
@@ -678,7 +679,9 @@ async function tickOrchestrator(
 	const dispatchedTaskIds: string[] = [];
 	const integratedTaskIds: string[] = [];
 
-	const integrationCandidates = nextQueue.tasks.filter((task) => task.state === "done");
+	const integrationCandidates = nextQueue.tasks.filter(
+		(task) => task.state === "done" || shouldRetryBlockedIntegrationTask(task),
+	);
 	for (const task of integrationCandidates) {
 		const result = await integrateTask(pi, ctx, nextQueue, task, signal);
 		const applied = applyTaskIntegrationResult(task, result, new Date().toISOString());

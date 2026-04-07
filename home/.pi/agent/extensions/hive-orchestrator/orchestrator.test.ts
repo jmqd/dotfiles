@@ -16,6 +16,7 @@ import {
 	renderQueueSummary,
 	renderQueueWidget,
 	shouldAutoCreateFollowUpTask,
+	shouldRetryBlockedIntegrationTask,
 	syncTaskWithWorker,
 	workerSnapshotToTaskState,
 	writeOrchestratorArtifacts,
@@ -189,6 +190,42 @@ test("applyTaskIntegrationResult records merged and blocked outcomes", () => {
 	assert.equal(blocked.task.workerHeadSha, "deadbeef");
 });
 
+
+test("retryable integration blocks can be retried on later ticks", () => {
+	const base = createOrchestratorQueue("/repo/project", {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+	const { added } = addTasksToQueue(base, [{ task: "fix login", agent: "01" }], "2026-04-06T00:01:00Z");
+	assert.equal(
+		shouldRetryBlockedIntegrationTask({
+			...added[0],
+			state: "blocked",
+			workerState: "done",
+			blockedReason: "host_dirty",
+		}),
+		true,
+	);
+	assert.equal(
+		shouldRetryBlockedIntegrationTask({
+			...added[0],
+			state: "blocked",
+			workerState: "done",
+			blockedReason: "integration_conflict",
+		}),
+		false,
+	);
+	assert.equal(
+		shouldRetryBlockedIntegrationTask({
+			...added[0],
+			state: "blocked",
+			workerState: "blocked",
+			blockedReason: "host_dirty",
+		}),
+		false,
+	);
+});
 
 test("follow-up tasks are auto-generated for recoverable integration failures", () => {
 	const base = createOrchestratorQueue("/repo/project", {

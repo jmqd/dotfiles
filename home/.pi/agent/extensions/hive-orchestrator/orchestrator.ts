@@ -197,6 +197,17 @@ function isAgentAvailableForDispatch(queue: OrchestratorQueue, task: Orchestrato
 	);
 }
 
+const retryableIntegrationBlockReasons = new Set<IntegrationFailureReason>([
+	"host_branch_mismatch",
+	"host_dirty",
+	"worker_running",
+	"host_changed",
+]);
+
+export function shouldRetryBlockedIntegrationTask(task: OrchestratorTask): boolean {
+	return task.state === "blocked" && task.workerState === "done" && !!task.blockedReason && retryableIntegrationBlockReasons.has(task.blockedReason);
+}
+
 export function shouldAutoCreateFollowUpTask(result: TaskIntegrationResult): boolean {
 	return (
 		result.state === "blocked" &&
