@@ -102,6 +102,14 @@ export type TaskIntegrationResult =
 			workerHeadSha?: string;
 	  };
 
+export type ExecLike = {
+	exec(
+		command: string,
+		args: string[],
+		options?: { cwd?: string; signal?: AbortSignal; timeout?: number },
+	): Promise<{ code: number; stdout: string; stderr: string }>;
+};
+
 export function getOrchestratorPaths(repoRoot: string): OrchestratorPaths {
 	const normalizedRepoRoot = path.resolve(repoRoot);
 	const repoSlug = path.basename(normalizedRepoRoot);
@@ -215,6 +223,56 @@ const retryableIntegrationBlockReasons = new Set<IntegrationFailureReason>([
 
 export function shouldRetryBlockedIntegrationTask(task: OrchestratorTask): boolean {
 	return task.state === "blocked" && task.workerState === "done" && !!task.blockedReason && retryableIntegrationBlockReasons.has(task.blockedReason);
+}
+
+/**
+ * Checks whether the worker commit itself is already contained in the current host history.
+ * Tree-equal but non-ancestor commits are not treated as already integrated.
+ * We only run git diff after a failed ancestor check to verify the revisions are comparable
+ * and to surface execution errors distinctly from the normal needs-integration path.
+ */
+export async function checkWorkerCommitAlreadyIntegrated(
+	pi: ExecLike,
+	repoRoot: string,
+	hostHeadSha: string,
+	workerHeadSha: string,
+	signal?: AbortSignal,
+): Promise<
+	| { state: "already_integrated" }
+	| { state: "needs_integration" }
+	| { state: "failed"; reason: "diff_failed"; message: string }
+> {
+	const ancestorCheck = await pi.exec("git", ["-C", repoRoot, "merge-base", "--is-ancestor", workerHeadSha, hostHeadSha], {
+		cwd: repoRoot,
+		signal,
+		timeout: 5000,
+	});
+	if (ancestorCheck.code === 0) {
+		return { state: "already_integrated" };
+	}
+	if (ancestorCheck.code !== 1) {
+		return {
+			state: "failed",
+			reason: "diff_failed",
+			message: `failed to check whether host head ${hostHeadSha} contains worker head ${workerHeadSha}: ${ancestorCheck.stderr || ancestorCheck.stdout}`,
+		};
+	}
+
+	// After a negative ancestor check, git diff only verifies the revisions are comparable.
+	// Even if the trees are equal, a non-ancestor worker commit still needs integration.
+	const diffCheck = await pi.exec("git", ["-C", repoRoot, "diff", "--quiet", hostHeadSha, workerHeadSha], {
+		cwd: repoRoot,
+		signal,
+		timeout: 5000,
+	});
+	if (diffCheck.code === 0 || diffCheck.code === 1) {
+		return { state: "needs_integration" };
+	}
+	return {
+		state: "failed",
+		reason: "diff_failed",
+		message: `failed to diff host against worker head ${workerHeadSha}: ${diffCheck.stderr || diffCheck.stdout}`,
+	};
 }
 
 export function shouldAutoCreateFollowUpTask(result: TaskIntegrationResult): boolean {

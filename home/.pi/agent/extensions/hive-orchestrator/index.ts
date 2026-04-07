@@ -26,6 +26,7 @@ import {
 	addTasksToQueue,
 	applyTaskDispatchFailure,
 	applyTaskIntegrationResult,
+	checkWorkerCommitAlreadyIntegrated,
 	createAutoFollowUpTask,
 	createOrchestratorQueue,
 	getOrchestratorPaths,
@@ -499,24 +500,15 @@ async function integrateTask(
 	}
 	const workerHeadSha = validation.headSha ?? actualWorkerHeadSha;
 	const hostHeadBefore = await getHeadSha(pi, repoRoot, signal);
-	const diffCheck = await pi.exec("git", ["-C", repoRoot, "diff", "--quiet", hostHeadBefore, workerHeadSha], {
-		cwd: repoRoot,
-		signal,
-		timeout: 5000,
-	});
-	if (diffCheck.code === 0) {
+	const alreadyIntegrated = await checkWorkerCommitAlreadyIntegrated(pi, repoRoot, hostHeadBefore, workerHeadSha, signal);
+	if (alreadyIntegrated.state === "failed") {
+		return { ...alreadyIntegrated, workerHeadSha };
+	}
+	if (alreadyIntegrated.state === "already_integrated") {
 		return {
 			state: "merged",
-			message: `no-op: ${workerHeadSha.slice(0, 12)} already matches ${queue.integrationBranch}`,
+			message: `no-op: ${workerHeadSha.slice(0, 12)} is already included in ${queue.integrationBranch}`,
 			mergedCommitSha: hostHeadBefore,
-			workerHeadSha,
-		};
-	}
-	if (diffCheck.code !== 1) {
-		return {
-			state: "failed",
-			reason: "diff_failed",
-			message: `failed to diff host against worker head ${workerHeadSha}: ${diffCheck.stderr || diffCheck.stdout}`,
 			workerHeadSha,
 		};
 	}
