@@ -535,3 +535,55 @@ export async function writeOrchestratorArtifacts(
 		await fs.appendFile(paths.progressFile, `${prefix}${formatProgressEntries(progressEntries)}\n`, "utf8");
 	}
 }
+
+async function withOrchestratorQueueTransaction<T>(
+	paths: OrchestratorPaths,
+	withMutationQueue: <R>(filePath: string, mutate: () => Promise<R>) => Promise<R>,
+	mutate: (queue: OrchestratorQueue | null) => Promise<{
+		queue: OrchestratorQueue;
+		progressEntries?: OrchestratorProgressEntry[];
+		result: T;
+	}>,
+): Promise<T> {
+	return withMutationQueue(paths.queueFile, async () => {
+		const queue = await loadQueue(paths);
+		const next = await mutate(queue);
+		await writeOrchestratorArtifacts(paths, next.queue, next.progressEntries ?? []);
+		return next.result;
+	});
+}
+
+/**
+ * Run an init/overwrite-style queue mutation against the freshest queue snapshot loaded inside the
+ * serialized queue mutation section, then persist the returned queue and progress entries atomically.
+ */
+export async function withOrchestratorQueueInitTransaction<T>(
+	paths: OrchestratorPaths,
+	withMutationQueue: <R>(filePath: string, mutate: () => Promise<R>) => Promise<R>,
+	mutate: (queue: OrchestratorQueue | null) => Promise<{
+		queue: OrchestratorQueue;
+		progressEntries?: OrchestratorProgressEntry[];
+		result: T;
+	}>,
+): Promise<T> {
+	return withOrchestratorQueueTransaction(paths, withMutationQueue, mutate);
+}
+
+/**
+ * Run an existing-queue mutation against the freshest queue snapshot loaded inside the serialized
+ * queue mutation section, then persist the returned queue and progress entries atomically.
+ */
+export async function withExistingOrchestratorQueueTransaction<T>(
+	paths: OrchestratorPaths,
+	withMutationQueue: <R>(filePath: string, mutate: () => Promise<R>) => Promise<R>,
+	mutate: (queue: OrchestratorQueue) => Promise<{
+		queue: OrchestratorQueue;
+		progressEntries?: OrchestratorProgressEntry[];
+		result: T;
+	}>,
+): Promise<T> {
+	return withOrchestratorQueueTransaction(paths, withMutationQueue, async (queue) => {
+		if (!queue) throw new Error(`Missing orchestrator queue: ${paths.queueFile}. Run hive_orchestrator init first.`);
+		return mutate(queue);
+	});
+}

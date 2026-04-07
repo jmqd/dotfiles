@@ -36,7 +36,8 @@ import {
 	shouldRetryBlockedIntegrationTask,
 	summarizeQueueCounts,
 	syncTaskWithWorker,
-	writeOrchestratorArtifacts,
+	withExistingOrchestratorQueueTransaction,
+	withOrchestratorQueueInitTransaction,
 	type OrchestratorProgressEntry,
 	type OrchestratorQueue,
 	type OrchestratorTask,
@@ -351,11 +352,26 @@ function toProgressEntries(texts: string[], timestamp: string): OrchestratorProg
 	return texts.map((text) => ({ timestamp, text }));
 }
 
-async function loadQueueOrThrow(repoRoot: string) {
-	const paths = getOrchestratorPaths(repoRoot);
-	const queue = await loadQueue(paths);
-	if (!queue) throw new Error(`Missing orchestrator queue: ${paths.queueFile}. Run hive_orchestrator init first.`);
-	return { paths, queue };
+async function withInitQueueTransaction<T>(
+	paths: ReturnType<typeof getOrchestratorPaths>,
+	mutate: (queue: OrchestratorQueue | null) => Promise<{
+		queue: OrchestratorQueue;
+		progressEntries?: OrchestratorProgressEntry[];
+		result: T;
+	}>,
+): Promise<T> {
+	return withOrchestratorQueueInitTransaction(paths, withFileMutationQueue, mutate);
+}
+
+async function withExistingQueueTransaction<T>(
+	paths: ReturnType<typeof getOrchestratorPaths>,
+	mutate: (queue: OrchestratorQueue) => Promise<{
+		queue: OrchestratorQueue;
+		progressEntries?: OrchestratorProgressEntry[];
+		result: T;
+	}>,
+): Promise<T> {
+	return withExistingOrchestratorQueueTransaction(paths, withFileMutationQueue, mutate);
 }
 
 async function refreshQueueFromWorkers(
@@ -597,25 +613,27 @@ async function initOrchestrator(
 ): Promise<HiveOrchestratorDetails> {
 	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
 	const paths = getOrchestratorPaths(repoRoot);
-	const existing = await loadQueue(paths);
-	if (existing && !params.overwrite) {
-		throw new Error(`Orchestrator queue already exists: ${paths.queueFile}. Use overwrite=true to replace it.`);
-	}
+	return withInitQueueTransaction(paths, async (existing) => {
+		if (existing && !params.overwrite) {
+			throw new Error(`Orchestrator queue already exists: ${paths.queueFile}. Use overwrite=true to replace it.`);
+		}
 
-	const integrationBranch = await getCurrentBranch(pi, repoRoot, signal);
-	const now = new Date().toISOString();
-	const queue = createOrchestratorQueue(repoRoot, {
-		goal: params.goal,
-		integrationBranch,
-		pollIntervalSeconds: params.pollIntervalSeconds,
-		finalCheckCommands: params.finalCheckCommands,
-		now,
+		const integrationBranch = await getCurrentBranch(pi, repoRoot, signal);
+		const now = new Date().toISOString();
+		const queue = createOrchestratorQueue(repoRoot, {
+			goal: params.goal,
+			integrationBranch,
+			pollIntervalSeconds: params.pollIntervalSeconds,
+			finalCheckCommands: params.finalCheckCommands,
+			now,
+		});
+		const recentChanges = [`Initialized orchestrator queue for goal: ${params.goal} on branch ${integrationBranch}`];
+		return {
+			queue,
+			progressEntries: toProgressEntries(recentChanges, now),
+			result: { action: "init", queue, recentChanges, polledTaskIds: [], dispatchedTaskIds: [], integratedTaskIds: [] },
+		};
 	});
-	const recentChanges = [`Initialized orchestrator queue for goal: ${params.goal} on branch ${integrationBranch}`];
-	await withFileMutationQueue(paths.queueFile, async () => {
-		await writeOrchestratorArtifacts(paths, queue, toProgressEntries(recentChanges, now));
-	});
-	return { action: "init", queue, recentChanges, polledTaskIds: [], dispatchedTaskIds: [], integratedTaskIds: [] };
 }
 
 async function enqueueOrchestratorTasks(
@@ -625,21 +643,24 @@ async function enqueueOrchestratorTasks(
 	signal?: AbortSignal,
 ): Promise<HiveOrchestratorDetails> {
 	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
-	const { paths, queue } = await loadQueueOrThrow(repoRoot);
-	const now = new Date().toISOString();
-	const result = addTasksToQueue(queue, params.tasks, now);
-	const recentChanges = result.added.map((task) => `Enqueued ${task.id} ${task.agent}: ${task.title}`);
-	await withFileMutationQueue(paths.queueFile, async () => {
-		await writeOrchestratorArtifacts(paths, result.queue, toProgressEntries(recentChanges, now));
+	const paths = getOrchestratorPaths(repoRoot);
+	return withExistingQueueTransaction(paths, async (queue) => {
+		const now = new Date().toISOString();
+		const result = addTasksToQueue(queue, params.tasks, now);
+		const recentChanges = result.added.map((task) => `Enqueued ${task.id} ${task.agent}: ${task.title}`);
+		return {
+			queue: result.queue,
+			progressEntries: toProgressEntries(recentChanges, now),
+			result: {
+				action: "enqueue",
+				queue: result.queue,
+				recentChanges,
+				polledTaskIds: [],
+				dispatchedTaskIds: [],
+				integratedTaskIds: [],
+			},
+		};
 	});
-	return {
-		action: "enqueue",
-		queue: result.queue,
-		recentChanges,
-		polledTaskIds: [],
-		dispatchedTaskIds: [],
-		integratedTaskIds: [],
-	};
 }
 
 async function pollOrchestrator(
@@ -649,19 +670,22 @@ async function pollOrchestrator(
 	signal?: AbortSignal,
 ): Promise<HiveOrchestratorDetails> {
 	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
-	const { paths, queue } = await loadQueueOrThrow(repoRoot);
-	const refreshed = await refreshQueueFromWorkers(pi, ctx, queue, repoRoot, signal);
-	await withFileMutationQueue(paths.queueFile, async () => {
-		await writeOrchestratorArtifacts(paths, refreshed.queue, toProgressEntries(refreshed.recentChanges, refreshed.queue.updatedAt));
+	const paths = getOrchestratorPaths(repoRoot);
+	return withExistingQueueTransaction(paths, async (queue) => {
+		const refreshed = await refreshQueueFromWorkers(pi, ctx, queue, repoRoot, signal);
+		return {
+			queue: refreshed.queue,
+			progressEntries: toProgressEntries(refreshed.recentChanges, refreshed.queue.updatedAt),
+			result: {
+				action: "poll",
+				queue: refreshed.queue,
+				recentChanges: refreshed.recentChanges,
+				polledTaskIds: refreshed.polledTaskIds,
+				dispatchedTaskIds: [],
+				integratedTaskIds: [],
+			},
+		};
 	});
-	return {
-		action: "poll",
-		queue: refreshed.queue,
-		recentChanges: refreshed.recentChanges,
-		polledTaskIds: refreshed.polledTaskIds,
-		dispatchedTaskIds: [],
-		integratedTaskIds: [],
-	};
 }
 
 async function tickOrchestrator(
@@ -672,114 +696,116 @@ async function tickOrchestrator(
 	onUpdate?: (partial: { content: Array<{ type: "text"; text: string }>; details: HiveOrchestratorDetails }) => void,
 ): Promise<HiveOrchestratorDetails> {
 	const repoRoot = await resolveRepoRoot(pi, ctx.cwd, params.repo, signal);
-	const { paths, queue } = await loadQueueOrThrow(repoRoot);
-	const refreshed = await refreshQueueFromWorkers(pi, ctx, queue, repoRoot, signal);
-	let nextQueue = refreshed.queue;
-	const recentChanges = [...refreshed.recentChanges];
-	const dispatchedTaskIds: string[] = [];
-	const integratedTaskIds: string[] = [];
+	const paths = getOrchestratorPaths(repoRoot);
+	return withExistingQueueTransaction(paths, async (queue) => {
+		const refreshed = await refreshQueueFromWorkers(pi, ctx, queue, repoRoot, signal);
+		let nextQueue = refreshed.queue;
+		const recentChanges = [...refreshed.recentChanges];
+		const dispatchedTaskIds: string[] = [];
+		const integratedTaskIds: string[] = [];
 
-	const integrationCandidates = nextQueue.tasks.filter(
-		(task) => task.state === "done" || shouldRetryBlockedIntegrationTask(task),
-	);
-	for (const task of integrationCandidates) {
-		const result = await integrateTask(pi, ctx, nextQueue, task, signal);
-		const applied = applyTaskIntegrationResult(task, result, new Date().toISOString());
-		nextQueue = {
-			...nextQueue,
-			tasks: nextQueue.tasks.map((item) => (item.id === task.id ? applied.task : item)),
-			updatedAt: new Date().toISOString(),
-		};
-		recentChanges.push(applied.note);
-		if (result.state === "merged") {
-			integratedTaskIds.push(task.id);
-		} else if (shouldAutoCreateFollowUpTask(result) && !applied.task.replacementTaskId) {
-			const followUp = createAutoFollowUpTask(nextQueue, applied.task, result, new Date().toISOString());
-			nextQueue = followUp.queue;
-			recentChanges.push(
-				`Auto-created ${followUp.followUp.id} to replace ${applied.task.id} after ${result.reason}: ${followUp.followUp.title}`,
-			);
+		const integrationCandidates = nextQueue.tasks.filter(
+			(task) => task.state === "done" || shouldRetryBlockedIntegrationTask(task),
+		);
+		for (const task of integrationCandidates) {
+			const result = await integrateTask(pi, ctx, nextQueue, task, signal);
+			const applied = applyTaskIntegrationResult(task, result, new Date().toISOString());
+			nextQueue = {
+				...nextQueue,
+				tasks: nextQueue.tasks.map((item) => (item.id === task.id ? applied.task : item)),
+				updatedAt: new Date().toISOString(),
+			};
+			recentChanges.push(applied.note);
+			if (result.state === "merged") {
+				integratedTaskIds.push(task.id);
+			} else if (shouldAutoCreateFollowUpTask(result) && !applied.task.replacementTaskId) {
+				const followUp = createAutoFollowUpTask(nextQueue, applied.task, result, new Date().toISOString());
+				nextQueue = followUp.queue;
+				recentChanges.push(
+					`Auto-created ${followUp.followUp.id} to replace ${applied.task.id} after ${result.reason}: ${followUp.followUp.title}`,
+				);
+			}
 		}
-	}
 
-	const readyTasks = nextQueue.tasks.filter((task) => isTaskReadyForDispatch(nextQueue, task));
-	const limitedReadyTasks =
-		typeof params.dispatchLimit === "number" ? readyTasks.slice(0, Math.max(0, Math.floor(params.dispatchLimit))) : readyTasks;
+		const readyTasks = nextQueue.tasks.filter((task) => isTaskReadyForDispatch(nextQueue, task));
+		const limitedReadyTasks =
+			typeof params.dispatchLimit === "number" ? readyTasks.slice(0, Math.max(0, Math.floor(params.dispatchLimit))) : readyTasks;
 
-	for (const task of limitedReadyTasks) {
-		const currentTask = nextQueue.tasks.find((item) => item.id === task.id);
-		if (!currentTask || !isTaskReadyForDispatch(nextQueue, currentTask)) continue;
-		try {
-			const workerDetails = await launchWorker(
-				pi,
-				ctx,
-				{
-					repo: repoRoot,
-					agent: currentTask.agent,
-					task: currentTask.task,
-					verificationCommands: currentTask.verificationCommands,
-					additionalInstructions: currentTask.handoff,
-				},
-				signal,
-				(partial) => {
-					onUpdate?.({
-						content: partial.content,
-						details: {
-							action: "tick",
-							queue: nextQueue,
-							recentChanges,
-							polledTaskIds: refreshed.polledTaskIds,
-							dispatchedTaskIds,
-							integratedTaskIds,
-						},
-					});
-				},
-			);
+		for (const task of limitedReadyTasks) {
+			const currentTask = nextQueue.tasks.find((item) => item.id === task.id);
+			if (!currentTask || !isTaskReadyForDispatch(nextQueue, currentTask)) continue;
+			try {
+				const workerDetails = await launchWorker(
+					pi,
+					ctx,
+					{
+						repo: repoRoot,
+						agent: currentTask.agent,
+						task: currentTask.task,
+						verificationCommands: currentTask.verificationCommands,
+						additionalInstructions: currentTask.handoff,
+					},
+					signal,
+					(partial) => {
+						onUpdate?.({
+							content: partial.content,
+							details: {
+								action: "tick",
+								queue: nextQueue,
+								recentChanges,
+								polledTaskIds: refreshed.polledTaskIds,
+								dispatchedTaskIds,
+								integratedTaskIds,
+							},
+						});
+					},
+				);
 
-			const taskIndex = nextQueue.tasks.findIndex((item) => item.id === currentTask.id);
-			if (taskIndex !== -1) {
-				const synced = syncTaskWithWorker(nextQueue.tasks[taskIndex], workerDetails.worker, new Date().toISOString());
+				const taskIndex = nextQueue.tasks.findIndex((item) => item.id === currentTask.id);
+				if (taskIndex !== -1) {
+					const synced = syncTaskWithWorker(nextQueue.tasks[taskIndex], workerDetails.worker, new Date().toISOString());
+					nextQueue = {
+						...nextQueue,
+						tasks: nextQueue.tasks.map((item, index) => (index === taskIndex ? synced.task : item)),
+						updatedAt: new Date().toISOString(),
+					};
+				}
+				dispatchedTaskIds.push(currentTask.id);
+				recentChanges.push(`Dispatched ${currentTask.id} ${currentTask.agent}: ${currentTask.title}`);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				recentChanges.push(`Dispatch failed for ${currentTask.id}: ${message}`);
 				nextQueue = {
 					...nextQueue,
-					tasks: nextQueue.tasks.map((item, index) => (index === taskIndex ? synced.task : item)),
+					tasks: nextQueue.tasks.map((item) =>
+						item.id === currentTask.id
+							? {
+									...item,
+									state: "failed",
+									integrationMessage: `Launch failed: ${message}`,
+									lastPolledAt: new Date().toISOString(),
+								}
+							: item,
+					),
 					updatedAt: new Date().toISOString(),
 				};
 			}
-			dispatchedTaskIds.push(currentTask.id);
-			recentChanges.push(`Dispatched ${currentTask.id} ${currentTask.agent}: ${currentTask.title}`);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : String(error);
-			recentChanges.push(`Dispatch failed for ${currentTask.id}: ${message}`);
-			nextQueue = {
-				...nextQueue,
-				tasks: nextQueue.tasks.map((item) =>
-					item.id === currentTask.id
-						? {
-								...item,
-								state: "failed",
-								integrationMessage: `Launch failed: ${message}`,
-								lastPolledAt: new Date().toISOString(),
-							}
-						: item,
-				),
-				updatedAt: new Date().toISOString(),
-			};
 		}
-	}
 
-	const progressTimestamp = nextQueue.updatedAt;
-	await withFileMutationQueue(paths.queueFile, async () => {
-		await writeOrchestratorArtifacts(paths, nextQueue, toProgressEntries(recentChanges, progressTimestamp));
+		const progressTimestamp = nextQueue.updatedAt;
+		return {
+			queue: nextQueue,
+			progressEntries: toProgressEntries(recentChanges, progressTimestamp),
+			result: {
+				action: "tick",
+				queue: nextQueue,
+				recentChanges,
+				polledTaskIds: refreshed.polledTaskIds,
+				dispatchedTaskIds,
+				integratedTaskIds,
+			},
+		};
 	});
-
-	return {
-		action: "tick",
-		queue: nextQueue,
-		recentChanges,
-		polledTaskIds: refreshed.polledTaskIds,
-		dispatchedTaskIds,
-		integratedTaskIds,
-	};
 }
 
 function renderOrchestratorReport(title: string, details: HiveOrchestratorDetails): string {
