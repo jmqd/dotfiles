@@ -115,41 +115,74 @@ agent_name() {
 }
 
 container_name() {
-  local repo_slug="$1" agent="$2"
-  printf 'hive-%s-%s' "$repo_slug" "$agent"
+  local repo_key="$1" agent="$2"
+  printf 'hive-%s-%s' "$repo_key" "$agent"
 }
 
 repo_slug() {
   basename "$1"
 }
 
+sha256_prefix() {
+  local value="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$value" | sha256sum | awk '{print substr($1, 1, 16)}'
+  elif command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$value" | shasum -a 256 | awk '{print substr($1, 1, 16)}'
+  elif command -v openssl >/dev/null 2>&1; then
+    printf '%s' "$value" | openssl dgst -sha256 -r | awk '{print substr($1, 1, 16)}'
+  else
+    die "no sha256 tool found (need sha256sum, shasum, or openssl)"
+  fi
+}
+
+# Keep this in sync with home/.pi/agent/extensions/hive-orchestrator/core.ts:getRepoWorktreeKey.
+repo_worktree_key() {
+  local repo_root="$1"
+  printf '%s-%s' "$(repo_slug "$repo_root")" "$(sha256_prefix "$repo_root")"
+}
+
 repo_filter_slug() {
   local input="$1"
   if is_git_repo "$input"; then
-    repo_slug "$(resolve_repo_root "$input")"
+    local repo_root
+    repo_root="$(cd "$(resolve_repo_root "$input")" && pwd -P)"
+    repo_worktree_key "$repo_root"
   else
     basename "$input"
   fi
 }
 
+repo_filter_matches() {
+  local repo_key="$1" repo_filter="$2"
+  [ -z "$repo_filter" ] && return 0
+  [ "$repo_key" = "$repo_filter" ] && return 0
+  case "$repo_key" in
+    "$repo_filter"-????????????????)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
 host_worktree_path() {
-  local repo_slug="$1" agent="$2"
-  printf '%s/worktrees/%s/%s' "$HIVE_STATE" "$repo_slug" "$agent"
+  local repo_key="$1" agent="$2"
+  printf '%s/worktrees/%s/%s' "$HIVE_STATE" "$repo_key" "$agent"
 }
 
 host_agent_pid_file() {
-  local repo_slug="$1" agent="$2"
-  printf '%s/host/%s/%s.pid' "$HIVE_STATE" "$repo_slug" "$agent"
+  local repo_key="$1" agent="$2"
+  printf '%s/host/%s/%s.pid' "$HIVE_STATE" "$repo_key" "$agent"
 }
 
 host_agent_log_file() {
-  local repo_slug="$1" agent="$2"
-  printf '%s/logs/%s-%s.log' "$HIVE_STATE" "$repo_slug" "$agent"
+  local repo_key="$1" agent="$2"
+  printf '%s/logs/%s-%s.log' "$HIVE_STATE" "$repo_key" "$agent"
 }
 
 host_agent_worktree_file() {
-  local repo_slug="$1" agent="$2"
-  printf '%s/host/%s/%s.worktree' "$HIVE_STATE" "$repo_slug" "$agent"
+  local repo_key="$1" agent="$2"
+  printf '%s/host/%s/%s.worktree' "$HIVE_STATE" "$repo_key" "$agent"
 }
 
 read_host_agent_worktree() {
@@ -164,25 +197,12 @@ read_host_agent_worktree() {
 
 find_host_worktree() {
   local agent="$1" repo_filter="${2:-}"
-  local marker_file worktree
-
-  if [ -n "$repo_filter" ]; then
-    marker_file="$(host_agent_worktree_file "$repo_filter" "$agent")"
-    worktree="$(read_host_agent_worktree "$marker_file" || true)"
-    if [ -n "$worktree" ] && [ -e "$worktree/.git" ]; then
-      printf '%s' "$worktree"
-      return 0
-    fi
-
-    worktree="$(host_worktree_path "$repo_filter" "$agent")"
-    if [ -e "$worktree/.git" ]; then
-      printf '%s' "$worktree"
-    fi
-    return 0
-  fi
+  local marker_file worktree repo_key
 
   for marker_file in "$HIVE_STATE"/host/*/"${agent}.worktree"; do
     [ -f "$marker_file" ] || continue
+    repo_key="$(basename "$(dirname "$marker_file")")"
+    repo_filter_matches "$repo_key" "$repo_filter" || continue
     worktree="$(read_host_agent_worktree "$marker_file" || true)"
     if [ -n "$worktree" ] && [ -e "$worktree/.git" ]; then
       printf '%s' "$worktree"
@@ -192,6 +212,8 @@ find_host_worktree() {
 
   for worktree in "$HIVE_STATE"/worktrees/*/"$agent"; do
     [ -e "$worktree/.git" ] || continue
+    repo_key="$(basename "$(dirname "$worktree")")"
+    repo_filter_matches "$repo_key" "$repo_filter" || continue
     printf '%s' "$worktree"
     return 0
   done
@@ -248,10 +270,10 @@ cmd_up() {
 
   [ -n "$repo" ] || die "usage: hive up --repo <path> [--agents N] [--cmd \"...\"] [--host-store-ro] [--hardened]"
   is_git_repo "$repo" || die "not a git repo: $repo"
-  repo="$(cd "$(resolve_repo_root "$repo")" && pwd)"
+  repo="$(cd "$(resolve_repo_root "$repo")" && pwd -P)"
 
   local slug
-  slug="$(repo_slug "$repo")"
+  slug="$(repo_worktree_key "$repo")"
 
   mkdir -p "${HIVE_STATE}/worktrees/${slug}" "${HIVE_STATE}/logs" "${HIVE_STATE}/host/${slug}"
 
@@ -460,9 +482,7 @@ cmd_ls() {
     for marker_file in "$HIVE_STATE"/host/*/agent-*.worktree; do
       [ -f "$marker_file" ] || continue
       repo_label="$(basename "$(dirname "$marker_file")")"
-      if [ -n "$repo_filter" ] && [ "$repo_label" != "$repo_filter" ]; then
-        continue
-      fi
+      repo_filter_matches "$repo_label" "$repo_filter" || continue
 
       worktree="$(read_host_agent_worktree "$marker_file" || true)"
       [ -n "$worktree" ] || continue
@@ -568,9 +588,7 @@ cmd_down() {
   for marker_file in "$HIVE_STATE"/host/*/agent-*.worktree; do
     [ -f "$marker_file" ] || continue
     repo_label="$(basename "$(dirname "$marker_file")")"
-    if [ -n "$repo_filter" ] && [ "$repo_label" != "$repo_filter" ]; then
-      continue
-    fi
+    repo_filter_matches "$repo_label" "$repo_filter" || continue
 
     host_found=1
     agent_label="$(basename "$marker_file" .worktree)"
