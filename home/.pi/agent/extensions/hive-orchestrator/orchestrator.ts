@@ -2,6 +2,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { normalizeAgentName, type WorkerSnapshot } from "./core.ts";
 
+export const DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS = 30;
+
 export type OrchestratorPaths = {
 	repoRoot: string;
 	repoSlug: string;
@@ -124,12 +126,54 @@ export function getOrchestratorPaths(repoRoot: string): OrchestratorPaths {
 	};
 }
 
+function normalizeHiveLoopIntervalSeconds(value: unknown): number | null {
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) return null;
+	return value;
+}
+
+function parseExplicitHiveLoopIntervalSeconds(rawArgs: string): { kind: "missing" } | { kind: "invalid" } | { kind: "value"; value: number } {
+	const trimmed = rawArgs.trim();
+	if (!trimmed) return { kind: "missing" };
+	if (!/^[1-9]\d*$/.test(trimmed)) return { kind: "invalid" };
+	return { kind: "value", value: Number.parseInt(trimmed, 10) };
+}
+
+export function resolveHiveLoopIntervalSeconds(rawArgs: string, queuePollIntervalSeconds?: number): number | null {
+	const explicit = parseExplicitHiveLoopIntervalSeconds(rawArgs);
+	if (explicit.kind === "value") return explicit.value;
+	if (explicit.kind === "invalid") return null;
+	return normalizeHiveLoopIntervalSeconds(queuePollIntervalSeconds) ?? DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS;
+}
+
+export async function resolveHiveLoopInterval(
+	rawArgs: string,
+	loadPersistedIntervalSeconds: () => Promise<number | undefined>,
+): Promise<number | null> {
+	const explicit = parseExplicitHiveLoopIntervalSeconds(rawArgs);
+	if (explicit.kind === "value") return explicit.value;
+	if (explicit.kind === "invalid") return null;
+	return resolveHiveLoopIntervalSeconds(rawArgs, await loadPersistedIntervalSeconds());
+}
+
+export async function loadPersistedHiveLoopIntervalSeconds(repoRoot: string): Promise<number | undefined> {
+	const queue = await loadQueue(getOrchestratorPaths(repoRoot));
+	return normalizeHiveLoopIntervalSeconds(queue?.pollIntervalSeconds) ?? undefined;
+}
+
+export function limitDispatchTasks<T>(tasks: T[], dispatchLimit?: number): T[] {
+	if (dispatchLimit == null) return tasks;
+	if (!Number.isInteger(dispatchLimit) || dispatchLimit < 1) {
+		throw new Error("dispatchLimit must be a positive integer");
+	}
+	return tasks.slice(0, dispatchLimit);
+}
+
 export function createOrchestratorQueue(
 	repoRoot: string,
 	{
 		goal,
 		integrationBranch,
-		pollIntervalSeconds = 30,
+		pollIntervalSeconds = DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS,
 		finalCheckCommands = ["just check"],
 		now = new Date().toISOString(),
 	}: {
