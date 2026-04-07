@@ -23,6 +23,7 @@ Required workflow:
    - initialize the queue if needed
    - enqueue clean worker subtasks
    - run at least one `tick`
+   - leave the queue in a coherent state for continued host-side looping after this turn
 7. Prefer fewer, cleaner, low-overlap workers over excessive parallelism.
 8. Assign workers conservatively. Only use concurrency that the repo and task structure can realistically support.
 9. Each worker task must include:

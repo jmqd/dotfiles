@@ -60,12 +60,13 @@ The orchestrator keeps these host-worktree files (normally ignored by git via `.
 
 High level:
 
-- use `/hive-run <goal>` when you want pi to inspect the repo, make a solid plan, choose concurrency, write planning notes, initialize/resume the queue, enqueue tasks, and start the workflow
+- use `/hive-run <goal>` when you want pi to inspect the repo, make a solid plan, choose concurrency, write planning notes, initialize/resume the queue, enqueue tasks, and then auto-start the host-side loop when a live queue exists
 - use `/hive-orchestrator <goal>` when you want the model to drive the workflow more manually from the prompt template
 - use `/hive-init <goal>` to initialize queue state directly without the higher-level planning workflow
 - use `/hive-status` to poll and display queue state
 - use `/hive-tick` to run one poll/integrate/dispatch step
 - use `/hive-loop 30` to keep ticking every 30 seconds until the queue drains or needs attention
+  - omit the argument to use the queue's persisted `pollIntervalSeconds`
 - use `/hive-stop` to request stop for a running loop without waiting for the full sleep interval
 
 `/hive-run` uses a dedicated one-turn workflow system prompt that forces:
@@ -74,6 +75,8 @@ High level:
 - an explicit concurrency decision
 - planning notes in `.hive/orchestrator/planning-notes.md`
 - queue initialization/resume + first tick
+
+After that planning turn finishes, the extension automatically starts `/hive-loop` in the same pi session when the queue is live and non-terminal. The loop keeps polling/integrating/dispatching until the queue drains, blocks, fails, or you stop it with `/hive-stop`.
 
 The extension also keeps a small live queue widget in the UI when a queue is present.
 
@@ -101,3 +104,5 @@ Each launched worker worktree gets:
 - `skills/hive-swarm/SKILL.md`
 
 See `plans/pi-hive-orchestrator-extension.md` for the fuller build plan.
+
+Note: the auto-loop is session-local. If pi exits or reloads, restart it with `/hive-loop`.

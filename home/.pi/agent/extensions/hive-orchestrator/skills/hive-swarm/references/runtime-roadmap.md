@@ -26,7 +26,7 @@ This follows pi's `subagent` example closely, but replaces direct local `pi` sub
 
 ## Phase 2: orchestration state + poller
 
-Implemented in this commit via the `hive_orchestrator` tool:
+Implemented in this commit via the `hive_orchestrator` tool and host commands:
 
 - creating the orchestrator queue files
 - keeping `.hive/orchestrator/plan.md` in sync with the queue
@@ -34,11 +34,12 @@ Implemented in this commit via the `hive_orchestrator` tool:
 - parsing JSON logs into recent event summaries
 - tracking worker lifecycle files in `.hive/`
 - appending incremental orchestrator progress messages
+- host-side loop helpers via `/hive-loop` and `/hive-stop`
+- automatic loop start from `/hive-run` when the planning turn leaves a live queue
 
 Still to add:
 
 - smarter conflict-resolution flows beyond basic cherry-pick failure handling
-- optional host-side auto-loop helpers that sleep and re-tick for hours without manual prompting
 - stronger review/fixup enforcement signals before integration
 
 ## Phase 3: merge queue automation
