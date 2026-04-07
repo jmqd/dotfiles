@@ -30,8 +30,8 @@ Pi extension for long-running `hive`-backed parallel work.
 
 ## Why this shape
 
-The current goal is to lock down the workflow contract before building runtime automation.
-The prompt templates and skill define the behavior we want from:
+The workflow contract still drives the design, but the extension now also ships the core host-side runtime.
+The prompt templates and skill define the expected behavior, while the tools and commands implement the current launcher, queue, loop, and integration path:
 
 - the orchestrator: split work, dispatch workers, poll progress, merge finished work, resolve conflicts, and run final checks
 - the workers: take one clean subtask to completion, run review on their own changes, fix issues, and report a structured done state
@@ -48,13 +48,22 @@ The launcher follows pi's `subagent` example pattern:
 That matters because hive containers do not automatically inherit host-global `~/.pi/agent` resources.
 The reliable path is to have the host extension inject the worker prompt/template into each worker invocation.
 
-## Current orchestrator artifacts
+## Repo-local orchestrator files
 
-The orchestrator keeps these host-worktree files (normally ignored by git via `.gitignore`):
+The host orchestrator stores repo-local state under `.hive/orchestrator/` (normally ignored by git via `.gitignore`).
+These repo-local files are distinct from the per-worker `.hive/*` artifacts stored inside each hive-managed worker worktree.
+
+Runtime-maintained orchestrator state:
 
 - `.hive/orchestrator/plan.md`
 - `.hive/orchestrator/queue.json`
 - `.hive/orchestrator/progress.md`
+
+Planning workflow output:
+
+- `.hive/orchestrator/planning-notes.md` — written by `/hive-run` during the planning turn.
+  Useful for context, but not part of runtime queue state.
+  `hive_orchestrator poll`, `hive_orchestrator tick`, and `/hive-loop` do not maintain it.
 
 ## Invoking it from pi
 
@@ -73,7 +82,7 @@ High level:
 
 - a real planning phase before worker launch
 - an explicit concurrency decision
-- planning notes in `.hive/orchestrator/planning-notes.md`
+- planning notes in `.hive/orchestrator/planning-notes.md` as planning output, separate from the runtime queue files
 - queue initialization/resume + first tick
 
 After that planning turn finishes, the extension automatically starts `/hive-loop` in the same pi session when the queue is live and non-terminal. The loop keeps polling/integrating/dispatching until the queue drains, blocks, fails, or you stop it with `/hive-stop`.
@@ -85,9 +94,9 @@ You can also explicitly tell the model:
 - "Use the `hive_orchestrator` tool to init, enqueue tasks, and keep calling tick"
 - "Use the `hive_worker` tool only for low-level worker inspection or one-off launches"
 
-## Current worker artifacts
+## Worker-local artifacts
 
-Each launched worker worktree gets:
+Each launched worker worktree gets its own `.hive/*` files. These live inside the hive-managed worker worktree for that agent, not under the repo-local `.hive/orchestrator/` directory:
 
 - `.hive/status.json`
 - `.hive/worker-launch.json`
