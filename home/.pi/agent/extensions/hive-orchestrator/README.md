@@ -14,10 +14,11 @@ Pi extension for long-running `hive`-backed parallel work.
   - poll the worker's status/log snapshot later
 - a `hive_orchestrator` tool that can:
   - initialize `.hive/orchestrator/plan.md`, `queue.json`, and `progress.md`
+  - create a persistent clean coordinator integration worktree for the queue
   - enqueue clean worker subtasks
   - poll running workers through the queue
-  - verify done workers in a temporary integration worktree
-  - cherry-pick verified worker commits onto the host integration branch
+  - cherry-pick verified worker commits onto the coordinator integration branch/worktree
+  - run final checks there
   - tick the queue forward by polling, integrating, and dispatching dependency-ready tasks
 - user-facing commands:
   - `/hive-run <goal>`
@@ -33,7 +34,7 @@ Pi extension for long-running `hive`-backed parallel work.
 The workflow contract still drives the design, but the extension now also ships the core host-side runtime.
 The prompt templates and skill define the expected behavior, while the tools and commands implement the current launcher, queue, loop, and integration path:
 
-- the orchestrator: split work, dispatch workers, poll progress, merge finished work, resolve conflicts, and run final checks
+- the orchestrator: split work, dispatch workers, poll progress, merge finished work into its own clean coordinator worktree, resolve conflicts, and run final checks there
 - the workers: take one clean subtask to completion, run review on their own changes, fix issues, and report a structured done state
 
 ## Runtime shape
@@ -43,7 +44,7 @@ The launcher follows pi's `subagent` example pattern:
 - generate a worker system prompt from the worker template
 - launch a detached worker `pi` run in a hive worktree
 - use `pi --mode json -p --no-session` for machine-readable logs
-- keep the orchestrator on the host side so it can merge into the main worktree and run final checks
+- keep the orchestrator on the host side so it can manage a persistent clean coordinator worktree, integrate worker commits there, and run final checks without depending on the user's live repo state
 
 That matters because hive containers do not automatically inherit host-global `~/.pi/agent` resources.
 The reliable path is to have the host extension inject the worker prompt/template into each worker invocation.
@@ -86,6 +87,8 @@ High level:
 - queue initialization/resume + first tick
 
 After that planning turn finishes, the extension automatically starts `/hive-loop` in the same pi session when the queue is live and non-terminal. The loop keeps polling/integrating/dispatching until the queue drains, blocks, fails, or you stop it with `/hive-stop`.
+
+By default, merged queue output lives on the queue-owned coordinator branch/worktree rather than being cherry-picked into the user's live branch on every tick.
 
 The extension also keeps a small live queue widget in the UI when a queue is present.
 

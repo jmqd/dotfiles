@@ -22,9 +22,9 @@ while any task is unmerged and not terminally blocked:
   report meaningful state changes
 
   for each worker that is done-ready and not yet integrated:
-    merge into the host main worktree
+    merge into the coordinator worktree
     resolve conflicts
-    run final checks
+    run final checks there
     if checks fail:
       fix directly or dispatch a follow-up worker
     else:

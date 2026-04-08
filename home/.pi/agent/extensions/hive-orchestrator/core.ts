@@ -21,6 +21,13 @@ export type WorkerPaths = {
 	finishedAtFile: string;
 };
 
+export type CoordinatorPaths = {
+	repoRoot: string;
+	repoSlug: string;
+	coordinatorKey: string;
+	worktreeDir: string;
+};
+
 export type WorkerLaunchMetadata = {
 	version: 1;
 	repoRoot: string;
@@ -131,6 +138,27 @@ export function getWorkerPaths(
 		pidFile: path.join(hiveDir, "worker.pid"),
 		exitCodeFile: path.join(hiveDir, "worker-exit-code"),
 		finishedAtFile: path.join(hiveDir, "worker-finished-at"),
+	};
+}
+
+export function getCoordinatorPaths(
+	repoRoot: string,
+	coordinatorKey: string,
+	{
+		homeDir = os.homedir(),
+		hiveStateDir = getHiveStateDir(homeDir),
+	}: { homeDir?: string; hiveStateDir?: string } = {},
+): CoordinatorPaths {
+	const normalizedRepoRoot = path.resolve(repoRoot);
+	const repoSlug = path.basename(normalizedRepoRoot);
+	const repoWorktreeKey = getRepoWorktreeKey(normalizedRepoRoot);
+	const worktreeDir = path.join(hiveStateDir, "coordinators", repoWorktreeKey, coordinatorKey);
+
+	return {
+		repoRoot: normalizedRepoRoot,
+		repoSlug,
+		coordinatorKey,
+		worktreeDir,
 	};
 }
 

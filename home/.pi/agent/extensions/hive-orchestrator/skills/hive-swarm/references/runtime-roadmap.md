@@ -49,16 +49,17 @@ It is not part of the orchestrator runtime state machine and is not maintained b
 
 Implemented in the current runtime:
 
-- verify done worker commits in a temporary integration worktree
-- run repo-level final checks before touching the host branch
-- cherry-pick verified worker commits onto the host integration branch
+- create a persistent clean coordinator integration worktree for each queue
+- cherry-pick verified worker commits onto the coordinator integration branch
+- run repo-level final checks there
 - mark tasks merged when integration succeeds
 - leave blocked integration tasks in queue state
 - auto-create follow-up tasks for integration conflicts or final-check failures
 
 Still to add:
 
-- smarter conflict-resolution flows beyond cherry-pick abort plus follow-up task creation
+- an explicit final landing flow from the coordinator worktree onto a user branch
+- smarter conflict-resolution flows beyond cherry-pick abort/reset plus follow-up task creation
 - richer policy for when the host should fix forward directly vs dispatch another worker
 
 ## Phase 4: review-cycle automation

@@ -406,7 +406,7 @@ test("retryable integration blocks can be retried on later ticks", () => {
 			...added[0],
 			state: "blocked",
 			workerState: "done",
-			blockedReason: "host_dirty",
+			blockedReason: "coordinator_dirty",
 		}),
 		true,
 	);
@@ -424,7 +424,7 @@ test("retryable integration blocks can be retried on later ticks", () => {
 			...added[0],
 			state: "blocked",
 			workerState: "blocked",
-			blockedReason: "host_dirty",
+			blockedReason: "coordinator_dirty",
 		}),
 		false,
 	);
@@ -589,17 +589,20 @@ test("renderOrchestratorPlan and summary include branch and integration details"
 				...queue.tasks[0],
 				state: "merged" as const,
 				mergedCommitSha: "cafebabe12345678",
-				integrationMessage: "verified in temp worktree",
+				integrationMessage: "verified in coordinator worktree",
 			},
 		],
 	};
 	const plan = renderOrchestratorPlan(mergedQueue);
-	assert.match(plan, /Integration branch/);
+	assert.match(plan, /Source branch/);
+	assert.match(plan, /Coordinator integration worktree/);
 	assert.match(plan, /main/);
-	assert.match(plan, /verified in temp worktree/);
+	assert.match(plan, /verified in coordinator worktree/);
 
 	const summary = renderQueueSummary(mergedQueue, ["merged task-001"]);
-	assert.match(summary, /Branch: main/);
+	assert.match(summary, /Source branch: main/);
+	assert.match(summary, /Coordinator branch: main/);
+	assert.match(summary, /Coordinator worktree:/);
 	assert.match(summary, /merged cafebabe1234/);
 	assert.match(summary, /merged task-001/);
 

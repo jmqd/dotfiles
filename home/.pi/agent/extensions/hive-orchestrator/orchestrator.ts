@@ -1,6 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { normalizeAgentName, type WorkerSnapshot } from "./core.ts";
+import { getCoordinatorPaths, normalizeAgentName, type WorkerSnapshot } from "./core.ts";
 
 export const DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS = 30;
 
@@ -57,7 +57,9 @@ export type OrchestratorQueue = {
 	goal: string;
 	repoRoot: string;
 	repoSlug: string;
+	sourceBranch: string;
 	integrationBranch: string;
+	integrationWorktreeDir: string;
 	createdAt: string;
 	updatedAt: string;
 	pollIntervalSeconds: number;
@@ -80,15 +82,15 @@ export type OrchestratorProgressEntry = {
 };
 
 export type IntegrationFailureReason =
-	| "host_branch_mismatch"
-	| "host_dirty"
+	| "coordinator_missing"
+	| "coordinator_branch_mismatch"
+	| "coordinator_dirty"
 	| "worker_running"
 	| "worker_dirty"
 	| "worker_not_ready"
 	| "diff_failed"
 	| "integration_conflict"
-	| "integration_checks_failed"
-	| "host_changed";
+	| "integration_checks_failed";
 
 export type TaskIntegrationResult =
 	| {
@@ -173,12 +175,16 @@ export function createOrchestratorQueue(
 	{
 		goal,
 		integrationBranch,
+		sourceBranch = integrationBranch,
+		integrationWorktreeDir = getCoordinatorPaths(path.resolve(repoRoot), "default").worktreeDir,
 		pollIntervalSeconds = DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS,
 		finalCheckCommands = ["just check"],
 		now = new Date().toISOString(),
 	}: {
 		goal: string;
 		integrationBranch: string;
+		sourceBranch?: string;
+		integrationWorktreeDir?: string;
 		pollIntervalSeconds?: number;
 		finalCheckCommands?: string[];
 		now?: string;
@@ -190,7 +196,9 @@ export function createOrchestratorQueue(
 		goal,
 		repoRoot: normalizedRepoRoot,
 		repoSlug: path.basename(normalizedRepoRoot),
+		sourceBranch,
 		integrationBranch,
+		integrationWorktreeDir,
 		createdAt: now,
 		updatedAt: now,
 		pollIntervalSeconds,
@@ -259,10 +267,10 @@ function isAgentAvailableForDispatch(queue: OrchestratorQueue, task: Orchestrato
 }
 
 const retryableIntegrationBlockReasons = new Set<IntegrationFailureReason>([
-	"host_branch_mismatch",
-	"host_dirty",
+	"coordinator_missing",
+	"coordinator_branch_mismatch",
+	"coordinator_dirty",
 	"worker_running",
-	"host_changed",
 ]);
 
 export function shouldRetryBlockedIntegrationTask(task: OrchestratorTask): boolean {
@@ -413,9 +421,14 @@ export function renderOrchestratorPlan(queue: OrchestratorQueue): string {
 		"",
 		queue.goal,
 		"",
-		"## Integration branch",
+		"## Source branch",
 		"",
-		`- ${queue.integrationBranch}`,
+		`- ${queue.sourceBranch}`,
+		"",
+		"## Coordinator integration worktree",
+		"",
+		`- Branch: ${queue.integrationBranch}`,
+		`- Path: ${queue.integrationWorktreeDir}`,
 		"",
 		"## Task breakdown",
 		"",
@@ -459,7 +472,9 @@ export function renderQueueSummary(queue: OrchestratorQueue, recentChanges: stri
 	const lines = [
 		`Goal: ${queue.goal}`,
 		`Repo: ${queue.repoRoot}`,
-		`Branch: ${queue.integrationBranch}`,
+		`Source branch: ${queue.sourceBranch}`,
+		`Coordinator branch: ${queue.integrationBranch}`,
+		`Coordinator worktree: ${queue.integrationWorktreeDir}`,
 		`Tasks: ${queue.tasks.length} total | planned=${counts.planned} running=${counts.running} done=${counts.done} blocked=${counts.blocked} failed=${counts.failed} merged=${counts.merged}`,
 		`Poll interval: ${queue.pollIntervalSeconds}s`,
 		`Final checks: ${queue.finalCheckCommands.join(", ")}`,
@@ -494,7 +509,7 @@ export function renderQueueSummary(queue: OrchestratorQueue, recentChanges: stri
 
 export function renderQueueWidget(queue: OrchestratorQueue, maxItems = 4): string[] {
 	const counts = summarizeQueueCounts(queue);
-	const header = `Hive ${queue.integrationBranch} p:${counts.planned} r:${counts.running} d:${counts.done} b:${counts.blocked} f:${counts.failed} m:${counts.merged}`;
+	const header = `Hive ${queue.sourceBranch} p:${counts.planned} r:${counts.running} d:${counts.done} b:${counts.blocked} f:${counts.failed} m:${counts.merged}`;
 	const goal = queue.goal.length > 72 ? `${queue.goal.slice(0, 69)}...` : queue.goal;
 	const priority = new Map<OrchestratorTaskState, number>([
 		["blocked", 0],

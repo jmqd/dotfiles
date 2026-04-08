@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringEnum } from "@mariozechner/pi-ai";
@@ -14,8 +13,10 @@ import {
 	buildWorkerSystemPrompt,
 	createInitialWorkerStatus,
 	createWorkerLaunchMetadata,
+	getCoordinatorPaths,
 	getWorkerPaths,
 	loadWorkerSnapshot,
+	getHiveStateDir,
 	normalizeAgentName,
 	stripAtPrefix,
 	validateWorkerDoneStatus,
@@ -232,6 +233,50 @@ async function ensureCleanWorkingTree(pi: ExtensionAPI, cwd: string, label: stri
 	}
 }
 
+function coordinatorTimestampToken(now: string): string {
+	const digitsOnly = now.replace(/\D/g, "");
+	return digitsOnly.length > 0 ? digitsOnly.slice(0, 17) : String(Date.now());
+}
+
+function sanitizeBranchSegment(value: string): string {
+	const sanitized = value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+	return sanitized || "repo";
+}
+
+function buildCoordinatorBranchName(repoRoot: string, sourceBranch: string, now: string): string {
+	const repoSlug = sanitizeBranchSegment(basename(path.resolve(repoRoot)) || "repo");
+	const source = sanitizeBranchSegment(sourceBranch);
+	return `hive/${repoSlug}/${source}-${coordinatorTimestampToken(now)}`;
+}
+
+async function createCoordinatorWorktree(
+	pi: ExtensionAPI,
+	repoRoot: string,
+	sourceBranch: string,
+	now: string,
+	signal?: AbortSignal,
+): Promise<{ integrationBranch: string; integrationWorktreeDir: string }> {
+	const coordinatorKey = `queue-${coordinatorTimestampToken(now)}`;
+	const integrationBranch = buildCoordinatorBranchName(repoRoot, sourceBranch, now);
+	const integrationWorktreeDir = getCoordinatorPaths(repoRoot, coordinatorKey, {
+		hiveStateDir: getHiveStateDir(),
+	}).worktreeDir;
+	await fs.mkdir(dirname(integrationWorktreeDir), { recursive: true });
+	await execOrThrow(
+		pi,
+		"git",
+		["-C", repoRoot, "worktree", "add", "-b", integrationBranch, integrationWorktreeDir, sourceBranch],
+		repoRoot,
+		signal,
+		30_000,
+	);
+	return { integrationBranch, integrationWorktreeDir };
+}
+
+async function resetHard(pi: ExtensionAPI, cwd: string, targetSha: string, signal?: AbortSignal) {
+	await execOrThrow(pi, "git", ["-C", cwd, "reset", "--hard", targetSha], cwd, signal, 30_000);
+}
+
 async function isWorkerProcessRunning(
 	pi: ExtensionAPI,
 	hiveCommand: string,
@@ -423,26 +468,6 @@ async function tryAbortCherryPick(pi: ExtensionAPI, cwd: string, signal?: AbortS
 	await pi.exec("git", ["-C", cwd, "cherry-pick", "--abort"], { cwd, signal, timeout: 5000 });
 }
 
-async function withTemporaryIntegrationWorktree<T>(
-	pi: ExtensionAPI,
-	repoRoot: string,
-	taskId: string,
-	signal: AbortSignal | undefined,
-	fn: (worktreePath: string) => Promise<T>,
-): Promise<T> {
-	const worktreePath = join(os.tmpdir(), `pi-hive-integrate-${basename(repoRoot)}-${taskId}-${Date.now()}`);
-	await execOrThrow(pi, "git", ["-C", repoRoot, "worktree", "add", "--detach", worktreePath, "HEAD"], repoRoot, signal, 30_000);
-	try {
-		return await fn(worktreePath);
-	} finally {
-		await pi.exec("git", ["-C", repoRoot, "worktree", "remove", "--force", worktreePath], {
-			cwd: repoRoot,
-			signal,
-			timeout: 30_000,
-		});
-	}
-}
-
 async function integrateTask(
 	pi: ExtensionAPI,
 	ctx: { cwd: string },
@@ -451,22 +476,32 @@ async function integrateTask(
 	signal?: AbortSignal,
 ): Promise<TaskIntegrationResult> {
 	const repoRoot = queue.repoRoot;
-	const currentBranch = await getCurrentBranch(pi, repoRoot, signal);
-	if (currentBranch !== queue.integrationBranch) {
+	const integrationWorktree = queue.integrationWorktreeDir;
+	if (!existsSync(integrationWorktree)) {
 		return {
 			state: "blocked",
-			reason: "host_branch_mismatch",
-			message: `current branch is ${currentBranch}, expected ${queue.integrationBranch}`,
+			reason: "coordinator_missing",
+			message: `coordinator worktree is missing: ${integrationWorktree}`,
 			workerHeadSha: task.workerHeadSha,
 		};
 	}
 
+	const currentBranch = await getCurrentBranch(pi, integrationWorktree, signal);
+	if (currentBranch !== queue.integrationBranch) {
+		return {
+			state: "blocked",
+			reason: "coordinator_branch_mismatch",
+			message: `coordinator branch is ${currentBranch}, expected ${queue.integrationBranch}`,
+			workerHeadSha: task.workerHeadSha,
+		};
+		}
+
 	try {
-		await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+		await ensureCleanWorkingTree(pi, integrationWorktree, `coordinator worktree ${integrationWorktree}`, signal);
 	} catch (error) {
 		return {
 			state: "blocked",
-			reason: "host_dirty",
+			reason: "coordinator_dirty",
 			message: error instanceof Error ? error.message : String(error),
 			workerHeadSha: task.workerHeadSha,
 		};
@@ -503,8 +538,14 @@ async function integrateTask(
 		};
 	}
 	const workerHeadSha = validation.headSha ?? actualWorkerHeadSha;
-	const hostHeadBefore = await getHeadSha(pi, repoRoot, signal);
-	const alreadyIntegrated = await checkWorkerCommitAlreadyIntegrated(pi, repoRoot, hostHeadBefore, workerHeadSha, signal);
+	const integrationHeadBefore = await getHeadSha(pi, integrationWorktree, signal);
+	const alreadyIntegrated = await checkWorkerCommitAlreadyIntegrated(
+		pi,
+		integrationWorktree,
+		integrationHeadBefore,
+		workerHeadSha,
+		signal,
+	);
 	if (alreadyIntegrated.state === "failed") {
 		return { ...alreadyIntegrated, workerHeadSha };
 	}
@@ -512,85 +553,42 @@ async function integrateTask(
 		return {
 			state: "merged",
 			message: `no-op: ${workerHeadSha.slice(0, 12)} is already included in ${queue.integrationBranch}`,
-			mergedCommitSha: hostHeadBefore,
+			mergedCommitSha: integrationHeadBefore,
 			workerHeadSha,
 		};
 	}
 
-	const tempVerification = await withTemporaryIntegrationWorktree(pi, repoRoot, task.id, signal, async (integrationWorktree) => {
-		const cherryPick = await pi.exec(
-			"git",
-			["-C", integrationWorktree, "cherry-pick", "-x", workerHeadSha],
-			{ cwd: integrationWorktree, signal, timeout: 60_000 },
-		);
-		if (cherryPick.code !== 0) {
-			await tryAbortCherryPick(pi, integrationWorktree, signal);
-			return {
-				ok: false as const,
-				reason: "integration_conflict" as const,
-				message: `temp cherry-pick failed: ${cherryPick.stderr || cherryPick.stdout}`,
-			};
-		}
-
-		try {
-			await runFinalChecks(pi, integrationWorktree, queue.finalCheckCommands, signal);
-			return { ok: true as const };
-		} catch (error) {
-			return {
-				ok: false as const,
-				reason: "integration_checks_failed" as const,
-				message: error instanceof Error ? error.message : String(error),
-			};
-		}
-	});
-	if (!tempVerification.ok) {
+	const cherryPick = await pi.exec(
+		"git",
+		["-C", integrationWorktree, "cherry-pick", "-x", workerHeadSha],
+		{ cwd: integrationWorktree, signal, timeout: 60_000 },
+	);
+	if (cherryPick.code !== 0) {
+		await tryAbortCherryPick(pi, integrationWorktree, signal);
 		return {
 			state: "blocked",
-			reason: tempVerification.reason,
-			message: tempVerification.message,
+			reason: "integration_conflict",
+			message: `coordinator cherry-pick failed: ${cherryPick.stderr || cherryPick.stdout}`,
 			workerHeadSha,
 		};
 	}
 
 	try {
-		await ensureCleanWorkingTree(pi, repoRoot, `host repo ${repoRoot}`, signal);
+		await runFinalChecks(pi, integrationWorktree, queue.finalCheckCommands, signal);
 	} catch (error) {
+		await resetHard(pi, integrationWorktree, integrationHeadBefore, signal);
 		return {
 			state: "blocked",
-			reason: "host_dirty",
+			reason: "integration_checks_failed",
 			message: error instanceof Error ? error.message : String(error),
 			workerHeadSha,
 		};
 	}
-	const hostHeadStill = await getHeadSha(pi, repoRoot, signal);
-	if (hostHeadStill !== hostHeadBefore) {
-		return {
-			state: "blocked",
-			reason: "host_changed",
-			message: `host branch moved during integration attempt (${hostHeadBefore.slice(0, 12)} -> ${hostHeadStill.slice(0, 12)})`,
-			workerHeadSha,
-		};
-	}
 
-	const hostCherryPick = await pi.exec("git", ["-C", repoRoot, "cherry-pick", "-x", workerHeadSha], {
-		cwd: repoRoot,
-		signal,
-		timeout: 60_000,
-	});
-	if (hostCherryPick.code !== 0) {
-		await tryAbortCherryPick(pi, repoRoot, signal);
-		return {
-			state: "blocked",
-			reason: "integration_conflict",
-			message: `host cherry-pick failed: ${hostCherryPick.stderr || hostCherryPick.stdout}`,
-			workerHeadSha,
-		};
-	}
-
-	const mergedCommitSha = await getHeadSha(pi, repoRoot, signal);
+	const mergedCommitSha = await getHeadSha(pi, integrationWorktree, signal);
 	return {
 		state: "merged",
-		message: `cherry-picked ${workerHeadSha.slice(0, 12)} onto ${queue.integrationBranch} as ${mergedCommitSha.slice(0, 12)} after ${queue.finalCheckCommands.length} check(s)`,
+		message: `cherry-picked ${workerHeadSha.slice(0, 12)} onto ${queue.integrationBranch} in ${queue.integrationWorktreeDir} as ${mergedCommitSha.slice(0, 12)} after ${queue.finalCheckCommands.length} check(s)`,
 		mergedCommitSha,
 		workerHeadSha,
 	};
@@ -615,16 +613,21 @@ async function initOrchestrator(
 			throw new Error(`Orchestrator queue already exists: ${paths.queueFile}. Use overwrite=true to replace it.`);
 		}
 
-		const integrationBranch = await getCurrentBranch(pi, repoRoot, signal);
+		const sourceBranch = await getCurrentBranch(pi, repoRoot, signal);
 		const now = new Date().toISOString();
+		const coordinator = await createCoordinatorWorktree(pi, repoRoot, sourceBranch, now, signal);
 		const queue = createOrchestratorQueue(repoRoot, {
 			goal: params.goal,
-			integrationBranch,
+			sourceBranch,
+			integrationBranch: coordinator.integrationBranch,
+			integrationWorktreeDir: coordinator.integrationWorktreeDir,
 			pollIntervalSeconds: params.pollIntervalSeconds,
 			finalCheckCommands: params.finalCheckCommands,
 			now,
 		});
-		const recentChanges = [`Initialized orchestrator queue for goal: ${params.goal} on branch ${integrationBranch}`];
+		const recentChanges = [
+			`Initialized orchestrator queue for goal: ${params.goal} from ${sourceBranch} with coordinator ${coordinator.integrationBranch} @ ${coordinator.integrationWorktreeDir}`,
+		];
 		return {
 			queue,
 			progressEntries: toProgressEntries(recentChanges, now),
@@ -1238,7 +1241,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		name: "hive_orchestrator",
 		label: "Hive Orchestrator",
 		description:
-			"Initialize and manage a repo-local hive orchestration queue under .hive/orchestrator, enqueue worker tasks, poll running workers, integrate done workers onto the host branch, run final checks in a temp worktree, and dispatch ready tasks.",
+			"Initialize and manage a repo-local hive orchestration queue under .hive/orchestrator, enqueue worker tasks, poll running workers, integrate done workers into the queue-owned coordinator worktree/branch, run final checks there, and dispatch ready tasks.",
 		promptSnippet: "Initialize, update, and tick the hive orchestrator queue for multi-worker coordination and integration.",
 		promptGuidelines: [
 			"Use hive_orchestrator with action='init' before dispatching a new swarm.",

@@ -31,13 +31,12 @@ Required workflow:
    - explicit done condition
    - explicit verification command(s)
    - a short handoff contract
-4. Use `hive_orchestrator` action `tick` as the default bounded loop step. It should poll running workers, integrate done-ready workers after final checks, and dispatch any dependency-ready planned tasks.
+4. Use `hive_orchestrator` action `tick` as the default bounded loop step. It should poll running workers, integrate done-ready workers into the queue-owned coordinator worktree after final checks, and dispatch any dependency-ready planned tasks.
 5. When a worker reports done:
    - inspect its status artifact and committed `headSha`
-   - verify integration in a temporary worktree first
-   - integrate it into the host main worktree
+   - integrate it into the queue-owned coordinator worktree/branch
    - resolve conflicts yourself when feasible
-   - run the final verification command set (default to `just check` unless the repo requires something else)
+   - run the final verification command set there (default to `just check` unless the repo requires something else)
    - only mark the task merged after checks pass
 6. If integration or checks fail:
    - fix the issue directly when it is small and local
