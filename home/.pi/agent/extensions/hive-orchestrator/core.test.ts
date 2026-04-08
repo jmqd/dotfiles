@@ -9,6 +9,7 @@ import {
 	buildWorkerRunScript,
 	buildWorkerSystemPrompt,
 	createInitialWorkerStatus,
+	getCoordinatorPaths,
 	getHiveStateDir,
 	getRepoWorktreeKey,
 	validateWorkerDoneStatus,
@@ -53,6 +54,15 @@ test("getWorkerPaths avoids collisions for repos with the same basename", () => 
 	assert.equal(second.repoSlug, "project");
 	assert.notEqual(getRepoWorktreeKey("/repo-a/project"), getRepoWorktreeKey("/repo-b/project"));
 	assert.notEqual(first.worktreeDir, second.worktreeDir);
+});
+
+
+test("getCoordinatorPaths keys coordinator worktrees by stable repo-root-specific path", () => {
+	const repoWorktreeKey = getRepoWorktreeKey("/repo/project");
+	const paths = getCoordinatorPaths("/repo/project", "queue-20260408", { hiveStateDir: "/state/hive" });
+	assert.equal(paths.repoSlug, "project");
+	assert.equal(paths.coordinatorKey, "queue-20260408");
+	assert.equal(paths.worktreeDir, `/state/hive/coordinators/${repoWorktreeKey}/queue-20260408`);
 });
 
 test("splitFrontmatter and renderPromptTemplate support prompt-template style args", () => {

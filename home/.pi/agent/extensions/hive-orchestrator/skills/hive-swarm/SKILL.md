@@ -27,7 +27,7 @@ Read these references before running the workflow:
 2. Give every worker a precise done condition and verification command set.
 3. Require every worker to review its own changes and address the review.
 4. Merge completed work incrementally; do not hold everything until the end.
-5. Verify a done worker in a temporary integration worktree, then integrate onto the host branch and only then consider the task merged.
+5. Verify a done worker by integrating it into the queue-owned coordinator worktree, run the final checks there, and only then consider the task merged.
 6. Record status in machine-readable form so the orchestrator can poll for hours if needed.
 
 ## Minimum artifacts
@@ -67,9 +67,9 @@ A worker is only truly complete when all of these are true:
 - implementation finished
 - focused checks passed in the worker worktree
 - review run completed and findings addressed
-- orchestrator verified the worker commit in a temporary integration worktree
-- orchestrator cherry-picked the work onto the host branch
-- orchestrator final checks passed
+- orchestrator integrated the worker commit into the queue-owned coordinator worktree/branch
+- orchestrator final checks passed there
+- the resulting coordinator branch/worktree is ready for explicit landing if desired
 
 ## When not to use this skill
 
