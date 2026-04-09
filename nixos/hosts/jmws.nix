@@ -153,7 +153,6 @@
     clang
     nodejs_20
     nodejs
-    nodePackages.yarn
     yarn
     black
     pipenv
