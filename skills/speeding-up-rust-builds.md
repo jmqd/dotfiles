@@ -25,6 +25,17 @@ Generates an HTML Gantt chart showing per-crate compile time, parallelism, and c
 - **Red/waiting segments** — crates idle because a dependency hasn't finished.
 - **One dominant crate** — a single crate taking longer than everything else.
 
+### `cargo check`
+
+If you don't need a runnable binary yet, prefer `cargo check` while iterating:
+
+```sh
+cargo check
+cargo check --tests
+```
+
+It skips final codegen and linking, which usually makes edit/compile loops much faster than `cargo build`.
+
 ### `cargo llvm-lines`
 
 Shows which functions produce the most LLVM IR. Generic functions instantiated many times are the usual culprits.
@@ -55,16 +66,20 @@ RUSTFLAGS="-Ztime-passes" cargo +nightly build
 Generates a trace you can view in Chrome's profiler or with `summarize`/`flamegraph`:
 
 ```sh
+cargo install --git https://github.com/rust-lang/measureme --branch stable summarize
 cargo +nightly rustc -p <crate> -- -Zself-profile
+summarize summarize <crate-name-and-pid>.mm_profdata
 ```
+
+Install `flamegraph` or `crox` from the same `rust-lang/measureme` repo if you want SVG flame graphs or Chrome trace output instead of a text summary.
 
 ---
 
 ## 1. Linker
 
-The linker is often the single biggest bottleneck. The default system linker is slow. Switching to a faster one is usually the highest-impact, lowest-effort change.
+Linking is often the single biggest bottleneck. If your timings show link time dominating, switching linkers is usually a high-impact, low-effort change.
 
-### Linux: use `mold`
+### Linux: use `mold` if linking is still the bottleneck
 
 Add to your `flake.nix` devShell:
 
@@ -86,34 +101,15 @@ linker = "clang"
 rustflags = ["-C", "link-arg=-fuse-ld=mold"]
 ```
 
-`lld` is a good fallback if `mold` isn't available. As of 2025, `lld` is the default on nightly for x86-64 Linux.
+If `mold` isn't available, `lld` is a good fallback. On modern `x86_64-unknown-linux-gnu` stable toolchains, Rust already defaults to `lld`, so switching to `lld` may do nothing. Benchmark against `mold` only if your timings still show link time dominating.
 
-### macOS: use `lld` or `mold`
+### macOS: keep the default linker unless measurement says otherwise
 
-Add to your `flake.nix` devShell:
-
-```nix
-packages = [
-  pkgs.mold
-  # or for lld:
-  # pkgs.llvmPackages.bintools
-];
-```
-
-(See also: `brew install mold` or `brew install llvm`)
-
-`.cargo/config.toml`:
-
-```toml
-[target.aarch64-apple-darwin]
-rustflags = ["-C", "link-arg=-fuse-ld=/opt/homebrew/bin/ld64.mold"]
-# or for lld:
-# rustflags = ["-C", "link-arg=-fuse-ld=/opt/homebrew/opt/llvm/bin/ld64.lld"]
-```
+Current macOS toolchains already use a fast system linker (`ld-prime`). Don't cargo-cult `lld`/`mold` here; first confirm that linking is actually your bottleneck with `cargo build --timings`.
 
 ### Windows: use `lld`
 
-Install `llvm-tools` via rustup or LLVM directly, then:
+Install LLVM so `lld-link` is available on `PATH`, then:
 
 ```toml
 [target.x86_64-pc-windows-msvc]
@@ -140,14 +136,7 @@ opt-level = 3          # Fully optimize dependencies (they rarely change)
 opt-level = 3          # Optimize proc macros and build scripts — they run at compile time
 ```
 
-### macOS: split debuginfo
-
-```toml
-[profile.dev]
-split-debuginfo = "unpacked"
-```
-
-This avoids running `dsymutil` on every build. Can reduce macOS debug build times by up to 70%. Expected to become the default eventually.
+On modern macOS Cargo versions, `split-debuginfo = "unpacked"` is already the default when debuginfo is enabled. Only set it explicitly if you need to support older toolchains or want the setting documented in-repo.
 
 ---
 
@@ -375,11 +364,10 @@ env:
 
 ### Disable debuginfo
 
-```toml
-# In CI-specific profile, or via env
-[profile.dev]
-debug = 0
-strip = "debuginfo"
+```yaml
+env:
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_DEV_STRIP: debuginfo
 ```
 
 ### Cache dependencies, not your code
@@ -454,7 +442,7 @@ An alternative codegen backend that's faster than LLVM but produces slower binar
 
 ```sh
 rustup component add rustc-codegen-cranelift-preview --toolchain nightly
-CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift cargo +nightly build
+CARGO_PROFILE_DEV_CODEGEN_BACKEND=cranelift cargo +nightly build -Zcodegen-backend
 ```
 
 ### Parallel compiler frontend
@@ -496,7 +484,7 @@ Bevy uses this pattern — it's the single most impactful change for projects wi
 
 ### In-memory build directory
 
-On Linux, mount an ext4 filesystem for `target/`:
+On Linux, mount a `tmpfs` for `target/`:
 
 ```sh
 mount -t tmpfs -o size=4G tmpfs ./target
@@ -508,10 +496,11 @@ Eliminates disk I/O as a bottleneck. Not persistent across reboots — treat as 
 
 ## Quick Reference: Where to Start
 
-1. **Switch linker** (mold/lld) — highest impact, 5 minutes of work.
+1. **Use `cargo check`** when you don't need a binary yet.
 2. **Run `cargo build --timings`** — understand your specific bottlenecks.
-3. **Tune dev profile** — `debug`, `split-debuginfo`, `build-override`.
-4. **Audit deps** — `cargo machete`, `cargo tree --duplicates`.
-5. **Profile macros** — `-Zmacro-stats`, then feature-gate or relocate.
-6. **Profile generics** — `cargo llvm-lines`, then apply inner-function pattern.
-7. **Restructure crate graph** — split large crates, consider `cargo-hakari`.
+3. **Switch linker on Linux** (`mold` if linking still dominates; modern stable may already be on `lld`).
+4. **Tune dev profile** — `debug`, `build-override`.
+5. **Audit deps** — `cargo machete`, `cargo tree --duplicates`.
+6. **Profile macros** — `-Zmacro-stats`, then feature-gate or relocate.
+7. **Profile generics** — `cargo llvm-lines`, then apply inner-function pattern.
+8. **Restructure crate graph** — split large crates, consider `cargo-hakari`.
