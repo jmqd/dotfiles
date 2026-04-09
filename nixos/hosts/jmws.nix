@@ -152,7 +152,6 @@
     poetry
     clang
     nodejs_20
-    nodejs_18
     nodejs
     nodePackages.yarn
     yarn
