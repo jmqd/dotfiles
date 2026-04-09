@@ -12,6 +12,7 @@ import {
 	checkWorkerCommitAlreadyIntegrated,
 	createAutoFollowUpTask,
 	createOrchestratorQueue,
+	deriveDeterministicFixupCommands,
 	getOrchestratorPaths,
 	isTaskReadyForDispatch,
 	limitDispatchTasks,
@@ -24,6 +25,7 @@ import {
 	resolveHiveLoopIntervalSeconds,
 	shouldAutoCreateFollowUpTask,
 	shouldRetryBlockedIntegrationTask,
+	shouldStopHiveLoop,
 	syncTaskWithWorker,
 	workerSnapshotToTaskState,
 	withExistingOrchestratorQueueTransaction,
@@ -428,6 +430,66 @@ test("retryable integration blocks can be retried on later ticks", () => {
 		}),
 		false,
 	);
+});
+
+test("deriveDeterministicFixupCommands maps common check commands to deterministic fixups", () => {
+	assert.deepEqual(deriveDeterministicFixupCommands("just check"), ["just fix"]);
+	assert.deepEqual(deriveDeterministicFixupCommands("nix develop -c just check"), ["nix develop -c just fix"]);
+	assert.deepEqual(deriveDeterministicFixupCommands("cargo fmt --check --all"), ["cargo fmt --all"]);
+	assert.deepEqual(deriveDeterministicFixupCommands("git diff --check"), []);
+});
+
+test("shouldStopHiveLoop ignores retryable and replaced blocked tasks", () => {
+	const base = createOrchestratorQueue("/repo/project", {
+		goal: "goal",
+		integrationBranch: "main",
+		now: "2026-04-06T00:00:00Z",
+	});
+	const { queue } = addTasksToQueue(
+		base,
+		[
+			{ task: "fix login", agent: "01" },
+			{ task: "follow-up", agent: "02", dependsOn: ["task-001"] },
+		],
+		"2026-04-06T00:01:00Z",
+	);
+
+	const retryable = {
+		...queue,
+		tasks: [
+			{ ...queue.tasks[0], state: "blocked" as const, workerState: "done", blockedReason: "coordinator_dirty" },
+			queue.tasks[1],
+		],
+	};
+	assert.deepEqual(shouldStopHiveLoop(retryable), { stop: false });
+
+	const replaced = {
+		...queue,
+		tasks: [
+			{ ...queue.tasks[0], state: "blocked" as const, blockedReason: "integration_checks_failed", replacementTaskId: "task-003" },
+			queue.tasks[1],
+			{
+				id: "task-003",
+				title: "fix login (follow-up)",
+				task: "follow-up",
+				agent: "agent-01",
+				state: "running" as const,
+				verificationCommands: [],
+				dependsOn: [],
+				createdAt: "2026-04-06T00:02:00Z",
+			},
+		],
+	};
+	assert.deepEqual(shouldStopHiveLoop(replaced), { stop: false });
+
+	const manualAttention = {
+		...queue,
+		tasks: [{ ...queue.tasks[0], state: "blocked" as const, blockedReason: "integration_conflict" }, queue.tasks[1]],
+	};
+	assert.deepEqual(shouldStopHiveLoop(manualAttention), {
+		stop: true,
+		reason: "queue has blocked or failed tasks requiring attention",
+	});
 });
 
 test("checkWorkerCommitAlreadyIntegrated short-circuits when the worker commit is contained", async () => {

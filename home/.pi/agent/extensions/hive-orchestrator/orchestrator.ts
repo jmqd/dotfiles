@@ -277,6 +277,42 @@ export function shouldRetryBlockedIntegrationTask(task: OrchestratorTask): boole
 	return task.state === "blocked" && task.workerState === "done" && !!task.blockedReason && retryableIntegrationBlockReasons.has(task.blockedReason);
 }
 
+export function deriveDeterministicFixupCommands(command: string): string[] {
+	const fixups: string[] = [];
+	const trimmed = command.trim();
+	if (!trimmed) return fixups;
+
+	const justFix = trimmed.replace(/\bjust check\b/, "just fix");
+	if (justFix !== trimmed) fixups.push(justFix);
+
+	const cargoFmtAll = trimmed.replace(/\bcargo fmt --check --all\b/, "cargo fmt --all");
+	if (cargoFmtAll !== trimmed && !fixups.includes(cargoFmtAll)) fixups.push(cargoFmtAll);
+
+	const cargoFmt = trimmed.replace(/\bcargo fmt --check\b/, "cargo fmt");
+	if (cargoFmt !== trimmed && !fixups.includes(cargoFmt)) fixups.push(cargoFmt);
+
+	return fixups;
+}
+
+export function taskNeedsManualAttention(task: OrchestratorTask): boolean {
+	if (task.state === "failed") return true;
+	if (task.state !== "blocked") return false;
+	if (task.replacementTaskId) return false;
+	if (shouldRetryBlockedIntegrationTask(task)) return false;
+	return true;
+}
+
+export function shouldStopHiveLoop(queue: OrchestratorQueue): { stop: boolean; reason?: string } {
+	if (queue.tasks.some(taskNeedsManualAttention)) {
+		return { stop: true, reason: "queue has blocked or failed tasks requiring attention" };
+	}
+	const counts = summarizeQueueCounts(queue);
+	if (counts.planned === 0 && counts.running === 0 && counts.done === 0) {
+		return { stop: true, reason: "queue drained" };
+	}
+	return { stop: false };
+}
+
 /**
  * Checks whether the worker commit itself is already contained in the current host history.
  * Tree-equal but non-ancestor commits are not treated as already integrated.

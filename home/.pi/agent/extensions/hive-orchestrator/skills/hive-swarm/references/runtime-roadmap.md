@@ -37,7 +37,7 @@ Implemented via the `hive_orchestrator` tool and host commands:
 - `/hive-status` and `/hive-tick` for one-shot inspection and advancement
 - `/hive-loop` for repeated ticking
 - `/hive-stop` for loop stop requests
-- automatic loop start from `/hive-run` when the planning turn leaves a live queue
+- foreground loop start from `/hive-run` when the planning turn leaves a live queue, with the command staying attached until the queue drains or needs attention
 
 Files under `.hive/orchestrator/` are repo-local orchestrator artifacts.
 They are separate from the worker-local `.hive/*` launch/status files stored inside each hive-managed worker worktree.
@@ -52,15 +52,18 @@ Implemented in the current runtime:
 - create a persistent clean coordinator integration worktree for each queue
 - cherry-pick verified worker commits onto the coordinator integration branch
 - run repo-level final checks there
+- accept legacy worker completion statuses like `completed` during done-state validation
+- apply deterministic fixups for check/lint failures when they can be derived safely from the failing command
 - mark tasks merged when integration succeeds
-- leave blocked integration tasks in queue state
-- auto-create follow-up tasks for integration conflicts or final-check failures
+- keep retryable/replaced blocked tasks from unnecessarily stopping the foreground loop
+- auto-create follow-up tasks for integration conflicts or non-deterministic final-check failures
 
 Still to add:
 
 - an explicit final landing flow from the coordinator worktree onto a user branch
 - smarter conflict-resolution flows beyond cherry-pick abort/reset plus follow-up task creation
 - richer policy for when the host should fix forward directly vs dispatch another worker
+- an optional detached/background `/hive-run` mode layered on top of the same queue/loop runtime
 
 ## Phase 4: review-cycle automation
 
