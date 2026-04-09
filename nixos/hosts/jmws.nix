@@ -132,7 +132,6 @@
     adwaita-icon-theme
     libgudev
     libvdpau
-    libsoup
     dxvk
     krb5
     obs-studio
