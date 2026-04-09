@@ -106,7 +106,7 @@
     fontconfig
     freetype
     expat
-    glxinfo
+    mesa-demos
     ipmitool
     inetutils
     nixos-anywhere
