@@ -87,6 +87,14 @@ in
     export HOME=${lib.escapeShellArg config.home.homeDirectory}
     export PATH=${lib.escapeShellArg "${config.home.profileDirectory}/bin"}:$PATH
     export RUSTUP_BIN=${lib.escapeShellArg "${pkgs.rustup}/bin/rustup"}
-    ${../bin/bootstrap-rust.sh} stable
+    if ! ${../bin/bootstrap-rust.sh} stable; then
+      if [ "''${HM_STRICT_RUST_BOOTSTRAP:-0}" = "1" ]; then
+        echo "Rust bootstrap failed with HM_STRICT_RUST_BOOTSTRAP=1." >&2
+        exit 1
+      fi
+
+      echo "warning: Rust bootstrap failed during Home Manager activation; continuing without a managed default toolchain." >&2
+      echo "warning: Re-run bin/bootstrap-rust.sh stable after network access is available, or set HM_STRICT_RUST_BOOTSTRAP=1 to make this fatal again." >&2
+    fi
   '';
 }

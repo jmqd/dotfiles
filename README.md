@@ -98,6 +98,11 @@ nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#linux
 nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#linux-aarch64
 ```
 
+The Home Manager activation hook will try to bootstrap a default Rust toolchain
+via `rustup`. By default that step is best-effort so first activation can still
+finish offline; set `HM_STRICT_RUST_BOOTSTRAP=1` if you want bootstrap failure
+to abort the switch.
+
 ## home manager backup mode
 
 ```bash
