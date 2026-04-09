@@ -8,6 +8,23 @@ refresh_home_manager="${HM_REFRESH:-0}"
 os_name="$(uname -s)"
 readonly repo_root backup_ext current_user refresh_home_manager os_name
 
+warn_on_nixos_standalone_home_manager() {
+	if [[ "$os_name" != "Linux" ]] || [[ ! -r /etc/os-release ]]; then
+		return
+	fi
+
+	# shellcheck disable=SC1091
+	. /etc/os-release
+
+	if [[ "${ID:-}" == "nixos" ]]; then
+		cat >&2 <<'EOF'
+warning: running standalone Home Manager on NixOS.
+If your system config also manages Home Manager for this user, a later
+nixos-rebuild can overwrite parts of this generation.
+EOF
+	fi
+}
+
 detect_flake_ref() {
 	case "${os_name}:$(uname -m)" in
 	Darwin:arm64)
@@ -106,6 +123,8 @@ if [[ $# -gt 0 && ${1:0:1} != "-" ]]; then
 else
 	flake_ref="$(detect_flake_ref)"
 fi
+
+warn_on_nixos_standalone_home_manager
 
 home_manager_cmd=(nix run)
 
