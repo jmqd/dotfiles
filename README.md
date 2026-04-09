@@ -19,7 +19,7 @@ curl --proto '=https' --tlsv1.2 -sSf -L \
 ```
 
 ```bash
-# Existing checkout with Home Manager (macOS or Linux):
+# Existing checkout with Home Manager (macOS or standalone Linux):
 mkdir -p ~/src
 git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
 bash ~/src/dotfiles/bin/hm-switch.sh
@@ -38,8 +38,10 @@ sudo nixos-rebuild switch --flake ~/src/dotfiles#jmws
 bash ~/src/dotfiles/bin/link-private-data.sh
 ```
 
-Home Manager is the canonical path for user-facing config. The private-data linker is only
-for the small set of personal files that still live outside the public flake.
+Home Manager modules remain the canonical source of user-facing config, but
+`jmws` applies them through `nixos-rebuild --flake`. The private-data linker is
+only for the small set of personal files that still live outside the public
+flake.
 
 ## git hooks
 
@@ -84,6 +86,9 @@ direnv allow
 
 ## home manager
 
+Standalone Home Manager targets are for macOS and non-NixOS Linux only. `jmws`
+is managed through `sudo nixos-rebuild switch --flake ~/src/dotfiles#jmws`.
+
 ```bash
 # Apple Silicon macOS (uses current user/home)
 HM_BOOTSTRAP_USER="$USER" nix run github:nix-community/home-manager -- switch --impure --flake ~/src/dotfiles#macos-aarch64
@@ -104,6 +109,8 @@ finish offline; set `HM_STRICT_RUST_BOOTSTRAP=1` if you want bootstrap failure
 to abort the switch.
 
 ## home manager backup mode
+
+This wrapper is only for standalone Home Manager, not NixOS hosts like `jmws`.
 
 ```bash
 # Default path: auto-detects this machine and backs up conflicting files with
