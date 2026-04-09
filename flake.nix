@@ -330,6 +330,7 @@
             hostModule
             home-manager.nixosModules.home-manager
             {
+              home-manager.backupFileExtension = "hm-backup";
               home-manager.useGlobalPkgs = true;
               home-manager.users.jmq = {
                 ...
