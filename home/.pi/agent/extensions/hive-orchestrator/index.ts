@@ -30,6 +30,7 @@ import {
 	checkWorkerCommitAlreadyIntegrated,
 	createAutoFollowUpTask,
 	createOrchestratorQueue,
+	deriveDeterministicFixupCommands,
 	getOrchestratorPaths,
 	isTaskReadyForDispatch,
 	limitDispatchTasks,
@@ -41,7 +42,7 @@ import {
 	resolveHiveLoopIntervalSeconds,
 	shouldAutoCreateFollowUpTask,
 	shouldRetryBlockedIntegrationTask,
-	summarizeQueueCounts,
+	shouldStopHiveLoop,
 	syncTaskWithWorker,
 	withExistingOrchestratorQueueTransaction,
 	withOrchestratorQueueInitTransaction,
@@ -72,6 +73,16 @@ type HiveOrchestratorDetails = {
 	dispatchedTaskIds: string[];
 	integratedTaskIds: string[];
 };
+
+type HiveRunExecutionMode = "foreground" | "background";
+
+type PendingHiveRunRequest = {
+	executionMode: HiveRunExecutionMode;
+	resolve: (value: boolean) => void;
+	reject: (error: unknown) => void;
+};
+
+const DEFAULT_HIVE_RUN_EXECUTION_MODE: HiveRunExecutionMode = "foreground";
 
 const HiveWorkerParams = Type.Object({
 	action: StringEnum(["launch", "poll"] as const, {
@@ -464,6 +475,69 @@ async function runFinalChecks(pi: ExtensionAPI, cwd: string, commands: string[],
 	}
 }
 
+async function runFinalChecksWithDeterministicFixups(
+	pi: ExtensionAPI,
+	cwd: string,
+	commands: string[],
+	signal?: AbortSignal,
+): Promise<string[]> {
+	const appliedFixups: string[] = [];
+	for (const command of commands) {
+		try {
+			await execBashOrThrow(pi, cwd, command, signal);
+			continue;
+		} catch (error) {
+			const fixups = deriveDeterministicFixupCommands(command);
+			if (fixups.length === 0) throw error;
+
+			let appliedAtLeastOneFixup = false;
+			const fixupFailures: string[] = [];
+			for (const fixup of fixups) {
+				try {
+					await execBashOrThrow(pi, cwd, fixup, signal);
+					appliedAtLeastOneFixup = true;
+					appliedFixups.push(fixup);
+				} catch (fixupError) {
+					fixupFailures.push(fixupError instanceof Error ? fixupError.message : String(fixupError));
+				}
+			}
+
+			if (!appliedAtLeastOneFixup) {
+				throw new Error(
+					[
+						error instanceof Error ? error.message : String(error),
+						`automatic deterministic fixups failed for ${JSON.stringify(command)}`,
+						...fixupFailures,
+					].join("; "),
+				);
+			}
+
+			await execBashOrThrow(pi, cwd, command, signal);
+		}
+	}
+	return appliedFixups;
+}
+
+async function commitDeterministicFixupsIfNeeded(
+	pi: ExtensionAPI,
+	cwd: string,
+	task: OrchestratorTask,
+	signal?: AbortSignal,
+): Promise<string | null> {
+	const status = await execOrThrow(pi, "git", ["-C", cwd, "status", "--porcelain"], cwd, signal, 5000);
+	if (!status.stdout.trim()) return null;
+	await execOrThrow(pi, "git", ["-C", cwd, "add", "-A"], cwd, signal, 30_000);
+	await execOrThrow(
+		pi,
+		"git",
+		["-C", cwd, "commit", "-m", `hive: auto-fix final checks for ${task.id} ${task.title}`],
+		cwd,
+		signal,
+		60_000,
+	);
+	return await getHeadSha(pi, cwd, signal);
+}
+
 async function tryAbortCherryPick(pi: ExtensionAPI, cwd: string, signal?: AbortSignal) {
 	await pi.exec("git", ["-C", cwd, "cherry-pick", "--abort"], { cwd, signal, timeout: 5000 });
 }
@@ -573,8 +647,9 @@ async function integrateTask(
 		};
 	}
 
+	let appliedFixups: string[] = [];
 	try {
-		await runFinalChecks(pi, integrationWorktree, queue.finalCheckCommands, signal);
+		appliedFixups = await runFinalChecksWithDeterministicFixups(pi, integrationWorktree, queue.finalCheckCommands, signal);
 	} catch (error) {
 		await resetHard(pi, integrationWorktree, integrationHeadBefore, signal);
 		return {
@@ -585,10 +660,24 @@ async function integrateTask(
 		};
 	}
 
-	const mergedCommitSha = await getHeadSha(pi, integrationWorktree, signal);
+	let mergedCommitSha = await getHeadSha(pi, integrationWorktree, signal);
+	if (appliedFixups.length > 0) {
+		try {
+			mergedCommitSha = (await commitDeterministicFixupsIfNeeded(pi, integrationWorktree, task, signal)) ?? mergedCommitSha;
+		} catch (error) {
+			await resetHard(pi, integrationWorktree, integrationHeadBefore, signal);
+			return {
+				state: "blocked",
+				reason: "integration_checks_failed",
+				message: error instanceof Error ? error.message : String(error),
+				workerHeadSha,
+			};
+		}
+	}
+
 	return {
 		state: "merged",
-		message: `cherry-picked ${workerHeadSha.slice(0, 12)} onto ${queue.integrationBranch} in ${queue.integrationWorktreeDir} as ${mergedCommitSha.slice(0, 12)} after ${queue.finalCheckCommands.length} check(s)`,
+		message: `cherry-picked ${workerHeadSha.slice(0, 12)} onto ${queue.integrationBranch} in ${queue.integrationWorktreeDir} as ${mergedCommitSha.slice(0, 12)} after ${queue.finalCheckCommands.length} check(s)${appliedFixups.length > 0 ? ` with deterministic fixups (${appliedFixups.join("; ")})` : ""}`,
 		mergedCommitSha,
 		workerHeadSha,
 	};
@@ -819,17 +908,6 @@ async function sendOrchestratorReport(
 	);
 }
 
-function shouldStopHiveLoop(queue: OrchestratorQueue): { stop: boolean; reason?: string } {
-	const counts = summarizeQueueCounts(queue);
-	if (counts.blocked > 0 || counts.failed > 0) {
-		return { stop: true, reason: "queue has blocked or failed tasks requiring attention" };
-	}
-	if (counts.planned === 0 && counts.running === 0 && counts.done === 0) {
-		return { stop: true, reason: "queue drained" };
-	}
-	return { stop: false };
-}
-
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -878,6 +956,18 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 	let autoStartHiveLoopAfterCurrentAgent = false;
 	let hiveLoopActive = false;
 	let hiveLoopAbortRequested = false;
+	let pendingHiveRunRequest: PendingHiveRunRequest | null = null;
+
+	const finishPendingHiveRunRequest = (outcome: { ok: boolean; error?: unknown }) => {
+		if (!pendingHiveRunRequest) return;
+		const request = pendingHiveRunRequest;
+		pendingHiveRunRequest = null;
+		if (outcome.ok) {
+			request.resolve(true);
+		} else {
+			request.reject(outcome.error);
+		}
+	};
 
 	const waitForHiveLoopTurnSlot = async (ctx: {
 		isIdle: () => boolean;
@@ -919,7 +1009,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		hiveLoopAbortRequested = false;
 		ctx.ui.notify(
 			options.source === "hive-run"
-				? `Auto-starting hive loop (${intervalSeconds}s)`
+				? `Starting foreground hive-run loop (${intervalSeconds}s)`
 				: `Starting hive loop (${intervalSeconds}s)`,
 			"info",
 		);
@@ -966,48 +1056,48 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		}
 	};
 
-	const maybeAutoStartHiveLoopAfterHiveRun = async (ctx: {
-		cwd: string;
-		hasUI: boolean;
-		ui: {
-			notify: (message: string, level: "info" | "success" | "warning" | "error") => void;
-			setStatus: (id: string, status?: string) => void;
-			setWidget: Function;
-		};
-		isIdle: () => boolean;
-		hasPendingMessages: () => boolean;
-	}) => {
+	const maybeAutoStartHiveLoopAfterHiveRun = async (
+		ctx: {
+			cwd: string;
+			hasUI: boolean;
+			ui: {
+				notify: (message: string, level: "info" | "success" | "warning" | "error") => void;
+				setStatus: (id: string, status?: string) => void;
+				setWidget: Function;
+			};
+			isIdle: () => boolean;
+			hasPendingMessages: () => boolean;
+		},
+		executionMode: HiveRunExecutionMode,
+	): Promise<boolean> => {
 		if (hiveLoopActive) {
 			ctx.ui.notify("Hive-run finished; existing hive loop is still running", "info");
-			return;
+			return false;
 		}
 
-		try {
-			const repoRoot = await resolveRepoRoot(pi, ctx.cwd, undefined);
-			const queue = await loadQueue(getOrchestratorPaths(repoRoot));
-			updateHiveWidget(ctx, queue);
-			if (!queue) {
-				ctx.ui.notify("Hive-run finished without creating or resuming a queue", "info");
-				return;
-			}
+		const repoRoot = await resolveRepoRoot(pi, ctx.cwd, undefined);
+		const queue = await loadQueue(getOrchestratorPaths(repoRoot));
+		updateHiveWidget(ctx, queue);
+		if (!queue) {
+			ctx.ui.notify("Hive-run finished without creating or resuming a queue", "info");
+			return true;
+		}
 
-			const stop = shouldStopHiveLoop(queue);
-			if (stop.stop) {
-				ctx.ui.notify(
-					`Hive-run finished; not starting auto loop: ${stop.reason}`,
-					stop.reason === "queue drained" ? "success" : "warning",
-				);
-				return;
-			}
-
-			const intervalSeconds = resolveHiveLoopIntervalSeconds("", queue.pollIntervalSeconds) ?? 30;
-			void runHiveLoop(ctx, { intervalSeconds, source: "hive-run" });
-		} catch (error) {
+		const stop = shouldStopHiveLoop(queue);
+		if (stop.stop) {
 			ctx.ui.notify(
-				`Failed to auto-start hive loop after /hive-run: ${error instanceof Error ? error.message : String(error)}`,
-				"error",
+				`Hive-run finished; not starting loop: ${stop.reason}`,
+				stop.reason === "queue drained" ? "success" : "warning",
 			);
+			return true;
 		}
+
+		const intervalSeconds = resolveHiveLoopIntervalSeconds("", queue.pollIntervalSeconds) ?? 30;
+		if (executionMode === "foreground") {
+			return await runHiveLoop(ctx, { intervalSeconds, source: "hive-run" });
+		}
+		void runHiveLoop(ctx, { intervalSeconds, source: "hive-run" });
+		return true;
 	};
 
 	pi.on("resources_discover", () => {
@@ -1020,6 +1110,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 	pi.on("session_start", async (_event, ctx) => {
 		pendingHiveRun = false;
 		autoStartHiveLoopAfterCurrentAgent = false;
+		pendingHiveRunRequest = null;
 		hiveLoopAbortRequested = false;
 		await refreshHiveWidget(pi, ctx);
 	});
@@ -1028,6 +1119,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 		pendingHiveRun = false;
 		autoStartHiveLoopAfterCurrentAgent = false;
 		hiveLoopAbortRequested = true;
+		finishPendingHiveRunRequest({ ok: false, error: new Error("Hive session shut down before /hive-run completed") });
 	});
 
 	pi.on("before_agent_start", async (event) => {
@@ -1043,7 +1135,17 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!autoStartHiveLoopAfterCurrentAgent) return;
 		autoStartHiveLoopAfterCurrentAgent = false;
-		await maybeAutoStartHiveLoopAfterHiveRun(ctx);
+		try {
+			const executionMode = pendingHiveRunRequest?.executionMode ?? DEFAULT_HIVE_RUN_EXECUTION_MODE;
+			const completed = await maybeAutoStartHiveLoopAfterHiveRun(ctx, executionMode);
+			finishPendingHiveRunRequest({ ok: completed });
+		} catch (error) {
+			ctx.ui.notify(
+				`Failed to continue /hive-run after planning: ${error instanceof Error ? error.message : String(error)}`,
+				"error",
+			);
+			finishPendingHiveRunRequest({ ok: false, error });
+		}
 	});
 
 	pi.registerMessageRenderer("hive-orchestrator-report", (message) => {
@@ -1051,7 +1153,7 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("hive-run", {
-		description: "Plan and start a hive run for a top-level goal",
+		description: "Plan and run a hive queue to completion in the foreground by default",
 		handler: async (args, ctx) => {
 			const goal = args.trim();
 			if (!goal) {
@@ -1062,13 +1164,35 @@ export default function hiveOrchestrator(pi: ExtensionAPI) {
 				ctx.ui.notify("No model selected", "error");
 				return;
 			}
+			if (pendingHiveRun || autoStartHiveLoopAfterCurrentAgent || pendingHiveRunRequest) {
+				ctx.ui.notify("A /hive-run workflow is already in progress", "warning");
+				return;
+			}
+			if (hiveLoopActive) {
+				ctx.ui.notify("Hive loop is already running. Stop it before starting a new /hive-run.", "warning");
+				return;
+			}
+
+			const executionMode = DEFAULT_HIVE_RUN_EXECUTION_MODE;
+			const completion = new Promise<boolean>((resolve, reject) => {
+				pendingHiveRunRequest = { executionMode, resolve, reject };
+			});
 			pendingHiveRun = true;
 			try {
 				await pi.sendUserMessage(buildHiveRunPrompt(goal), { deliverAs: "followUp" });
-				ctx.ui.notify("Started hive-run planning workflow; a live queue will auto-start the host loop.", "success");
+				ctx.ui.notify(
+					executionMode === "foreground"
+						? "Started /hive-run planning workflow; staying attached until the queue completes or needs attention."
+						: "Started /hive-run planning workflow.",
+					"success",
+				);
+				if (executionMode === "foreground") {
+					await completion;
+				}
 			} catch (error) {
 				pendingHiveRun = false;
 				autoStartHiveLoopAfterCurrentAgent = false;
+				finishPendingHiveRunRequest({ ok: false, error });
 				ctx.ui.notify(`Hive run failed to start: ${error instanceof Error ? error.message : String(error)}`, "error");
 			}
 		},

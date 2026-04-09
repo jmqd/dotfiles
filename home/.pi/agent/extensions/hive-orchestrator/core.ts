@@ -277,7 +277,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function isPassedStatus(value: unknown): boolean {
-	return value === "passed" || value === "done";
+	return value === "passed" || value === "done" || value === "completed";
 }
 
 export function validateWorkerDoneStatus(status: Record<string, unknown> | null, actualHeadSha?: string): WorkerCompletionValidation {
@@ -303,7 +303,9 @@ export function validateWorkerDoneStatus(status: Record<string, unknown> | null,
 	if (!isPlainObject(review)) {
 		errors.push("worker review object is required");
 	} else {
-		if (!isPassedStatus(review.status)) errors.push(`worker review.status must be passed or done, got ${JSON.stringify(review.status)}`);
+		if (!isPassedStatus(review.status)) {
+			errors.push(`worker review.status must be passed, done, or completed, got ${JSON.stringify(review.status)}`);
+		}
 		if (typeof review.scope !== "string" || review.scope.trim() === "") errors.push("worker review.scope is required");
 		if (typeof review.completedAt !== "string" || review.completedAt.trim() === "") {
 			errors.push("worker review.completedAt is required");
@@ -317,7 +319,7 @@ export function validateWorkerDoneStatus(status: Record<string, unknown> | null,
 	} else {
 		if (!isPassedStatus(finalVerification.status)) {
 			errors.push(
-				`worker finalVerification.status must be passed or done, got ${JSON.stringify(finalVerification.status)}`,
+				`worker finalVerification.status must be passed, done, or completed, got ${JSON.stringify(finalVerification.status)}`,
 			);
 		}
 		if (!Array.isArray(finalVerification.commands) || finalVerification.commands.some((command) => typeof command !== "string")) {

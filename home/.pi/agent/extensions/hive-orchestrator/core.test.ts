@@ -191,6 +191,30 @@ test("validateWorkerDoneStatus enforces committed reviewed done-state", () => {
 	);
 	assert.deepEqual(valid, { ok: true, errors: [], headSha: "deadbeef" });
 
+	const legacyCompleted = validateWorkerDoneStatus(
+		{
+			state: "done",
+			summary: "Ready to merge",
+			nextAction: "Wait for orchestrator merge",
+			updatedAt: "2026-04-06T00:00:00Z",
+			checks: ["just check"],
+			headSha: "deadbeef",
+			review: {
+				status: "completed",
+				scope: "worker delta",
+				completedAt: "2026-04-06T00:00:00Z",
+				summary: "Legacy worker status shape",
+			},
+			finalVerification: {
+				status: "completed",
+				commands: ["just check"],
+				completedAt: "2026-04-06T00:00:00Z",
+			},
+		},
+		"deadbeef",
+	);
+	assert.deepEqual(legacyCompleted, { ok: true, errors: [], headSha: "deadbeef" });
+
 	const invalid = validateWorkerDoneStatus(
 		{
 			state: "done",
@@ -206,10 +230,10 @@ test("validateWorkerDoneStatus enforces committed reviewed done-state", () => {
 	);
 	assert.equal(invalid.ok, false);
 	assert.match(invalid.errors.join("\n"), /headSha .* does not match current HEAD/);
-	assert.match(invalid.errors.join("\n"), /review\.status must be passed or done/);
+	assert.match(invalid.errors.join("\n"), /review\.status must be passed, done, or completed/);
 	assert.match(invalid.errors.join("\n"), /review\.completedAt is required/);
 	assert.match(invalid.errors.join("\n"), /review\.summary is required/);
-	assert.match(invalid.errors.join("\n"), /finalVerification\.status must be passed or done/);
+	assert.match(invalid.errors.join("\n"), /finalVerification\.status must be passed, done, or completed/);
 	assert.match(invalid.errors.join("\n"), /finalVerification\.completedAt is required/);
 	});
 

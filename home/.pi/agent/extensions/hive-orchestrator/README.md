@@ -70,7 +70,7 @@ Planning workflow output:
 
 High level:
 
-- use `/hive-run <goal>` when you want pi to inspect the repo, make a solid plan, choose concurrency, write planning notes, initialize/resume the queue, enqueue tasks, and then auto-start the host-side loop when a live queue exists
+- use `/hive-run <goal>` when you want pi to inspect the repo, make a solid plan, choose concurrency, write planning notes, initialize/resume the queue, enqueue tasks, and then keep the foreground host-side loop running until the queue drains or needs real attention
 - use `/hive-orchestrator <goal>` when you want the model to drive the workflow more manually from the prompt template
 - use `/hive-init <goal>` to initialize queue state directly without the higher-level planning workflow
 - use `/hive-status` to poll and display queue state
@@ -86,7 +86,7 @@ High level:
 - planning notes in `.hive/orchestrator/planning-notes.md` as planning output, separate from the runtime queue files
 - queue initialization/resume + first tick
 
-After that planning turn finishes, the extension automatically starts `/hive-loop` in the same pi session when the queue is live and non-terminal. The loop keeps polling/integrating/dispatching until the queue drains, blocks, fails, or you stop it with `/hive-stop`.
+After that planning turn finishes, `/hive-run` starts the host-side loop in the same pi session and stays attached by default. The loop keeps polling, integrating ready work immediately, applying deterministic fixups for check/lint failures when possible, dispatching newly unblocked tasks, and continuing until the queue drains or hits a task that still needs real attention. `/hive-loop` remains available as the lower-level manual loop command.
 
 By default, merged queue output lives on the queue-owned coordinator branch/worktree rather than being cherry-picked into the user's live branch on every tick.
 
@@ -117,4 +117,4 @@ Each launched worker worktree gets its own `.hive/*` files. These live inside th
 
 See `plans/pi-hive-orchestrator-extension.md` for the fuller build plan.
 
-Note: the auto-loop is session-local. If pi exits or reloads, restart it with `/hive-loop`.
+Note: the loop is still session-local. If pi exits or reloads, restart it with `/hive-run` or `/hive-loop`. A detached/background mode could be added later without changing the queue/runtime model.
