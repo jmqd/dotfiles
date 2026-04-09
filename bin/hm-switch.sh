@@ -8,20 +8,27 @@ refresh_home_manager="${HM_REFRESH:-0}"
 os_name="$(uname -s)"
 readonly repo_root backup_ext current_user refresh_home_manager os_name
 
-warn_on_nixos_standalone_home_manager() {
+refuse_on_nixos_standalone_home_manager() {
 	if [[ "$os_name" != "Linux" ]] || [[ ! -r /etc/os-release ]]; then
 		return
 	fi
+
+	local host_name
 
 	# shellcheck disable=SC1091
 	. /etc/os-release
 
 	if [[ "${ID:-}" == "nixos" ]]; then
-		cat >&2 <<'EOF'
-warning: running standalone Home Manager on NixOS.
-If your system config also manages Home Manager for this user, a later
-nixos-rebuild can overwrite parts of this generation.
+		host_name="$(hostname -s 2>/dev/null || hostname)"
+		cat >&2 <<EOF
+This repo manages NixOS hosts through flake-native system rebuilds.
+Run:
+  sudo nixos-rebuild switch --flake ${repo_root}#${host_name}
+
+For jmws specifically:
+  sudo nixos-rebuild switch --flake ${repo_root}#jmws
 EOF
+		exit 1
 	fi
 }
 
@@ -115,6 +122,8 @@ run_home_manager_switch() {
 	return 1
 }
 
+refuse_on_nixos_standalone_home_manager
+
 flake_ref=""
 
 if [[ $# -gt 0 && ${1:0:1} != "-" ]]; then
@@ -123,8 +132,6 @@ if [[ $# -gt 0 && ${1:0:1} != "-" ]]; then
 else
 	flake_ref="$(detect_flake_ref)"
 fi
-
-warn_on_nixos_standalone_home_manager
 
 home_manager_cmd=(nix run)
 
