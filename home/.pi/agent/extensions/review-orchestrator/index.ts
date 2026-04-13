@@ -28,6 +28,7 @@ const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "concurrency", title: "Concurrency", file: "concurrency-review.md" },
 	{ id: "docs", title: "Documentation", file: "docs-review.md" },
 	{ id: "technical-writing", title: "Technical Writing", file: "technical-writing-review.md" },
+	{ id: "commit-message", title: "Commit Message", file: "commit-message-review.md" },
 	{ id: "whats-missing", title: "What's Missing", file: "whats-missing-review.md" },
 	{ id: "history", title: "History / Precedent", file: "history-review.md" },
 	{ id: "api", title: "API Design", file: "api-review.md" },
