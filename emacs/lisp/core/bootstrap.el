@@ -13,6 +13,25 @@
 
 (package-initialize)
 
+(defvar jmq/package-install-refresh-attempted nil
+  "Whether package installation has already retried after refreshing archives.")
+
+(defun jmq/package-install-with-refresh-once (fn package &rest args)
+  "Call FN to install PACKAGE, refreshing archives once on failure."
+  (condition-case err
+      (apply fn package args)
+    (error
+     (if jmq/package-install-refresh-attempted
+         (signal (car err) (cdr err))
+       (setq jmq/package-install-refresh-attempted t)
+       (message "Package install failed for %s; refreshing archives and retrying: %s"
+                package
+                (error-message-string err))
+       (package-refresh-contents)
+       (apply fn package args)))))
+
+(advice-add 'package-install :around #'jmq/package-install-with-refresh-once)
+
 (unless (package-installed-p 'use-package)
   (unless package-archive-contents
     (package-refresh-contents))
