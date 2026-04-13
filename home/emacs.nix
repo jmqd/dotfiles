@@ -23,6 +23,7 @@ in
     ".emacs.d/early-init.el".source = ../emacs/early-init.el;
     ".emacs.d/init.el".source = ../emacs/init.el;
     ".emacs.d/lisp".source = ../emacs/lisp;
+    "Applications/Emacs.app".source = "${config.programs.emacs.finalPackage}/Applications/Emacs.app";
     ".local/bin/emacs-handcrafted".source = ../bin/emacs-handcrafted;
     ".local/bin/emacs-handcrafted-client".source = ../bin/emacs-handcrafted-client;
     ".local/bin/emacs-handcrafted-daemon".source = ../bin/emacs-handcrafted-daemon;
