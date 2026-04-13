@@ -25,6 +25,7 @@ const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "readability", title: "Readability", file: "readability-review.md" },
 	{ id: "factoring", title: "Factoring", file: "factoring-review.md" },
 	{ id: "maintainability", title: "Maintainability", file: "maintainability-review.md" },
+	{ id: "canonical-language", title: "Canonical Language / Tooling", file: "canonical-language-review.md" },
 	{ id: "declarative-ownership", title: "Declarative Ownership", file: "declarative-ownership-review.md" },
 	{ id: "domain-logic", title: "Domain Logic", file: "domain-logic-review.md" },
 	{ id: "performance", title: "Performance", file: "performance-review.md" },
