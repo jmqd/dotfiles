@@ -19,6 +19,7 @@ type ReviewCategory = {
 const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "security", title: "Security", file: "security-review.md" },
 	{ id: "correctness", title: "Correctness", file: "correctness-review.md" },
+	{ id: "error-handling", title: "Error Handling / Recovery", file: "error-handling-review.md" },
 	{ id: "testing", title: "Testing", file: "testing-review.md" },
 	{ id: "behavioral-testing", title: "Behavioral Testing", file: "behavioral-testing-review.md" },
 	{ id: "readability", title: "Readability", file: "readability-review.md" },
