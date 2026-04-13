@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import {
 	extractText,
+	loadGitHistoryContext,
 	loadRepoTarget,
 	loadTarget,
 	loadUncommittedTarget,
@@ -18,6 +19,8 @@ import {
 	truncateToBudget,
 	type CommandExecutor,
 } from "./core.ts";
+
+const historyFormatArg = "--format=\u001e%h\u001f%s";
 
 function createExec(responses: Record<string, { stdout: string; stderr?: string }>): CommandExecutor {
 	return async (command, args, cwd) => {
@@ -128,32 +131,53 @@ test("loadTarget covers staged, range, commit, in-repo file scope, and empty sta
 
 	const exec = createExec({
 		"git diff --cached --no-ext-diff --minimal": { stdout: "diff --git a/a b/a\n" },
+		"git diff --cached --name-only": { stdout: "a\n" },
+		[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- a`]: {
+			stdout: "\u001eabc123\u001fstaged precedent\na\ntests/a.test.ts\n",
+		},
 		"git diff HEAD~1..HEAD --no-ext-diff --minimal": { stdout: "diff --git a/range b/range\n" },
+		"git diff --name-only HEAD~1..HEAD": { stdout: "range\n" },
+		[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- range`]: {
+			stdout: "\u001edef456\u001frange precedent\nrange\nrange.test.ts\n",
+		},
 		"git show --format=medium --patch --no-ext-diff --minimal HEAD": {
 			stdout: "commit abc123\n\n    Latest commit\n\ndiff --git a/c b/c\n",
 		},
+		"git show --format= --name-only HEAD": { stdout: "c\n" },
+		[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- c`]: {
+			stdout: "\u001e987fed\u001fcommit precedent\nc\ndocs/c.md\n",
+		},
+		[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- notes.txt`]: {
+			stdout: "\u001e111aaa\u001ffile precedent\nnotes.txt\n",
+		},
 	});
 
-	assert.deepEqual(await loadTarget(cwd, { kind: "staged" }, { exec }), {
-		targetName: "staged changes",
-		reviewScope: "staged",
-		scopeDescription: "Git diff of staged changes only.",
-		content: "diff --git a/a b/a",
-	});
+	const stagedTarget = await loadTarget(cwd, { kind: "staged" }, { exec });
+	assert.ok(stagedTarget);
+	assert.equal(stagedTarget.targetName, "staged changes");
+	assert.equal(stagedTarget.reviewScope, "staged");
+	assert.equal(stagedTarget.scopeDescription, "Git diff of staged changes only.");
+	assert.equal(stagedTarget.content, "diff --git a/a b/a");
+	assert.match(stagedTarget.gitHistoryContext, /Recent related commits:/);
+	assert.match(stagedTarget.gitHistoryContext, /staged precedent/);
+	assert.match(stagedTarget.gitHistoryContext, /tests\/a\.test\.ts/);
 
-	assert.deepEqual(await loadTarget(cwd, { kind: "range", value: "HEAD~1..HEAD" }, { exec }), {
-		targetName: "range HEAD~1..HEAD",
-		reviewScope: "range HEAD~1..HEAD",
-		scopeDescription: "Git diff for revision range HEAD~1..HEAD.",
-		content: "diff --git a/range b/range",
-	});
+	const rangeTarget = await loadTarget(cwd, { kind: "range", value: "HEAD~1..HEAD" }, { exec });
+	assert.ok(rangeTarget);
+	assert.equal(rangeTarget.targetName, "range HEAD~1..HEAD");
+	assert.equal(rangeTarget.reviewScope, "range HEAD~1..HEAD");
+	assert.equal(rangeTarget.scopeDescription, "Git diff for revision range HEAD~1..HEAD.");
+	assert.equal(rangeTarget.content, "diff --git a/range b/range");
+	assert.match(rangeTarget.gitHistoryContext, /range precedent/);
 
-	assert.deepEqual(await loadTarget(cwd, { kind: "commit", value: "HEAD" }, { exec }), {
-		targetName: "commit HEAD",
-		reviewScope: "commit HEAD",
-		scopeDescription: "Single commit review for HEAD, including commit metadata and patch.",
-		content: "commit abc123\n\n    Latest commit\n\ndiff --git a/c b/c",
-	});
+	const commitTarget = await loadTarget(cwd, { kind: "commit", value: "HEAD" }, { exec });
+	assert.ok(commitTarget);
+	assert.equal(commitTarget.targetName, "commit HEAD");
+	assert.equal(commitTarget.reviewScope, "commit HEAD");
+	assert.equal(commitTarget.scopeDescription, "Single commit review for HEAD, including commit metadata and patch.");
+	assert.equal(commitTarget.content, "commit abc123\n\n    Latest commit\n\ndiff --git a/c b/c");
+	assert.match(commitTarget.gitHistoryContext, /commit precedent/);
+	assert.match(commitTarget.gitHistoryContext, /docs\/c\.md/);
 
 	const realFilePath = await realpath(filePath);
 	let readPath: string | undefined;
@@ -170,12 +194,68 @@ test("loadTarget covers staged, range, commit, in-repo file scope, and empty sta
 		reviewScope: "file @notes.txt",
 		scopeDescription: `Single file review for ${realFilePath}.`,
 		content: "injected file contents\n",
+		gitHistoryContext: [
+			"Focused files in review scope:",
+			"- notes.txt",
+			"",
+			"Recent related commits:",
+			"- 111aaa | file precedent",
+			"  matched current files:",
+			"  - notes.txt",
+			"  touched files in commit:",
+			"  - notes.txt",
+		].join("\n"),
 	});
 
 	const emptyExec = createExec({
 		"git diff --cached --no-ext-diff --minimal": { stdout: "\n\n" },
 	});
 	assert.equal(await loadTarget(cwd, { kind: "staged" }, { exec: emptyExec }), null);
+});
+test("loadGitHistoryContext summarizes focused files, related commits, and untracked files", async () => {
+	const context = await loadGitHistoryContext("/repo", {
+		exec: createExec({
+			[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- src/main.ts docs/main.md`]: {
+				stdout:
+					"\u001eabc123\u001fflow: add main wiring\nsrc/main.ts\ntests/main.test.ts\ndocs/main.md\n" +
+					"\u001edef456\u001fflow: refresh docs\ndocs/main.md\nREADME.md\n",
+			},
+		}),
+		focusedFiles: ["src/main.ts", "docs/main.md"],
+		untrackedFiles: ["notes/todo.md"],
+	});
+
+	assert.match(context, /Focused files in review scope:/);
+	assert.match(context, /- src\/main\.ts/);
+	assert.match(context, /- docs\/main\.md/);
+	assert.match(context, /Untracked files in review scope \(no git history yet\):/);
+	assert.match(context, /- notes\/todo\.md/);
+	assert.match(context, /Recent related commits:/);
+	assert.match(context, /- abc123 \| flow: add main wiring/);
+	assert.match(context, /matched current files:/);
+	assert.match(context, /touched files in commit:/);
+	assert.match(context, /- tests\/main\.test\.ts/);
+});
+
+test("loadGitHistoryContext supports repo-wide history summaries", async () => {
+	const context = await loadGitHistoryContext("/repo", {
+		exec: createExec({
+			[`git log --no-merges ${historyFormatArg} --name-only -n 10`]: {
+				stdout:
+					"\u001eabc123\u001fpi/review: add history pass\nhome/.pi/agent/extensions/review-orchestrator/index.ts\n" +
+					"home/.pi/agent/prompts/review-prompts/history-review.md\n",
+			},
+		}),
+		repoWide: true,
+	});
+
+	assert.equal(context, [
+		"Repository-wide recent commits:",
+		"- abc123 | pi/review: add history pass",
+		"  touched files in commit:",
+		"  - home/.pi/agent/extensions/review-orchestrator/index.ts",
+		"  - home/.pi/agent/prompts/review-prompts/history-review.md",
+	].join("\n"));
 });
 
 test("loadTarget file scope rejects paths outside cwd", async () => {
