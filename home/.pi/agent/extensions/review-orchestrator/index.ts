@@ -20,6 +20,7 @@ const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "security", title: "Security", file: "security-review.md" },
 	{ id: "correctness", title: "Correctness", file: "correctness-review.md" },
 	{ id: "testing", title: "Testing", file: "testing-review.md" },
+	{ id: "behavioral-testing", title: "Behavioral Testing", file: "behavioral-testing-review.md" },
 	{ id: "readability", title: "Readability", file: "readability-review.md" },
 	{ id: "factoring", title: "Factoring", file: "factoring-review.md" },
 	{ id: "maintainability", title: "Maintainability", file: "maintainability-review.md" },
