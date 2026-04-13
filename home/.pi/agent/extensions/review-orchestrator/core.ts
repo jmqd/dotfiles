@@ -23,7 +23,10 @@ export type LoadedTarget = {
 	reviewScope: string;
 	scopeDescription: string;
 	content: string;
+	gitHistoryContext: string;
 };
+
+type BaseLoadedTarget = Omit<LoadedTarget, "gitHistoryContext">;
 
 export type TextContentItem = { type: string; text?: string };
 export type CommandExecutor = (
@@ -35,6 +38,21 @@ export type TextFileReader = (filePath: string) => Promise<string>;
 
 export const MAX_REVIEW_CHARS = 120_000;
 export const MAX_REPO_FILES = 200;
+export const MAX_GIT_HISTORY_CHARS = 12_000;
+
+const GIT_HISTORY_RECORD_SEPARATOR = "\u001e";
+const GIT_HISTORY_FIELD_SEPARATOR = "\u001f";
+const MAX_GIT_HISTORY_COMMITS = 10;
+const MAX_GIT_HISTORY_FILES = 20;
+const MAX_GIT_HISTORY_FILES_PER_COMMIT = 12;
+const NO_GIT_HISTORY_CONTEXT = "No focused git history context available for this review scope.";
+
+type GitHistoryCommit = {
+	hash: string;
+	subject: string;
+	touchedFiles: string[];
+	matchedFiles: string[];
+};
 
 export function extractText(content: TextContentItem[]): string {
 	return content
@@ -150,25 +168,36 @@ export async function loadTarget(
 			const diff = await exec("git", ["diff", "--cached", "--no-ext-diff", "--minimal"], cwd);
 			const content = truncateForReview(diff.stdout.trim());
 			if (!content) return null;
+			const focusedFiles = await listGitPaths(exec, cwd, ["diff", "--cached", "--name-only"]);
 			return {
 				targetName: "staged changes",
 				reviewScope: "staged",
 				scopeDescription: "Git diff of staged changes only.",
 				content,
+				gitHistoryContext: await loadGitHistoryContext(cwd, { exec, focusedFiles }),
 			};
 		}
 		case "uncommitted": {
-			return await loadUncommittedTarget(cwd, { exec, readTextFile: readTextFileImpl });
+			const target = await loadUncommittedTarget(cwd, { exec, readTextFile: readTextFileImpl });
+			if (!target) return null;
+			const focusedFiles = await listGitPaths(exec, cwd, ["diff", "--name-only", "HEAD"]);
+			const untrackedFiles = await listGitPaths(exec, cwd, ["ls-files", "--others", "--exclude-standard"]);
+			return {
+				...target,
+				gitHistoryContext: await loadGitHistoryContext(cwd, { exec, focusedFiles, untrackedFiles }),
+			};
 		}
 		case "range": {
 			const diff = await exec("git", ["diff", scope.value, "--no-ext-diff", "--minimal"], cwd);
 			const content = truncateForReview(diff.stdout.trim());
 			if (!content) return null;
+			const focusedFiles = await listGitPaths(exec, cwd, ["diff", "--name-only", scope.value]);
 			return {
 				targetName: `range ${scope.value}`,
 				reviewScope: `range ${scope.value}`,
 				scopeDescription: `Git diff for revision range ${scope.value}.`,
 				content,
+				gitHistoryContext: await loadGitHistoryContext(cwd, { exec, focusedFiles }),
 			};
 		}
 		case "commit": {
@@ -179,26 +208,35 @@ export async function loadTarget(
 			);
 			const content = truncateForReview(shown.stdout.trim());
 			if (!content) return null;
+			const focusedFiles = await listGitPaths(exec, cwd, ["show", "--format=", "--name-only", scope.value]);
 			return {
 				targetName: `commit ${scope.value}`,
 				reviewScope: `commit ${scope.value}`,
 				scopeDescription: `Single commit review for ${scope.value}, including commit metadata and patch.`,
 				content,
+				gitHistoryContext: await loadGitHistoryContext(cwd, { exec, focusedFiles }),
 			};
 		}
 		case "file": {
 			const root = await fs.realpath(cwd);
 			const filePath = await resolveReviewFilePath(root, scope.value);
 			const raw = await readTextFileImpl(filePath);
+			const relativePath = path.relative(root, filePath) || path.basename(filePath);
 			return {
-				targetName: path.relative(root, filePath) || path.basename(filePath),
+				targetName: relativePath,
 				reviewScope: `file ${scope.value}`,
 				scopeDescription: `Single file review for ${filePath}.`,
 				content: truncateForReview(raw),
+				gitHistoryContext: await loadGitHistoryContext(cwd, { exec, focusedFiles: [relativePath] }),
 			};
 		}
 		case "repo": {
-			return await loadRepoTarget(cwd, { exec, readTextFile: readTextFileImpl });
+			const target = await loadRepoTarget(cwd, { exec, readTextFile: readTextFileImpl });
+			if (!target) return null;
+			return {
+				...target,
+				gitHistoryContext: await loadGitHistoryContext(cwd, { exec, repoWide: true }),
+			};
 		}
 	}
 }
@@ -209,7 +247,7 @@ export async function loadRepoTarget(
 		exec,
 		readTextFile: readTextFileImpl = readTextFile,
 	}: { exec: CommandExecutor; readTextFile?: TextFileReader },
-): Promise<LoadedTarget | null> {
+): Promise<BaseLoadedTarget | null> {
 	const listed = await exec("git", ["ls-files"], cwd);
 	const files = listed.stdout
 		.split("\n")
@@ -270,7 +308,7 @@ export async function loadUncommittedTarget(
 		exec,
 		readTextFile: readTextFileImpl = readTextFile,
 	}: { exec: CommandExecutor; readTextFile?: TextFileReader },
-): Promise<LoadedTarget | null> {
+): Promise<BaseLoadedTarget | null> {
 	const diff = await exec("git", ["diff", "HEAD", "--no-ext-diff", "--minimal"], cwd);
 	const trackedDiff = diff.stdout.trim();
 
@@ -334,6 +372,132 @@ export async function loadUncommittedTarget(
 		scopeDescription: "Tracked changes against HEAD plus non-ignored untracked files.",
 		content: finalContent,
 	};
+}
+
+export async function loadGitHistoryContext(
+	cwd: string,
+	{
+		exec,
+		focusedFiles = [],
+		untrackedFiles = [],
+		repoWide = false,
+	}: {
+		exec: CommandExecutor;
+		focusedFiles?: string[];
+		untrackedFiles?: string[];
+		repoWide?: boolean;
+	},
+): Promise<string> {
+	const uniqueFocusedFiles = dedupeStrings(focusedFiles);
+	const uniqueUntrackedFiles = dedupeStrings(untrackedFiles);
+	const limitedFocusedFiles = uniqueFocusedFiles.slice(0, MAX_GIT_HISTORY_FILES);
+	const sections: string[] = [];
+
+	if (uniqueFocusedFiles.length > 0) {
+		sections.push(["Focused files in review scope:", ...formatBullets(uniqueFocusedFiles, MAX_GIT_HISTORY_FILES)].join("\n"));
+	}
+
+	if (uniqueUntrackedFiles.length > 0) {
+		sections.push(
+			[
+				"Untracked files in review scope (no git history yet):",
+				...formatBullets(uniqueUntrackedFiles, MAX_GIT_HISTORY_FILES),
+			].join("\n"),
+		);
+	}
+
+	let commits: GitHistoryCommit[] = [];
+	if (repoWide || limitedFocusedFiles.length > 0) {
+		try {
+			commits = await loadGitHistoryCommits(cwd, exec, repoWide ? [] : limitedFocusedFiles);
+		} catch {
+			commits = [];
+		}
+	}
+
+	if (commits.length > 0) {
+		sections.push(formatGitHistoryCommits(commits, { repoWide }));
+	} else if (repoWide || uniqueFocusedFiles.length > 0) {
+		sections.push("No relevant git history found for this review scope.");
+	}
+
+	if (sections.length === 0) return NO_GIT_HISTORY_CONTEXT;
+
+	return truncateToBudget(
+		sections.join("\n\n"),
+		MAX_GIT_HISTORY_CHARS,
+		`Git history context truncated to ${MAX_GIT_HISTORY_CHARS} characters.`,
+	);
+}
+
+async function loadGitHistoryCommits(
+	cwd: string,
+	exec: CommandExecutor,
+	focusedFiles: string[],
+): Promise<GitHistoryCommit[]> {
+	const args = [
+		"log",
+		"--no-merges",
+		`--format=${GIT_HISTORY_RECORD_SEPARATOR}%h${GIT_HISTORY_FIELD_SEPARATOR}%s`,
+		"--name-only",
+		"-n",
+		String(MAX_GIT_HISTORY_COMMITS),
+	];
+	if (focusedFiles.length > 0) args.push("--", ...focusedFiles);
+	const history = await exec("git", args, cwd);
+	return parseGitHistoryCommits(history.stdout, new Set(focusedFiles));
+}
+
+function parseGitHistoryCommits(raw: string, focusedFiles: ReadonlySet<string>): GitHistoryCommit[] {
+	return raw
+		.split(GIT_HISTORY_RECORD_SEPARATOR)
+		.map((chunk) => chunk.trim())
+		.filter(Boolean)
+		.map((chunk) => {
+			const [header = "", ...fileLines] = chunk.split("\n");
+			const [hash = "", subject = ""] = header.split(GIT_HISTORY_FIELD_SEPARATOR);
+			const touchedFiles = dedupeStrings(fileLines.map((line) => line.trim()).filter(Boolean));
+			return {
+				hash: hash.trim(),
+				subject: subject.trim(),
+				touchedFiles,
+				matchedFiles: touchedFiles.filter((file) => focusedFiles.has(file)),
+			};
+		})
+		.filter((commit) => commit.hash && commit.subject);
+}
+
+function formatGitHistoryCommits(commits: GitHistoryCommit[], { repoWide }: { repoWide: boolean }): string {
+	const lines = [repoWide ? "Repository-wide recent commits:" : "Recent related commits:"];
+	for (const commit of commits) {
+		lines.push(`- ${commit.hash} | ${commit.subject}`);
+		if (!repoWide && commit.matchedFiles.length > 0) {
+			lines.push("  matched current files:");
+			lines.push(...formatBullets(commit.matchedFiles, MAX_GIT_HISTORY_FILES_PER_COMMIT, "  "));
+		}
+		if (commit.touchedFiles.length > 0) {
+			lines.push("  touched files in commit:");
+			lines.push(...formatBullets(commit.touchedFiles, MAX_GIT_HISTORY_FILES_PER_COMMIT, "  "));
+		}
+	}
+	return lines.join("\n");
+}
+
+async function listGitPaths(exec: CommandExecutor, cwd: string, args: string[]): Promise<string[]> {
+	const result = await exec("git", args, cwd);
+	return dedupeStrings(result.stdout.split("\n").map((line) => line.trim()).filter(Boolean));
+}
+
+function dedupeStrings(values: string[]): string[] {
+	return Array.from(new Set(values.filter(Boolean)));
+}
+
+function formatBullets(items: string[], maxItems: number, indent = ""): string[] {
+	const lines = items.slice(0, maxItems).map((item) => `${indent}- ${item}`);
+	if (items.length > maxItems) {
+		lines.push(`${indent}- ...and ${items.length - maxItems} more`);
+	}
+	return lines;
 }
 
 async function resolveReviewFilePath(cwd: string, value: string): Promise<string> {

@@ -29,6 +29,7 @@ const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "docs", title: "Documentation", file: "docs-review.md" },
 	{ id: "technical-writing", title: "Technical Writing", file: "technical-writing-review.md" },
 	{ id: "whats-missing", title: "What's Missing", file: "whats-missing-review.md" },
+	{ id: "history", title: "History / Precedent", file: "history-review.md" },
 	{ id: "api", title: "API Design", file: "api-review.md" },
 	{ id: "naming", title: "Naming", file: "naming-review.md" },
 ];
@@ -112,6 +113,7 @@ export default function reviewOrchestrator(pi: ExtensionAPI) {
 					REVIEW_SCOPE: target.reviewScope,
 					SCOPE_DESCRIPTION: target.scopeDescription,
 					REVIEW_TARGET: target.content,
+					GIT_HISTORY_CONTEXT: target.gitHistoryContext,
 				};
 
 				let completedSubReviews = 0;
