@@ -1,7 +1,28 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+resolve_daemon_launcher() {
+  local configured_daemon repo_root repo_daemon
+
+  configured_daemon="${EMACS_HANDCRAFTED_DAEMON_LAUNCHER:-${HOME}/.local/bin/emacs-handcrafted-daemon}"
+  if [[ -x "${configured_daemon}" ]]; then
+    printf '%s\n' "${configured_daemon}"
+    return 0
+  fi
+
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  repo_daemon="${repo_root}/bin/emacs-handcrafted-daemon"
+  if [[ -x "${repo_daemon}" ]]; then
+    printf '%s\n' "${repo_daemon}"
+    return 0
+  fi
+
+  echo "No handcrafted daemon launcher found. Checked ${configured_daemon} and ${repo_daemon}." >&2
+  return 1
+}
+
+daemon_launcher="$(resolve_daemon_launcher)"
+log_file="${EMACS_HANDCRAFTED_LOG_FILE:-${HOME}/.emacs.d/var/handcrafted-daemon.log}"
 server_name="${EMACS_HANDCRAFTED_SERVER:-handcrafted}"
 emacsclient_bin="${EMACS_HANDCRAFTED_EMACSCLIENT_BIN:-${EMACSCLIENT:-}}"
 
@@ -35,7 +56,8 @@ fi
 
 if ! server_ready; then
   echo "Starting handcrafted Emacs daemon (${server_name}); first launch may take a while..." >&2
-  "${repo_root}/bin/emacs-handcrafted-daemon" >/dev/null 2>&1 &
+  mkdir -p "$(dirname "${log_file}")"
+  "${daemon_launcher}" >"${log_file}" 2>&1 &
 
   ready=0
   for _ in {1..600}; do
@@ -47,7 +69,7 @@ if ! server_ready; then
   done
 
   if [[ ${ready} -ne 1 ]]; then
-    echo "Failed to start or connect to the handcrafted Emacs server (${server_name})." >&2
+    echo "Failed to start or connect to the handcrafted Emacs server (${server_name}). See ${log_file}." >&2
     exit 1
   fi
 fi
