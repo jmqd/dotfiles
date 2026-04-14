@@ -20,6 +20,7 @@ in
   };
 
   home.file = {
+    ".emacs.d/handcrafted-loader.el".source = ../emacs/handcrafted-loader.el;
     ".emacs.d/early-init.el".source = ../emacs/early-init.el;
     ".emacs.d/init.el".source = ../emacs/init.el;
     ".emacs.d/lisp".source = ../emacs/lisp;

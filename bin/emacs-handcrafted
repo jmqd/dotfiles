@@ -1,8 +1,27 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-loader_file="${repo_root}/emacs/handcrafted-loader.el"
+resolve_loader_file() {
+  local configured_loader repo_root repo_loader
+
+  configured_loader="${EMACS_HANDCRAFTED_LOADER_FILE:-${HOME}/.emacs.d/handcrafted-loader.el}"
+  if [[ -f "${configured_loader}" ]]; then
+    printf '%s\n' "${configured_loader}"
+    return 0
+  fi
+
+  repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  repo_loader="${repo_root}/emacs/handcrafted-loader.el"
+  if [[ -f "${repo_loader}" ]]; then
+    printf '%s\n' "${repo_loader}"
+    return 0
+  fi
+
+  echo "No handcrafted loader found. Checked ${configured_loader} and ${repo_loader}." >&2
+  return 1
+}
+
+loader_file="$(resolve_loader_file)"
 emacs_bin="${EMACS_HANDCRAFTED_EMACS_BIN:-${EMACS:-}}"
 
 if [[ -z "${emacs_bin}" ]]; then
