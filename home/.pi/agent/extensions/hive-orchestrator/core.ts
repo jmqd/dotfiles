@@ -401,6 +401,7 @@ export function buildWorkerRunScript({
 	stderrPath = ".hive/worker-stderr.log",
 	exitCodePath = ".hive/worker-exit-code",
 	finishedAtPath = ".hive/worker-finished-at",
+	pidPath = ".hive/worker.pid",
 	runnerArgs = ["nix", "develop", "-c", "pi"],
 }: {
 	task: string;
@@ -411,12 +412,14 @@ export function buildWorkerRunScript({
 	stderrPath?: string;
 	exitCodePath?: string;
 	finishedAtPath?: string;
+	pidPath?: string;
 	runnerArgs?: string[];
 }): string {
 	const toolList = tools && tools.length > 0 ? tools.join(",") : undefined;
 	return [
 		"set -uo pipefail",
 		"mkdir -p .hive",
+		`trap 'rm -f ${shellQuote(pidPath)}' EXIT`,
 		`: > ${shellQuote(eventLogPath)}`,
 		`: > ${shellQuote(stderrPath)}`,
 		`: > ${shellQuote(exitCodePath)}`,
@@ -435,6 +438,7 @@ export function buildWorkerRunScript({
 		"fi",
 		`printf '%s\n' \"$status\" > ${shellQuote(exitCodePath)}`,
 		`date -u +%Y-%m-%dT%H:%M:%SZ > ${shellQuote(finishedAtPath)}`,
+		`rm -f ${shellQuote(pidPath)}`,
 		"exit \"$status\"",
 	].join("\n");
 }

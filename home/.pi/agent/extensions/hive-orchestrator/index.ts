@@ -288,13 +288,23 @@ async function resetHard(pi: ExtensionAPI, cwd: string, targetSha: string, signa
 	await execOrThrow(pi, "git", ["-C", cwd, "reset", "--hard", targetSha], cwd, signal, 30_000);
 }
 
+async function workerHasFinished(paths: ReturnType<typeof getWorkerPaths>): Promise<boolean> {
+	const [exitCodeRaw, finishedAtRaw] = await Promise.all([
+		fs.readFile(paths.exitCodeFile, "utf8").catch(() => ""),
+		fs.readFile(paths.finishedAtFile, "utf8").catch(() => ""),
+	]);
+	return exitCodeRaw.trim() !== "" || finishedAtRaw.trim() !== "";
+}
+
 async function isWorkerProcessRunning(
 	pi: ExtensionAPI,
 	hiveCommand: string,
 	repoRoot: string,
 	agent: string,
+	paths: ReturnType<typeof getWorkerPaths>,
 	signal?: AbortSignal,
 ): Promise<boolean> {
+	if (await workerHasFinished(paths)) return false;
 	const result = await pi.exec(
 		hiveCommand,
 		[
@@ -306,7 +316,8 @@ async function isWorkerProcessRunning(
 		],
 		{ cwd: repoRoot, signal, timeout: 5000 },
 	);
-	return result.code === 0;
+	if (result.code !== 0) return false;
+	return !(await workerHasFinished(paths));
 }
 
 async function readWorkerPromptTemplate() {
@@ -342,7 +353,7 @@ async function launchWorker(
 
 	await execOrThrow(pi, hiveCommand, ["up", "--repo", repoRoot, "--agents", String(agentOrdinal(agent))], repoRoot, signal, 60_000);
 
-	const wasRunning = await isWorkerProcessRunning(pi, hiveCommand, repoRoot, agent, signal);
+	const wasRunning = await isWorkerProcessRunning(pi, hiveCommand, repoRoot, agent, paths, signal);
 	if (wasRunning) {
 		throw new Error(`Worker ${agent} is already running. Poll it instead of launching a second run.`);
 	}
@@ -377,7 +388,7 @@ async function launchWorker(
 	const startScript = buildDetachedStartScript({ runScript });
 	const launchResult = await execOrThrow(pi, hiveCommand, ["exec", "--repo", repoRoot, agent, startScript], repoRoot, signal, 15_000);
 
-	const running = await isWorkerProcessRunning(pi, hiveCommand, repoRoot, agent, signal);
+	const running = await isWorkerProcessRunning(pi, hiveCommand, repoRoot, agent, paths, signal);
 	const snapshot = await loadWorkerSnapshot(paths, running);
 	return {
 		action: "launch",

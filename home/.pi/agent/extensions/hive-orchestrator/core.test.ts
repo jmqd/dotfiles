@@ -135,6 +135,8 @@ test("buildWorkerRunScript launches pi in json mode with captured logs", () => {
 	assert.match(script, /\.hive\/worker-events\.jsonl/);
 	assert.match(script, /\.hive\/worker-stderr\.log/);
 	assert.match(script, /worker-exit-code/);
+	assert.match(script, /trap 'rm -f '.hive\/worker\.pid'' EXIT/);
+	assert.match(script, /rm -f '.hive\/worker\.pid'/);
 });
 
 test("buildWorkerReviewScript performs a bounded no-tools diff review", () => {
