@@ -4,6 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    codex.url = "github:openai/codex?ref=rust-v0.120.0";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.3.5";
     notion-cli = {
       url = "github:lox/notion-cli/v0.5.0";
@@ -20,6 +21,7 @@
     {
       nixpkgs,
       flake-utils,
+      codex,
       googleworkspace-cli,
       notion-cli,
       trueflow,
@@ -89,6 +91,36 @@
         in
         pkgs.callPackage ./pkgs/pi { };
 
+      mkCodexPkg =
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+          cargoToml = builtins.fromTOML (builtins.readFile "${codex}/codex-rs/Cargo.toml");
+          version = cargoToml.workspace.package.version;
+          darwinWebrtc =
+            if system == "aarch64-darwin"
+            then
+              "${pkgs.fetchzip {
+                url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-arm64-release.zip";
+                hash = "sha256-EcwfNpYMoD8zf1ihsoYZJX0k/BewK3QHx7LjVADNbf0=";
+                stripRoot = false;
+              }}/mac-arm64-release"
+            else if system == "x86_64-darwin"
+            then
+              "${pkgs.fetchzip {
+                url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-x64-release.zip";
+                hash = "sha256-6ARl0EDCwX296hcLvDsEPOhOQ4qAhXGLfHF+Bn8fFII=";
+                stripRoot = false;
+              }}/mac-x64-release"
+            else null;
+        in
+        pkgs.callPackage ./pkgs/codex {
+          inherit version darwinWebrtc;
+          cargoHash = "sha256-VY97UmTju9p+0rjdHXPaIq7JWTebZCrFzzrxyIjxaOg=";
+          codexSrc = codex;
+          nixpkgsPath = pkgs.path;
+        };
+
       mkFlowPkg =
         system:
         let
@@ -103,6 +135,7 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          codexPkg = mkCodexPkg system;
           flowPkg = mkFlowPkg system;
         in
         {
@@ -110,6 +143,7 @@
         }:
         {
           home.packages = [
+            codexPkg
             flowPkg
             googleworkspaceCliPkg
             notionCliPkg
@@ -126,6 +160,7 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          codexPkg = mkCodexPkg system;
           flowPkg = mkFlowPkg system;
 
           shellScriptFiles = [
@@ -232,6 +267,7 @@
           };
 
           packages = {
+            codex = codexPkg;
             flow = flowPkg;
             notion-cli = notionCliPkg;
             pi = piPkg;
@@ -249,6 +285,10 @@
           };
 
           apps = {
+            codex = {
+              type = "app";
+              program = "${codexPkg}/bin/codex";
+            };
             flow = {
               type = "app";
               program = "${flowPkg}/bin/flow";
