@@ -5,360 +5,538 @@ HIVE_STATE="${HIVE_STATE:-${HOME}/.local/share/agent-hive}"
 HIVE_LABEL="agent-hive"
 HIVE_IMAGE="${HIVE_IMAGE:-nixos/nix}"
 HIVE_NIX_VOLUME="hive-nix-store"
+HIVE_BACKEND="${HIVE_BACKEND:-docker}"
 
-die() { echo "error: $*" >&2; exit 1; }
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+require_backend() {
+  case "$HIVE_BACKEND" in
+    docker|host) ;;
+    *) die "unsupported HIVE_BACKEND: $HIVE_BACKEND (expected docker or host)" ;;
+  esac
+}
 
 require_docker() {
   command -v docker >/dev/null 2>&1 || die "docker is not installed"
   docker info >/dev/null 2>&1 || die "docker daemon is not running"
 }
 
-# ---------------------------------------------------------------------------
-# Resolve a short agent id (e.g. "01") or full name (e.g. "agent-01").
-# ---------------------------------------------------------------------------
-agent_name() {
-  local input="$1"
-  if [[ "$input" == agent-* ]]; then
-    printf '%s' "$input"
+sha256_prefix() {
+  local value="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s' "$value" | sha256sum | awk '{print substr($1, 1, 16)}'
+  elif command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$value" | shasum -a 256 | awk '{print substr($1, 1, 16)}'
+  elif command -v openssl >/dev/null 2>&1; then
+    printf '%s' "$value" | openssl dgst -sha256 -r | awk '{print substr($1, 1, 16)}'
   else
-    printf 'agent-%s' "$input"
+    die "missing sha256 tool"
   fi
 }
 
+normalize_repo_root() {
+  local repo="$1"
+  [ -d "$repo/.git" ] || die "not a git repo: $repo"
+  (
+    cd "$repo"
+    pwd -P
+  )
+}
+
+repo_key_for_root() {
+  local repo_root="$1"
+  printf '%s-%s' "$(basename "$repo_root")" "$(sha256_prefix "$repo_root")"
+}
+
+agent_name() {
+  local input="${1:-}"
+  local digits=""
+  case "$input" in
+    agent-*) digits="${input#agent-}" ;;
+    *) digits="$input" ;;
+  esac
+  case "$digits" in
+    ''|*[!0-9]*) die "invalid agent id: $input" ;;
+  esac
+  local number
+  number=$((10#$digits))
+  [ "$number" -ge 1 ] || die "invalid agent id: $input"
+  printf 'agent-%02d' "$number"
+}
+
 container_name() {
-  local repo_slug="$1" agent="$2"
-  printf 'hive-%s-%s' "$repo_slug" "$agent"
+  local repo_key="$1"
+  local agent="$2"
+  printf 'hive-%s-%s' "$repo_key" "$agent"
 }
 
-repo_slug() {
-  basename "$1"
+worktree_dir() {
+  local repo_key="$1"
+  local agent="$2"
+  printf '%s/worktrees/%s/%s' "$HIVE_STATE" "$repo_key" "$agent"
 }
 
-# ---------------------------------------------------------------------------
-# hive up
-# ---------------------------------------------------------------------------
+log_file() {
+  local repo_key="$1"
+  local agent="$2"
+  printf '%s/logs/%s-%s.log' "$HIVE_STATE" "$repo_key" "$agent"
+}
+
+host_repo_dir() {
+  local repo_key="$1"
+  printf '%s/host/%s' "$HIVE_STATE" "$repo_key"
+}
+
+host_worktree_file() {
+  local repo_key="$1"
+  local agent="$2"
+  printf '%s/%s.worktree' "$(host_repo_dir "$repo_key")" "$agent"
+}
+
+host_pid_file() {
+  local repo_key="$1"
+  local agent="$2"
+  printf '%s/%s.pid' "$(host_repo_dir "$repo_key")" "$agent"
+}
+
+resolve_worktree_git_dir() {
+  local worktree="$1"
+  if [ -d "$worktree/.git" ]; then
+    printf '%s\n' "$worktree/.git"
+    return 0
+  fi
+  if [ -f "$worktree/.git" ]; then
+    local first_line git_dir
+    IFS= read -r first_line < "$worktree/.git" || true
+    case "$first_line" in
+      'gitdir: '*)
+        git_dir="${first_line#gitdir: }"
+        case "$git_dir" in
+          /*) printf '%s\n' "$git_dir" ;;
+          *) printf '%s\n' "$worktree/$git_dir" ;;
+        esac
+        return 0
+        ;;
+    esac
+  fi
+  return 1
+}
+
+ensure_worktree_excludes() {
+  local worktree="$1"
+  local git_dir exclude_file
+  git_dir="$(resolve_worktree_git_dir "$worktree")" || return 0
+  exclude_file="$git_dir/info/exclude"
+  mkdir -p "$(dirname "$exclude_file")"
+  if [ ! -f "$exclude_file" ] || ! grep -Fxq '.hive/' "$exclude_file"; then
+    printf '.hive/\n' >> "$exclude_file"
+  fi
+}
+
+remove_worktree() {
+  local repo_root="$1"
+  local worktree="$2"
+  [ -e "$worktree" ] || return 0
+  git -C "$repo_root" worktree remove --force "$worktree" >/dev/null 2>&1 || \
+    git -C "$worktree" worktree remove --force "$worktree" >/dev/null 2>&1 || \
+    die "failed to remove worktree: $worktree"
+}
+
+ensure_worktree() {
+  local repo_root="$1"
+  local repo_key="$2"
+  local agent="$3"
+  local worktree
+  worktree="$(worktree_dir "$repo_key" "$agent")"
+  mkdir -p "$(dirname "$worktree")"
+  if [ -e "$worktree" ]; then
+    remove_worktree "$repo_root" "$worktree"
+  fi
+  git -C "$repo_root" worktree add --detach "$worktree" HEAD >/dev/null
+  ensure_worktree_excludes "$worktree"
+  printf '%s\n' "$worktree"
+}
+
+container_exists() {
+  local repo_key="$1"
+  local agent="$2"
+  docker ps -q \
+    --filter "label=${HIVE_LABEL}" \
+    --filter "label=hive.repo=${repo_key}" \
+    --filter "label=hive.agent=${agent}" | grep -q .
+}
+
+parse_repo_flag() {
+  local repo=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --repo)
+        [ $# -ge 2 ] || die "--repo requires a path"
+        repo="$2"
+        shift 2
+        ;;
+      --repo=*)
+        repo="${1#--repo=}"
+        shift
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
+  [ -n "$repo" ] || die "--repo is required"
+  PARSED_REPO="$(normalize_repo_root "$repo")"
+  REMAINING_ARGS=("$@")
+}
+
+launch_host_command() {
+  local worktree="$1"
+  local log_path="$2"
+  local pid_path="$3"
+  local command="$4"
+  : > "$log_path"
+  (
+    cd "$worktree"
+    bash -lc "$command"
+  ) > "$log_path" 2>&1 &
+  printf '%s\n' "$!" > "$pid_path"
+}
+
+launch_docker_command() {
+  local container="$1"
+  local log_path="$2"
+  local command="$3"
+  : > "$log_path"
+  (
+    docker exec "$container" bash -lc "$command"
+  ) > "$log_path" 2>&1 &
+}
+
 cmd_up() {
-  local repo="" agents=1 cmd=""
+  local repo="" agents=1 cmd="" host_store_ro=0 hardened=0
 
   while [ $# -gt 0 ]; do
     case "$1" in
-      --repo)    [ $# -ge 2 ] || die "--repo requires a path"; repo="$2"; shift 2 ;;
-      --repo=*)  repo="${1#--repo=}"; shift ;;
-      --agents)  [ $# -ge 2 ] || die "--agents requires a number"; agents="$2"; shift 2 ;;
-      --agents=*) agents="${1#--agents=}"; shift ;;
-      --cmd)     [ $# -ge 2 ] || die "--cmd requires a command"; cmd="$2"; shift 2 ;;
-      --cmd=*)   cmd="${1#--cmd=}"; shift ;;
-      *) die "unknown flag: $1" ;;
+      --repo)
+        [ $# -ge 2 ] || die "--repo requires a path"
+        repo="$2"
+        shift 2
+        ;;
+      --repo=*)
+        repo="${1#--repo=}"
+        shift
+        ;;
+      --agents)
+        [ $# -ge 2 ] || die "--agents requires a number"
+        agents="$2"
+        shift 2
+        ;;
+      --agents=*)
+        agents="${1#--agents=}"
+        shift
+        ;;
+      --cmd)
+        [ $# -ge 2 ] || die "--cmd requires a command"
+        cmd="$2"
+        shift 2
+        ;;
+      --cmd=*)
+        cmd="${1#--cmd=}"
+        shift
+        ;;
+      --host-store-ro)
+        host_store_ro=1
+        shift
+        ;;
+      --hardened)
+        hardened=1
+        shift
+        ;;
+      *)
+        die "unknown flag: $1"
+        ;;
     esac
   done
 
   [ -n "$repo" ] || die "usage: hive up --repo <path> [--agents N] [--cmd \"...\"]"
-  [ -d "$repo/.git" ] || die "not a git repo: $repo"
-  repo="$(cd "$repo" && pwd)"
+  case "$agents" in
+    ''|*[!0-9]*) die "--agents must be a positive integer" ;;
+  esac
+  [ "$agents" -ge 1 ] || die "--agents must be >= 1"
 
-  local slug
-  slug="$(repo_slug "$repo")"
+  local repo_root repo_key
+  repo_root="$(normalize_repo_root "$repo")"
+  repo_key="$(repo_key_for_root "$repo_root")"
 
-  # Ensure shared Nix store volume exists.
-  docker volume inspect "$HIVE_NIX_VOLUME" >/dev/null 2>&1 \
-    || docker volume create "$HIVE_NIX_VOLUME" >/dev/null
+  mkdir -p "$HIVE_STATE/worktrees/$repo_key" "$HIVE_STATE/logs" "$(host_repo_dir "$repo_key")"
 
-  # Ensure state dirs exist.
-  mkdir -p "${HIVE_STATE}/worktrees/${slug}" "${HIVE_STATE}/logs"
+  if [ "$HIVE_BACKEND" = docker ]; then
+    require_docker
+    if [ "$host_store_ro" -eq 0 ]; then
+      docker volume inspect "$HIVE_NIX_VOLUME" >/dev/null 2>&1 || docker volume create "$HIVE_NIX_VOLUME" >/dev/null
+    fi
+  fi
 
   local i=1
   while [ "$i" -le "$agents" ]; do
-    local agent
+    local agent worktree log_path pid_path container
     agent="$(printf 'agent-%02d' "$i")"
-    local cname
-    cname="$(container_name "$slug" "$agent")"
-    local worktree="${HIVE_STATE}/worktrees/${slug}/${agent}"
+    worktree="$(worktree_dir "$repo_key" "$agent")"
+    log_path="$(log_file "$repo_key" "$agent")"
+    pid_path="$(host_pid_file "$repo_key" "$agent")"
+    container="$(container_name "$repo_key" "$agent")"
 
-    # Skip if already running.
-    if docker ps -q -f "name=^${cname}$" 2>/dev/null | grep -q .; then
-      echo "${agent}: already running"
-      i=$((i + 1))
-      continue
-    fi
+    case "$HIVE_BACKEND" in
+      docker)
+        if container_exists "$repo_key" "$agent"; then
+          : > "$log_path"
+          i=$((i + 1))
+          continue
+        fi
+        docker rm -f "$container" >/dev/null 2>&1 || true
+        worktree="$(ensure_worktree "$repo_root" "$repo_key" "$agent")"
 
-    # Clean up stopped container with same name.
-    docker rm -f "$cname" >/dev/null 2>&1 || true
+        local -a run_args
+        run_args=(
+          run -d
+          --name "$container"
+          --label "$HIVE_LABEL"
+          --label "hive.repo=${repo_key}"
+          --label "hive.agent=${agent}"
+          -v "$worktree:$worktree"
+          -v "$repo_root/.git:$repo_root/.git"
+          -w "$worktree"
+          -e "NIX_CONFIG=experimental-features = nix-command flakes"
+        )
+        if [ "$host_store_ro" -eq 1 ]; then
+          run_args+=(-v "/nix/store:/nix/store:ro")
+        else
+          run_args+=(-v "${HIVE_NIX_VOLUME}:/nix")
+        fi
+        if [ "$hardened" -eq 1 ]; then
+          run_args+=(--cap-drop=ALL --security-opt=no-new-privileges)
+        fi
+        run_args+=("$HIVE_IMAGE" sh -lc 'while :; do sleep 3600; done')
+        docker "${run_args[@]}" >/dev/null
 
-    # Create worktree.
-    if [ -d "$worktree" ]; then
-      git -C "$repo" worktree remove --force "$worktree" 2>/dev/null || true
-    fi
-    git -C "$repo" worktree add --detach "$worktree" HEAD
-
-    # Launch container.
-    docker run -d \
-      --name "$cname" \
-      --label "$HIVE_LABEL" \
-      --label "hive.repo=${slug}" \
-      --label "hive.agent=${agent}" \
-      -v "${worktree}:/work" \
-      -v "${HIVE_NIX_VOLUME}:/nix" \
-      -w /work \
-      -e "NIX_CONFIG=experimental-features = nix-command flakes" \
-      "$HIVE_IMAGE" \
-      sleep infinity >/dev/null
-
-    # Install tmux inside the container.
-    docker exec "$cname" nix profile install nixpkgs#tmux 2>/dev/null
-
-    echo "${agent}: started (${cname})"
-
-    # If --cmd was given, start it in a tmux session inside the container.
-    # The command is wrapped to write exit status to /work/.hive-exit on completion.
-    if [ -n "$cmd" ]; then
-      docker exec "$cname" rm -f /work/.hive-exit
-      docker exec -d "$cname" \
-        tmux new-session -d -s agent -x 200 -y 50 \
-          "cd /work && nix develop -c ${cmd}; echo \$? > /work/.hive-exit"
-      echo "${agent}: running in tmux session 'agent' (hive attach ${agent} to connect)"
-    fi
+        : > "$log_path"
+        if [ -n "$cmd" ]; then
+          launch_docker_command "$container" "$log_path" "$cmd"
+        fi
+        ;;
+      host)
+        if [ ! -f "$(host_worktree_file "$repo_key" "$agent")" ] || [ ! -d "$worktree" ]; then
+          worktree="$(ensure_worktree "$repo_root" "$repo_key" "$agent")"
+          printf '%s\n' "$worktree" > "$(host_worktree_file "$repo_key" "$agent")"
+        fi
+        : > "$log_path"
+        if [ -n "$cmd" ]; then
+          launch_host_command "$worktree" "$log_path" "$pid_path" "$cmd"
+        fi
+        ;;
+    esac
 
     i=$((i + 1))
   done
 }
 
-# ---------------------------------------------------------------------------
-# hive attach
-# ---------------------------------------------------------------------------
-cmd_attach() {
-  [ $# -ge 1 ] || die "usage: hive attach <agent-id> [--shell]"
-  require_docker
-
-  local agent shell_only=0
-  agent="$(agent_name "$1")"
-  shift
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --shell) shell_only=1; shift ;;
-      *) die "unknown flag: $1" ;;
-    esac
-  done
-
-  # Find the container.
-  local cname
-  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
-  [ -n "$cname" ] || die "no running hive container for ${agent}"
-
-  if [ "$shell_only" -eq 1 ]; then
-    exec docker exec -it "$cname" bash -l
-  fi
-
-  # Attach to tmux session if one exists, otherwise plain shell.
-  if docker exec "$cname" tmux has-session -t agent 2>/dev/null; then
-    exec docker exec -it "$cname" tmux attach-session -t agent
-  else
-    exec docker exec -it "$cname" bash -l
-  fi
-}
-
-# ---------------------------------------------------------------------------
-# hive ls
-# ---------------------------------------------------------------------------
 cmd_ls() {
-  require_docker
-  docker ps --filter "label=${HIVE_LABEL}" \
-    --format 'table {{.Names}}\t{{.Status}}\t{{.Label "hive.repo"}}\t{{.Label "hive.agent"}}'
+  parse_repo_flag "$@"
+  local repo_root repo_key
+  repo_root="$PARSED_REPO"
+  repo_key="$(repo_key_for_root "$repo_root")"
+
+  case "$HIVE_BACKEND" in
+    docker)
+      require_docker
+      docker ps \
+        --filter "label=${HIVE_LABEL}" \
+        --filter "label=hive.repo=${repo_key}" \
+        --format 'table {{.Names}}\t{{.Status}}\t{{.Label "hive.repo"}}\t{{.Label "hive.agent"}}'
+      ;;
+    host)
+      printf 'NAMES\tSTATUS\tREPO\tAGENT\n'
+      local host_dir
+      host_dir="$(host_repo_dir "$repo_key")"
+      if [ -d "$host_dir" ]; then
+        local file agent
+        for file in "$host_dir"/*.worktree; do
+          [ -e "$file" ] || continue
+          agent="$(basename "$file" .worktree)"
+          printf 'hive-%s-%s\t%s\t%s\t%s\n' "$repo_key" "$agent" 'Up' "$repo_key" "$agent"
+        done
+      fi
+      ;;
+  esac
 }
 
-# ---------------------------------------------------------------------------
-# hive logs
-# ---------------------------------------------------------------------------
-cmd_logs() {
-  [ $# -ge 1 ] || die "usage: hive logs <agent-id>"
-  require_docker
+cmd_exec() {
+  parse_repo_flag "$@"
+  set -- "${REMAINING_ARGS[@]}"
+  [ $# -ge 2 ] || die "usage: hive exec --repo <path> <agent-id> <command...>"
 
-  local agent
+  local repo_root repo_key agent command_string worktree container
+  repo_root="$PARSED_REPO"
+  repo_key="$(repo_key_for_root "$repo_root")"
+  agent="$(agent_name "$1")"
+  shift
+  command_string="$*"
+
+  case "$HIVE_BACKEND" in
+    docker)
+      require_docker
+      container="$(container_name "$repo_key" "$agent")"
+      local flags=()
+      if [ -t 0 ]; then
+        flags=(-it)
+      fi
+      docker exec "${flags[@]}" "$container" bash -lc "$command_string"
+      ;;
+    host)
+      worktree="$(worktree_dir "$repo_key" "$agent")"
+      [ -d "$worktree" ] || die "no hive worktree for ${agent} in repo ${repo_key}"
+      (
+        cd "$worktree"
+        bash -lc "$command_string"
+      )
+      ;;
+  esac
+}
+
+cmd_logs() {
+  parse_repo_flag "$@"
+  set -- "${REMAINING_ARGS[@]}"
+  [ $# -ge 1 ] || die "usage: hive logs --repo <path> <agent-id>"
+
+  local repo_root repo_key agent container
+  repo_root="$PARSED_REPO"
+  repo_key="$(repo_key_for_root "$repo_root")"
   agent="$(agent_name "$1")"
 
-  local cname
-  cname="$(docker ps -a --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
-  [ -n "$cname" ] || die "no hive container for ${agent}"
-
-  docker logs -f "$cname"
+  case "$HIVE_BACKEND" in
+    docker)
+      require_docker
+      container="$(container_name "$repo_key" "$agent")"
+      docker logs -f "$container"
+      ;;
+    host)
+      tail -f "$(log_file "$repo_key" "$agent")"
+      ;;
+  esac
 }
 
-# ---------------------------------------------------------------------------
-# hive down
-# ---------------------------------------------------------------------------
 cmd_down() {
-  require_docker
   local keep_worktrees=0
-
+  parse_repo_flag "$@"
+  set -- "${REMAINING_ARGS[@]}"
   while [ $# -gt 0 ]; do
     case "$1" in
-      --keep-worktrees) keep_worktrees=1; shift ;;
-      *) die "unknown flag: $1" ;;
+      --keep-worktrees)
+        keep_worktrees=1
+        shift
+        ;;
+      *)
+        die "unknown flag: $1"
+        ;;
     esac
   done
 
-  # Find all hive containers.
-  local containers
-  containers="$(docker ps -aq --filter "label=${HIVE_LABEL}")"
+  local repo_root repo_key
+  repo_root="$PARSED_REPO"
+  repo_key="$(repo_key_for_root "$repo_root")"
 
-  if [ -z "$containers" ]; then
-    echo "no hive containers running"
-    return
-  fi
-
-  # Collect worktree paths before stopping.
-  local worktrees=""
-  if [ "$keep_worktrees" -eq 0 ]; then
-    for cname in $(docker ps -a --filter "label=${HIVE_LABEL}" --format '{{.Names}}'); do
-      local repo_label agent_label
-      repo_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.repo"}}')"
-      agent_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.agent"}}')"
-      local wt="${HIVE_STATE}/worktrees/${repo_label}/${agent_label}"
-      if [ -d "$wt" ]; then
-        worktrees="${worktrees} ${wt}"
+  case "$HIVE_BACKEND" in
+    docker)
+      require_docker
+      local containers
+      containers="$(docker ps -aq --filter "label=${HIVE_LABEL}" --filter "label=hive.repo=${repo_key}")"
+      if [ -n "$containers" ]; then
+        printf '%s\n' "$containers" | xargs docker rm -f >/dev/null
       fi
-    done
-  fi
+      printf 'containers stopped for repo %s\n' "$repo_key"
+      ;;
+    host)
+      local host_dir pid_file pid
+      host_dir="$(host_repo_dir "$repo_key")"
+      if [ -d "$host_dir" ]; then
+        for pid_file in "$host_dir"/*.pid; do
+          [ -e "$pid_file" ] || continue
+          pid="$(cat "$pid_file" 2>/dev/null || true)"
+          if [ -n "$pid" ]; then
+            kill "$pid" >/dev/null 2>&1 || true
+          fi
+        done
+      fi
+      printf 'host agents stopped for repo %s\n' "$repo_key"
+      ;;
+  esac
 
-  # Stop and remove containers.
-  echo "$containers" | xargs docker rm -f >/dev/null
-  echo "containers stopped"
-
-  # Clean up worktrees.
-  if [ "$keep_worktrees" -eq 0 ] && [ -n "$worktrees" ]; then
-    for wt in $worktrees; do
-      git -C "$wt" worktree remove --force "$wt" 2>/dev/null || rm -rf "$wt"
-    done
-    echo "worktrees cleaned"
-  fi
-}
-
-# ---------------------------------------------------------------------------
-# hive exec
-# ---------------------------------------------------------------------------
-cmd_exec() {
-  [ $# -ge 2 ] || die "usage: hive exec <agent-id> <command...>"
-  require_docker
-
-  local agent
-  agent="$(agent_name "$1")"
-  shift
-
-  local cname
-  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
-  [ -n "$cname" ] || die "no running hive container for ${agent}"
-
-  # Use -it only when stdin is a tty.
-  local flags=""
-  if [ -t 0 ]; then
-    flags="-it"
-  fi
-  docker exec $flags "$cname" sh -c "$*"
-}
-
-# ---------------------------------------------------------------------------
-# hive wait — block until an agent's tmux session exits
-# ---------------------------------------------------------------------------
-cmd_wait() {
-  local wait_all=0
-  if [ $# -eq 0 ] || [ "$1" = "--all" ]; then
-    wait_all=1
-  fi
-  require_docker
-
-  if [ "$wait_all" -eq 1 ]; then
-    local agents
-    agents="$(docker ps --filter "label=${HIVE_LABEL}" --format '{{.Label "hive.agent"}}' | sort)"
-    [ -n "$agents" ] || die "no running hive containers"
-    for a in $agents; do
-      wait_for_agent "$a"
-    done
-  else
-    local agent
-    agent="$(agent_name "$1")"
-    wait_for_agent "$agent"
-  fi
-}
-
-wait_for_agent() {
-  local agent="$1"
-  local cname
-  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
-  [ -n "$cname" ] || die "no running hive container for ${agent}"
-
-  local repo_label
-  repo_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.repo"}}')"
-  local exit_file="${HIVE_STATE}/worktrees/${repo_label}/${agent}/.hive-exit"
-
-  echo "${agent}: waiting..."
-  while [ ! -f "$exit_file" ]; do
-    # Also bail if the container died.
-    if ! docker ps -q -f "name=^${cname}$" 2>/dev/null | grep -q .; then
-      echo "${agent}: container exited unexpectedly" >&2
-      return 1
+  if [ "$keep_worktrees" -eq 0 ]; then
+    local worktree_root worktree agent
+    worktree_root="$HIVE_STATE/worktrees/$repo_key"
+    if [ -d "$worktree_root" ]; then
+      for worktree in "$worktree_root"/*; do
+        [ -e "$worktree" ] || continue
+        remove_worktree "$repo_root" "$worktree"
+      done
     fi
-    sleep 2
-  done
-
-  local code
-  code="$(cat "$exit_file")"
-  if [ "$code" = "0" ]; then
-    echo "${agent}: done (exit 0)"
-  else
-    echo "${agent}: done (exit ${code})" >&2
+    printf 'worktrees cleaned for repo %s\n' "$repo_key"
   fi
-  return "$code"
+
+  local host_dir host_file
+  host_dir="$(host_repo_dir "$repo_key")"
+  if [ -d "$host_dir" ]; then
+    for host_file in "$host_dir"/*; do
+      [ -e "$host_file" ] || continue
+      : > "$host_file"
+      mv "$host_file" "$host_file.stopped"
+    done
+  fi
 }
 
-# ---------------------------------------------------------------------------
-# hive worktree — print the host worktree path for an agent
-# ---------------------------------------------------------------------------
 cmd_worktree() {
-  [ $# -ge 1 ] || die "usage: hive worktree <agent-id>"
-  require_docker
+  parse_repo_flag "$@"
+  set -- "${REMAINING_ARGS[@]}"
+  [ $# -ge 1 ] || die "usage: hive worktree --repo <path> <agent-id>"
 
-  local agent
+  local repo_root repo_key agent
+  repo_root="$PARSED_REPO"
+  repo_key="$(repo_key_for_root "$repo_root")"
   agent="$(agent_name "$1")"
-
-  local cname
-  cname="$(docker ps --filter "label=${HIVE_LABEL}" --filter "label=hive.agent=${agent}" --format '{{.Names}}' | head -1)"
-  [ -n "$cname" ] || die "no running hive container for ${agent}"
-
-  local repo_label
-  repo_label="$(docker inspect "$cname" --format '{{index .Config.Labels "hive.repo"}}')"
-  printf '%s\n' "${HIVE_STATE}/worktrees/${repo_label}/${agent}"
+  printf '%s\n' "$(worktree_dir "$repo_key" "$agent")"
 }
 
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 usage() {
   cat <<EOF
 usage: hive <command> [args]
 
+backend:
+  HIVE_BACKEND=docker|host (default: docker)
+
 commands:
-  up [--repo <path>] [--agents N] [--cmd "..."]   start agent containers
-  ls                                                list running agents
-  attach <agent-id> [--shell]                        attach to agent tmux session (--shell for plain bash)
-  exec <agent-id> <command>                         run a command in a container
-  wait <agent-id> | --all                           block until agent(s) finish
-  worktree <agent-id>                               print host worktree path
-  logs <agent-id>                                   tail container logs
-  down [--keep-worktrees]                           stop all and clean up
+  up --repo <path> [--agents N] [--cmd "..."] [--host-store-ro] [--hardened]
+  ls --repo <path>
+  exec --repo <path> <agent-id> <command...>
+  logs --repo <path> <agent-id>
+  down --repo <path> [--keep-worktrees]
+  worktree --repo <path> <agent-id>
 EOF
   exit 1
 }
 
+require_backend
 [ $# -ge 1 ] || usage
-require_docker
 
 case "$1" in
-  up)       shift; cmd_up "$@" ;;
-  ls)       shift; cmd_ls "$@" ;;
-  attach)   shift; cmd_attach "$@" ;;
-  exec)     shift; cmd_exec "$@" ;;
-  wait)     shift; cmd_wait "$@" ;;
+  up) shift; cmd_up "$@" ;;
+  ls) shift; cmd_ls "$@" ;;
+  exec) shift; cmd_exec "$@" ;;
+  logs) shift; cmd_logs "$@" ;;
+  down) shift; cmd_down "$@" ;;
   worktree) shift; cmd_worktree "$@" ;;
-  logs)     shift; cmd_logs "$@" ;;
-  down)     shift; cmd_down "$@" ;;
-  *)      usage ;;
+  *) usage ;;
 esac

@@ -6,6 +6,7 @@ import test from "node:test";
 import {
 	agentOrdinal,
 	buildDetachedStartScript,
+	buildWorkerReviewScript,
 	buildWorkerRunScript,
 	buildWorkerSystemPrompt,
 	createInitialWorkerStatus,
@@ -112,6 +113,8 @@ test("buildWorkerSystemPrompt strips frontmatter and appends launcher context", 
 	assert.match(prompt, /Assigned subtask: fix login/);
 	assert.match(prompt, /\.hive\/status\.json/);
 	assert.match(prompt, /\.hive\/worker-events\.jsonl/);
+	assert.match(prompt, /\.hive\/run-review\.sh/);
+	assert.match(prompt, /\.hive\/review-output\.md/);
 	assert.match(prompt, /just check/);
 	assert.match(prompt, /Prefer the smallest coherent patch/);
 });
@@ -123,14 +126,28 @@ test("buildWorkerRunScript launches pi in json mode with captured logs", () => {
 		tools: ["read", "bash", "edit", "write"],
 	});
 
-	assert.match(script, /nix' 'develop' '-c' 'pi'/);
-	assert.match(script, /'--mode' 'json' '-p' '--no-session'/);
-	assert.match(script, /'--append-system-prompt' '.hive\/worker-system-prompt\.md'/);
-	assert.match(script, /'--model' 'anthropic\/claude-sonnet-4-5'/);
-	assert.match(script, /'--tools' 'read,bash,edit,write'/);
+	assert.match(script, /command=\('nix' 'develop' '-c' 'pi'\)/);
+	assert.match(script, /command\+=\(--mode json -p --no-session\)/);
+	assert.match(script, /prompt_text="\$\(cat '.hive\/worker-system-prompt\.md'\)"/);
+	assert.match(script, /command\+=\(--append-system-prompt "\$prompt_text"\)/);
+	assert.match(script, /command\+=\(--model 'anthropic\/claude-sonnet-4-5'\)/);
+	assert.match(script, /command\+=\(--tools 'read,bash,edit,write'\)/);
 	assert.match(script, /\.hive\/worker-events\.jsonl/);
 	assert.match(script, /\.hive\/worker-stderr\.log/);
 	assert.match(script, /worker-exit-code/);
+});
+
+test("buildWorkerReviewScript performs a bounded no-tools diff review", () => {
+	const script = buildWorkerReviewScript();
+	assert.match(script, /git diff --no-ext-diff HEAD > '.hive\/review-diff\.patch'/);
+	assert.match(script, /'--no-extensions'/);
+	assert.match(script, /'--no-skills'/);
+	assert.match(script, /'--no-prompt-templates'/);
+	assert.match(script, /'--thinking' 'minimal'/);
+	assert.match(script, /'--no-tools'/);
+	assert.match(script, /'@\.hive\/review-diff\.patch'/);
+	assert.match(script, /Review only the attached git diff/);
+	assert.match(script, /cat '.hive\/review-output\.md'/);
 });
 
 test("buildDetachedStartScript backgrounds the worker and records its pid", () => {

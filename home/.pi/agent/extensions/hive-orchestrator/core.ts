@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -16,6 +16,9 @@ export type WorkerPaths = {
 	stderrFile: string;
 	launcherStdoutFile: string;
 	launcherStderrFile: string;
+	reviewScriptFile: string;
+	reviewOutputFile: string;
+	reviewDiffFile: string;
 	pidFile: string;
 	exitCodeFile: string;
 	finishedAtFile: string;
@@ -100,8 +103,17 @@ export function getHiveStateDir(homeDir = os.homedir(), env = process.env): stri
 	return env.HIVE_STATE || path.join(homeDir, ".local", "share", "agent-hive");
 }
 
+function canonicalRepoRoot(repoRoot: string): string {
+	const resolvedRepoRoot = path.resolve(repoRoot);
+	try {
+		return realpathSync.native(resolvedRepoRoot);
+	} catch {
+		return resolvedRepoRoot;
+	}
+}
+
 export function getRepoWorktreeKey(repoRoot: string): string {
-	const normalizedRepoRoot = path.resolve(repoRoot);
+	const normalizedRepoRoot = canonicalRepoRoot(repoRoot);
 	const repoSlug = path.basename(normalizedRepoRoot) || "repo";
 	const repoRootHash = createHash("sha256").update(normalizedRepoRoot).digest("hex").slice(0, 16);
 	return `${repoSlug}-${repoRootHash}`;
@@ -115,7 +127,7 @@ export function getWorkerPaths(
 		hiveStateDir = getHiveStateDir(homeDir),
 	}: { homeDir?: string; hiveStateDir?: string } = {},
 ): WorkerPaths {
-	const normalizedRepoRoot = path.resolve(repoRoot);
+	const normalizedRepoRoot = canonicalRepoRoot(repoRoot);
 	const repoSlug = path.basename(normalizedRepoRoot);
 	const repoWorktreeKey = getRepoWorktreeKey(normalizedRepoRoot);
 	const agent = normalizeAgentName(agentInput);
@@ -135,6 +147,9 @@ export function getWorkerPaths(
 		stderrFile: path.join(hiveDir, "worker-stderr.log"),
 		launcherStdoutFile: path.join(hiveDir, "worker-launcher.out"),
 		launcherStderrFile: path.join(hiveDir, "worker-launcher.err"),
+		reviewScriptFile: path.join(hiveDir, "run-review.sh"),
+		reviewOutputFile: path.join(hiveDir, "review-output.md"),
+		reviewDiffFile: path.join(hiveDir, "review-diff.patch"),
 		pidFile: path.join(hiveDir, "worker.pid"),
 		exitCodeFile: path.join(hiveDir, "worker-exit-code"),
 		finishedAtFile: path.join(hiveDir, "worker-finished-at"),
@@ -149,7 +164,7 @@ export function getCoordinatorPaths(
 		hiveStateDir = getHiveStateDir(homeDir),
 	}: { homeDir?: string; hiveStateDir?: string } = {},
 ): CoordinatorPaths {
-	const normalizedRepoRoot = path.resolve(repoRoot);
+	const normalizedRepoRoot = canonicalRepoRoot(repoRoot);
 	const repoSlug = path.basename(normalizedRepoRoot);
 	const repoWorktreeKey = getRepoWorktreeKey(normalizedRepoRoot);
 	const worktreeDir = path.join(hiveStateDir, "coordinators", repoWorktreeKey, coordinatorKey);
@@ -230,6 +245,7 @@ export function buildWorkerSystemPrompt(
 			"- Keep machine-readable status in `.hive/status.json`.",
 			"- The launcher captures the full pi JSON event stream in `.hive/worker-events.jsonl`.",
 			"- The launcher captures stderr in `.hive/worker-stderr.log`.",
+			"- For an independent bounded review pass, run `bash .hive/run-review.sh`; it reviews only the current git diff and writes `.hive/review-output.md`.",
 		].join("\n"),
 	);
 
@@ -397,20 +413,7 @@ export function buildWorkerRunScript({
 	finishedAtPath?: string;
 	runnerArgs?: string[];
 }): string {
-	const commandArgs = [
-		...runnerArgs,
-		"--mode",
-		"json",
-		"-p",
-		"--no-session",
-		"--append-system-prompt",
-		promptPath,
-	];
-	if (model) commandArgs.push("--model", model);
-	if (tools && tools.length > 0) commandArgs.push("--tools", tools.join(","));
-	commandArgs.push(`Task: ${task}`);
-
-	const command = shellJoin(commandArgs);
+	const toolList = tools && tools.length > 0 ? tools.join(",") : undefined;
 	return [
 		"set -uo pipefail",
 		"mkdir -p .hive",
@@ -418,7 +421,14 @@ export function buildWorkerRunScript({
 		`: > ${shellQuote(stderrPath)}`,
 		`: > ${shellQuote(exitCodePath)}`,
 		`: > ${shellQuote(finishedAtPath)}`,
-		`if ${command} > ${shellQuote(eventLogPath)} 2> ${shellQuote(stderrPath)}; then`,
+		`prompt_text="$(cat ${shellQuote(promptPath)})"`,
+		`command=(${shellJoin(runnerArgs)})`,
+		"command+=(--mode json -p --no-session)",
+		"command+=(--append-system-prompt \"$prompt_text\")",
+		...(model ? [`command+=(--model ${shellQuote(model)})`] : []),
+		...(toolList ? [`command+=(--tools ${shellQuote(toolList)})`] : []),
+		`command+=(${shellQuote(`Task: ${task}`)})`,
+		`if "\${command[@]}" > ${shellQuote(eventLogPath)} 2> ${shellQuote(stderrPath)}; then`,
 		"\tstatus=0",
 		"else",
 		"\tstatus=$?",
@@ -426,6 +436,42 @@ export function buildWorkerRunScript({
 		`printf '%s\n' \"$status\" > ${shellQuote(exitCodePath)}`,
 		`date -u +%Y-%m-%dT%H:%M:%SZ > ${shellQuote(finishedAtPath)}`,
 		"exit \"$status\"",
+	].join("\n");
+}
+
+export function buildWorkerReviewScript({
+	diffPath = ".hive/review-diff.patch",
+	outputPath = ".hive/review-output.md",
+	runnerArgs = ["pi"],
+}: {
+	diffPath?: string;
+	outputPath?: string;
+	runnerArgs?: string[];
+} = {}): string {
+	const reviewPrompt =
+		"Review only the attached git diff. Focus on correctness, requested scope, regression risk, and missing validation. Do not ask questions. Respond with exactly 'No issues found' if acceptable; otherwise return a terse bullet list of concrete issues.";
+	const reviewCommand = shellJoin([
+		...runnerArgs,
+		"--no-session",
+		"--no-extensions",
+		"--no-skills",
+		"--no-prompt-templates",
+		"--thinking",
+		"minimal",
+		"--no-tools",
+		`@${diffPath}`,
+		reviewPrompt,
+	]);
+	return [
+		"set -euo pipefail",
+		"mkdir -p .hive",
+		`git diff --no-ext-diff HEAD > ${shellQuote(diffPath)}`,
+		`if [ ! -s ${shellQuote(diffPath)} ]; then`,
+		`\tprintf 'No issues found\\n' > ${shellQuote(outputPath)}`,
+		"else",
+		`\t${reviewCommand} > ${shellQuote(outputPath)}`,
+		"fi",
+		`cat ${shellQuote(outputPath)}`,
 	].join("\n");
 }
 
@@ -470,6 +516,9 @@ export async function writeWorkerLaunchFiles(
 		fs.writeFile(paths.stderrFile, "", "utf8"),
 		fs.writeFile(paths.launcherStdoutFile, "", "utf8"),
 		fs.writeFile(paths.launcherStderrFile, "", "utf8"),
+		fs.writeFile(paths.reviewScriptFile, `${buildWorkerReviewScript()}\n`, "utf8"),
+		fs.writeFile(paths.reviewOutputFile, "", "utf8"),
+		fs.writeFile(paths.reviewDiffFile, "", "utf8"),
 		fs.writeFile(paths.pidFile, "", "utf8"),
 		fs.writeFile(paths.exitCodeFile, "", "utf8"),
 		fs.writeFile(paths.finishedAtFile, "", "utf8"),

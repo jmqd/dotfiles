@@ -255,7 +255,7 @@ function sanitizeBranchSegment(value: string): string {
 }
 
 function buildCoordinatorBranchName(repoRoot: string, sourceBranch: string, now: string): string {
-	const repoSlug = sanitizeBranchSegment(basename(path.resolve(repoRoot)) || "repo");
+	const repoSlug = sanitizeBranchSegment(basename(resolve(repoRoot)) || "repo");
 	const source = sanitizeBranchSegment(sourceBranch);
 	return `hive/${repoSlug}/${source}-${coordinatorTimestampToken(now)}`;
 }
@@ -302,8 +302,6 @@ async function isWorkerProcessRunning(
 			"--repo",
 			repoRoot,
 			agent,
-			"bash",
-			"-lc",
 			'pid="$(cat .hive/worker.pid 2>/dev/null || true)"; [ -n "$pid" ] && kill -0 "$pid"',
 		],
 		{ cwd: repoRoot, signal, timeout: 5000 },
@@ -377,14 +375,7 @@ async function launchWorker(
 		tools: params.tools,
 	});
 	const startScript = buildDetachedStartScript({ runScript });
-	const launchResult = await execOrThrow(
-		pi,
-		hiveCommand,
-		["exec", "--repo", repoRoot, agent, "bash", "-lc", startScript],
-		repoRoot,
-		signal,
-		15_000,
-	);
+	const launchResult = await execOrThrow(pi, hiveCommand, ["exec", "--repo", repoRoot, agent, startScript], repoRoot, signal, 15_000);
 
 	const running = await isWorkerProcessRunning(pi, hiveCommand, repoRoot, agent, signal);
 	const snapshot = await loadWorkerSnapshot(paths, running);

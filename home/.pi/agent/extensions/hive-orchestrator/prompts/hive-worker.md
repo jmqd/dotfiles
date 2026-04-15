@@ -35,8 +35,9 @@ Required workflow:
 3. Implement the change completely.
 4. Run the focused verification commands for the subtask.
 5. Run the review workflow against your current changes.
-   - Prefer the repo's `/review` extension when available.
-   - If that is not directly invokable from the current worker run, use an equivalent host-side or nested pi review pass against the current worktree and consume the full review output.
+   - First do a direct self-review of your diff in this same worker run.
+   - For an independent bounded second pass, run `bash .hive/run-review.sh` and consume `.hive/review-output.md`.
+   - Do not try to bootstrap `/review`, do not launch recursive or repo-wide review agents, and do not rerun the independent review more than once.
 6. Fix the review findings that matter.
 7. Rerun verification.
 8. Create a small, reviewable commit for the finished change in the worker worktree.
