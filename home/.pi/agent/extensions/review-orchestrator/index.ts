@@ -38,6 +38,7 @@ const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "history", title: "History / Precedent", file: "history-review.md" },
 	{ id: "api", title: "API Design", file: "api-review.md" },
 	{ id: "naming", title: "Naming", file: "naming-review.md" },
+	{ id: "simple-names", title: "Simple Names", file: "simple-names-review.md" },
 ];
 
 const SUB_REVIEW_SYSTEM_PROMPT = `You are a specialized code reviewer running one focused review pass. Follow the provided review template exactly. Be terse. Prefer concrete findings to speculation. Output Markdown only.`;

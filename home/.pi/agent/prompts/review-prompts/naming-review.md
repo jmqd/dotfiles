@@ -15,12 +15,16 @@ Focus on:
 
 Be terse. Prefer naming issues that affect correct understanding or safe use.
 
+Special rule:
+- Test names are allowed to be long and descriptive when that improves clarity and coverage-report usefulness. Do not flag test names for length alone.
+
 For each finding, include:
 - severity
 - location
 - current name or terminology
 - why it is misleading or weak
 - recommended alternative
+- for test-name findings, only report them when they are actually misleading, inconsistent, or hard to understand
 
 If there are no material findings, reply with: No material naming findings.
 
