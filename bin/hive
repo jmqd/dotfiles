@@ -20,9 +20,128 @@ require_backend() {
   esac
 }
 
+docker_ready() {
+  docker info >/dev/null 2>&1
+}
+
+docker_context_name() {
+  docker context show 2>/dev/null || true
+}
+
+docker_context_endpoint() {
+  local context="${1:-}"
+  [ -n "$context" ] || return 0
+  docker context inspect "$context" --format '{{ (index .Endpoints "docker").Host }}' 2>/dev/null || true
+}
+
+wait_for_docker() {
+  local timeout="${HIVE_DOCKER_START_TIMEOUT_SECONDS:-30}"
+  case "$timeout" in
+    ''|*[!0-9]*) timeout=30 ;;
+  esac
+  [ "$timeout" -ge 1 ] || timeout=1
+
+  local waited=0
+  while [ "$waited" -lt "$timeout" ]; do
+    if docker_ready; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  docker_ready
+}
+
+try_start_docker() {
+  local label="$1"
+  shift
+  printf 'info: hive starting docker runtime via %s\n' "$label" >&2
+  "$@" >/dev/null 2>&1
+}
+
+auto_start_docker() {
+  case "${HIVE_AUTO_START_DOCKER:-1}" in
+    0|false|FALSE|no|NO) return 1 ;;
+  esac
+
+  local context endpoint
+  context="$(docker_context_name)"
+  endpoint="$(docker_context_endpoint "$context")"
+
+  if [ -n "${HIVE_DOCKER_START_CMD:-}" ]; then
+    printf 'info: hive starting docker runtime via HIVE_DOCKER_START_CMD\n' >&2
+    bash -lc "$HIVE_DOCKER_START_CMD" >/dev/null 2>&1 || return 1
+    wait_for_docker
+    return $?
+  fi
+
+  if [ "$context" = "orbstack" ] || [[ "$endpoint" == *".orbstack/"* ]]; then
+    if command -v orbctl >/dev/null 2>&1 && try_start_docker "orbctl start" orbctl start && wait_for_docker; then
+      return 0
+    fi
+    case "${OSTYPE:-}" in
+      darwin*)
+        if command -v open >/dev/null 2>&1 && try_start_docker "open -ga OrbStack" open -ga OrbStack && wait_for_docker; then
+          return 0
+        fi
+        ;;
+    esac
+  fi
+
+  if [ "$context" = "colima" ] || [[ "$endpoint" == *".colima/"* ]]; then
+    if command -v colima >/dev/null 2>&1 && try_start_docker "colima start" colima start && wait_for_docker; then
+      return 0
+    fi
+  fi
+
+  case "${OSTYPE:-}" in
+    darwin*)
+      if command -v open >/dev/null 2>&1 && try_start_docker "open -ga Docker" open -ga Docker && wait_for_docker; then
+        return 0
+      fi
+      ;;
+  esac
+  if command -v orbctl >/dev/null 2>&1 && try_start_docker "orbctl start" orbctl start && wait_for_docker; then
+    return 0
+  fi
+  if command -v colima >/dev/null 2>&1 && try_start_docker "colima start" colima start && wait_for_docker; then
+    return 0
+  fi
+  case "${OSTYPE:-}" in
+    darwin*)
+      if command -v open >/dev/null 2>&1 && try_start_docker "open -ga OrbStack" open -ga OrbStack && wait_for_docker; then
+        return 0
+      fi
+      ;;
+  esac
+
+  return 1
+}
+
 require_docker() {
   command -v docker >/dev/null 2>&1 || die "docker is not installed"
-  docker info >/dev/null 2>&1 || die "docker daemon is not running"
+  docker_ready && return 0
+  auto_start_docker && return 0
+
+  local context endpoint details=""
+  context="$(docker_context_name)"
+  endpoint="$(docker_context_endpoint "$context")"
+  if [ -n "$context" ] || [ -n "$endpoint" ]; then
+    details=" ("
+    if [ -n "$context" ]; then
+      details="${details}context: $context"
+    fi
+    if [ -n "$endpoint" ]; then
+      details="${details}${context:+, }endpoint: $endpoint"
+    fi
+    details="${details})"
+  fi
+  case "${HIVE_AUTO_START_DOCKER:-1}" in
+    0|false|FALSE|no|NO)
+      die "docker daemon is not running${details}; auto-start disabled via HIVE_AUTO_START_DOCKER=0"
+      ;;
+  esac
+  die "docker daemon is not running${details}"
 }
 
 sha256_prefix() {
@@ -516,6 +635,9 @@ usage: hive <command> [args]
 
 backend:
   HIVE_BACKEND=docker|host (default: docker)
+  HIVE_AUTO_START_DOCKER=0|1 (default: 1)
+  HIVE_DOCKER_START_CMD='<command>' (optional override for daemon startup)
+  HIVE_DOCKER_START_TIMEOUT_SECONDS=N (default: 30)
 
 commands:
   up --repo <path> [--agents N] [--cmd "..."] [--host-store-ro] [--hardened]

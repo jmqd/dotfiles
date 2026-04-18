@@ -115,7 +115,42 @@ match_container() {
 
 case "${1:-}" in
 info)
+	if [ "${HIVE_FAKE_DOCKER_REQUIRES_START:-0}" = "1" ] && [ ! -f "$state_dir/docker-ready" ]; then
+		exit 1
+	fi
 	exit 0
+	;;
+context)
+	shift
+	case "${1:-}" in
+	show)
+		printf '%s\n' "${HIVE_FAKE_DOCKER_CONTEXT:-default}"
+		;;
+	inspect)
+		shift
+		context_name="$1"
+		shift
+		if [ "${1:-}" != "--format" ]; then
+			echo "unsupported fake docker context inspect invocation: $*" >&2
+			exit 1
+		fi
+		case "$context_name" in
+		orbstack)
+			printf '%s\n' "${HIVE_FAKE_DOCKER_ENDPOINT:-unix:///Users/test/.orbstack/run/docker.sock}"
+			;;
+		colima)
+			printf '%s\n' "${HIVE_FAKE_DOCKER_ENDPOINT:-unix:///Users/test/.colima/default/docker.sock}"
+			;;
+		*)
+			printf '%s\n' "${HIVE_FAKE_DOCKER_ENDPOINT:-unix:///var/run/docker.sock}"
+			;;
+		esac
+		;;
+	*)
+		echo "unsupported fake docker context invocation: $*" >&2
+		exit 1
+		;;
+	esac
 	;;
 volume)
 	shift
@@ -303,6 +338,33 @@ inspect)
 esac
 EOF
 chmod +x "$fake_bin/docker"
+
+cat >"$fake_bin/orbctl" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+state_dir="${HIVE_FAKE_STATE:?}"
+mkdir -p "$state_dir"
+
+case "${1:-}" in
+start)
+	printf 'start\n' >>"$state_dir/orbctl.log"
+	: >"$state_dir/docker-ready"
+	;;
+status)
+	if [ -f "$state_dir/docker-ready" ]; then
+		printf 'Running\n'
+	else
+		printf 'Stopped\n'
+	fi
+	;;
+*)
+	echo "unsupported fake orbctl invocation: $*" >&2
+	exit 1
+	;;
+esac
+EOF
+chmod +x "$fake_bin/orbctl"
 
 cat >"$fake_bin/tail" <<'EOF'
 #!/usr/bin/env bash
@@ -505,5 +567,19 @@ run_host_backend_smoke() {
 	assert_contains "$(cat "$state_dir/git.log")" "remove|$HIVE_STATE/worktrees/$repo_key/agent-02"
 }
 
+run_docker_autostart_smoke() {
+	setup_case docker-autostart
+
+	local repo_key up_output
+	repo_key="$(repo_key_for "$repo_dir")"
+	up_output="$(HIVE_FAKE_DOCKER_REQUIRES_START=1 HIVE_FAKE_DOCKER_CONTEXT=orbstack hive docker up --repo "$repo_dir" --agents 1 2>&1)"
+
+	assert_contains "$up_output" 'info: hive starting docker runtime via orbctl start'
+	assert_exists "$state_dir/docker-ready"
+	assert_contains "$(cat "$state_dir/orbctl.log")" 'start'
+	assert_exists "$HIVE_STATE/worktrees/$repo_key/agent-01/.git"
+}
+
 run_docker_backend_smoke
 run_host_backend_smoke
+run_docker_autostart_smoke
