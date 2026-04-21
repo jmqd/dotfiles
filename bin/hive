@@ -513,7 +513,11 @@ cmd_exec() {
       if [ -t 0 ]; then
         flags=(-it)
       fi
-      docker exec "${flags[@]}" "$container" bash -lc "$command_string"
+      if [ "${#flags[@]}" -gt 0 ]; then
+        docker exec "${flags[@]}" "$container" bash -lc "$command_string"
+      else
+        docker exec "$container" bash -lc "$command_string"
+      fi
       ;;
     host)
       worktree="$(worktree_dir "$repo_key" "$agent")"
