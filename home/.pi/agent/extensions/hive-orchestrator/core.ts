@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { promises as fs, realpathSync } from "node:fs";
 import os from "node:os";
-import path from "node:path";
+import * as path from "node:path";
 
 export type WorkerPaths = {
 	repoRoot: string;
