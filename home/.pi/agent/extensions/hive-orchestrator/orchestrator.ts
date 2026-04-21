@@ -1,5 +1,5 @@
 import { promises as fs } from "node:fs";
-import path from "node:path";
+import * as path from "node:path";
 import { getCoordinatorPaths, normalizeAgentName, type WorkerSnapshot } from "./core.ts";
 
 export const DEFAULT_ORCHESTRATOR_POLL_INTERVAL_SECONDS = 30;
