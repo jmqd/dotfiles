@@ -21,7 +21,20 @@
 (use-package org
   :ensure nil
   :config
-  (add-hook 'org-babel-after-execute-hook #'jmq/org-redisplay-inline-images))
+  (require 'ox-md)
+  (add-hook 'org-babel-after-execute-hook #'jmq/org-redisplay-inline-images)
+  (jmq/local-leader-keys
+    :keymaps 'org-mode-map
+    "e" '(:ignore t :which-key "export")
+    "ee" '(org-export-dispatch :which-key "dispatch")
+    "eh" '(org-html-export-to-html :which-key "html")
+    "el" '(org-latex-export-to-pdf :which-key "pdf")
+    "em" '(org-md-export-to-markdown :which-key "markdown")
+    "er" '(org-reveal-export-to-html :which-key "reveal.js")
+    "et" '(jmq/from-org-to-textile-buffer :which-key "jira/textile")))
+
+(use-package htmlize
+  :after org)
 
 (use-package ox-reveal
   :after org)
