@@ -66,6 +66,7 @@ in
       shfmt
       sqlite
       tealdeer
+      texlive.combined.scheme-full
       tree-sitter
       typescript-language-server
       unzip
