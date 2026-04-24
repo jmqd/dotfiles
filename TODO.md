@@ -11,6 +11,7 @@
 
 ## Emacs cleanup
 - [ ] Inventory any remaining `.doom.d/` assumptions and delete/archive stale Doom config if it is truly unused.
+- [ ] Periodically check whether nixpkgs applies the Tree-sitter 0.26 fix to `emacs-macport`, then remove the local override in `home/emacs.nix`.
 - [ ] Document handcrafted Emacs parity gaps only if they still matter in practice.
 
 ## Pi / review tooling
