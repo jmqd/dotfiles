@@ -27,7 +27,8 @@
 
   fonts.packages = with pkgs; [
     noto-fonts
-    noto-fonts-cjk-sans
+    noto-fonts-cjk-sans-static
+    noto-fonts-cjk-serif-static
     noto-fonts-color-emoji
     corefonts
     jetbrains-mono

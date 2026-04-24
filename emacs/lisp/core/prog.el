@@ -4,6 +4,8 @@
   :if (eq system-type 'darwin)
   :demand t
   :config
+  (dolist (var '("LANG" "LC_ALL" "LC_CTYPE" "OSFONTDIR"))
+    (add-to-list 'exec-path-from-shell-variables var))
   (exec-path-from-shell-initialize))
 
 (defun jmq/setup-corfu-navigation ()
