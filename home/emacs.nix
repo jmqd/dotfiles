@@ -1,10 +1,20 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
-  emacsPkg =
-    if pkgs.stdenv.hostPlatform.isDarwin then
-      pkgs.emacs-macport
-    else
-      pkgs.emacs;
+  emacsMacportTreeSitter026Patch =
+    pkgs.path + "/pkgs/applications/editors/emacs/tree-sitter-0.26.patch";
+  emacsMacport = pkgs.emacs-macport.overrideAttrs (old: {
+    patches = (old.patches or [ ]) ++ [
+      # Nixpkgs applies this Tree-sitter 0.26 fix to mainline Emacs 30.2,
+      # but not to emacs-macport 30.2.50 yet.
+      emacsMacportTreeSitter026Patch
+    ];
+  });
+  emacsPkg = if pkgs.stdenv.hostPlatform.isDarwin then emacsMacport else pkgs.emacs;
   handcraftedBinDir = "${config.home.homeDirectory}/.local/bin";
   handcraftedClient = "${handcraftedBinDir}/emacs-handcrafted-client";
   latexExportEnvironment = {
