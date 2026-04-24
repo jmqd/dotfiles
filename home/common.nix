@@ -22,6 +22,7 @@ in
 
   home.stateVersion = "25.05";
   programs.home-manager.enable = true;
+  fonts.fontconfig.enable = true;
 
   # Shared baseline tools available across platforms.
   home.packages =
@@ -53,6 +54,8 @@ in
       postgresql
       mise
       nil
+      noto-fonts-cjk-sans-static
+      noto-fonts-cjk-serif-static
       pandoc
       p7zip
       pkg-config
@@ -79,6 +82,15 @@ in
     ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (with pkgs; [
       gdb
     ]);
+
+  home.sessionVariables = {
+    LANG = "en_US.UTF-8";
+    LC_CTYPE = "en_US.UTF-8";
+    OSFONTDIR = lib.concatStringsSep ":" [
+      "${config.home.profileDirectory}/share/fonts/opentype/noto-cjk"
+      "${config.home.profileDirectory}/share/fonts/opentype/berkley-mono"
+    ];
+  };
 
   home.sessionPath = [
     "${config.home.homeDirectory}/.cargo/bin"

@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 let
   emacsPkg =
     if pkgs.stdenv.hostPlatform.isDarwin then
@@ -7,6 +7,11 @@ let
       pkgs.emacs;
   handcraftedBinDir = "${config.home.homeDirectory}/.local/bin";
   handcraftedClient = "${handcraftedBinDir}/emacs-handcrafted-client";
+  latexExportEnvironment = {
+    LANG = config.home.sessionVariables.LANG;
+    LC_CTYPE = config.home.sessionVariables.LC_CTYPE;
+    OSFONTDIR = config.home.sessionVariables.OSFONTDIR;
+  };
 in
 {
   programs.emacs = {
@@ -18,6 +23,9 @@ in
     enable = true;
     package = emacsPkg;
   };
+
+  launchd.agents.emacs.config.EnvironmentVariables =
+    lib.mkIf pkgs.stdenv.hostPlatform.isDarwin latexExportEnvironment;
 
   home.file = {
     ".emacs.d/handcrafted-loader.el".source = ../emacs/handcrafted-loader.el;
