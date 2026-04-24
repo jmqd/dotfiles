@@ -1,0 +1,6 @@
+[ai]
+enabled = true
+provider = "codex_cli"
+model = "auto"
+max_context_lines = 80
+cache = true

@@ -9,6 +9,7 @@
     ".local/bin/lint-secrets".source = ../bin/lint-secrets.sh;
     ".local/bin/setup-git-hooks".source = ../bin/setup-git-hooks.sh;
     ".sqliterc".source = ../.sqliterc;
+    "src/trueflow.toml".source = ../trueflow.toml;
 
     ".claude/CLAUDE.md".source = ./.pi/agent/AGENTS.md;
     ".claude/commands/caveman.md".source = ./.pi/agent/skills/caveman.md;
