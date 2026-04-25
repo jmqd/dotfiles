@@ -24,6 +24,11 @@ in
   programs.home-manager.enable = true;
   fonts.fontconfig.enable = true;
 
+  # Home Manager's generated option manpage currently triggers a Nix string-context
+  # warning via nixosOptionsDoc. Disable only that generated HM manpage; package
+  # manpages remain available.
+  manual.manpages.enable = false;
+
   # Shared baseline tools available across platforms.
   home.packages =
     (with pkgs; [
