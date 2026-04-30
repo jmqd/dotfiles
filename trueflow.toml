@@ -1,6 +1,6 @@
 [ai]
 enabled = true
 provider = "codex_cli"
-model = "gpt-5-mini"
+model = "auto"
 max_context_lines = 80
 cache = true
