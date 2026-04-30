@@ -1,10 +1,45 @@
 { config, lib, pkgs, ... }:
 let
+  # Keep expensive local-build packages out of the baseline switch path.
+  # Flip these to true on machines that explicitly want them.
+  enableMise = false;
+  enableTexliveOrgPdf = false;
+
   berkleyMono = pkgs.callPackage ../pkgs/berkley-mono { };
+  texliveOrgPdf = pkgs.texlive.combine {
+    # Enough for normal Org LaTeX/PDF export, latexmk workflows, and CJK
+    # documents via LuaLaTeX/XeLaTeX without pulling in scheme-full's multi-GB
+    # closure.
+    inherit (pkgs.texlive)
+      scheme-small
+      latexmk
+      collection-luatex
+      collection-xetex
+      collection-langcjk
+      fontspec
+      unicode-math
+      xecjk
+      ctex
+      luatexja
+      ;
+  };
   aspellWithDicts = pkgs.aspellWithDicts (dicts: [
     dicts.en
     dicts."en-computers"
   ]);
+  misePackage =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      (pkgs.mise.override {
+        # Keep mise from pulling in a second, default direnv build whose tests
+        # can hang on Darwin. Reuse the Home Manager direnv package instead.
+        direnv = config.programs.direnv.package;
+      }).overrideAttrs
+        (_old: {
+          # Avoid a long Rust test phase for this locally rebuilt package.
+          doCheck = false;
+        })
+    else
+      pkgs.mise;
 in
 {
   imports = [
@@ -57,7 +92,6 @@ in
       languagetool
       lldb
       postgresql
-      mise
       nil
       noto-fonts-cjk-sans-static
       noto-fonts-cjk-serif-static
@@ -74,7 +108,6 @@ in
       shfmt
       sqlite
       tealdeer
-      texlive.combined.scheme-full
       tree-sitter
       typescript-language-server
       unzip
@@ -84,6 +117,8 @@ in
       zls
       zola
     ])
+    ++ lib.optionals enableMise [ misePackage ]
+    ++ lib.optionals enableTexliveOrgPdf [ texliveOrgPdf ]
     ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (with pkgs; [
       gdb
     ]);
