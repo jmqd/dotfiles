@@ -5,8 +5,10 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 backup_ext="${HM_BACKUP_EXT:-hm-backup}"
 current_user="${HM_USER:-${USER:-$(id -un)}}"
 refresh_home_manager="${HM_REFRESH:-0}"
+print_build_logs="${HM_PRINT_BUILD_LOGS:-0}"
+verbose_home_manager="${HM_VERBOSE:-0}"
 os_name="$(uname -s)"
-readonly repo_root backup_ext current_user refresh_home_manager os_name
+readonly repo_root backup_ext current_user refresh_home_manager print_build_logs verbose_home_manager os_name
 
 refuse_on_nixos_standalone_home_manager() {
 	if [[ "$os_name" != "Linux" ]] || [[ ! -r /etc/os-release ]]; then
@@ -139,7 +141,18 @@ if [[ "$refresh_home_manager" == "1" ]]; then
 	home_manager_cmd+=(--refresh)
 fi
 
-home_manager_cmd+=(github:nix-community/home-manager -- switch)
+# Use this flake's locked Home Manager input instead of the moving GitHub ref.
+home_manager_cmd+=("${repo_root}#home-manager" --)
+
+if [[ "$print_build_logs" == "1" ]]; then
+	home_manager_cmd+=(--print-build-logs)
+fi
+
+if [[ "$verbose_home_manager" == "1" ]]; then
+	home_manager_cmd+=(--verbose)
+fi
+
+home_manager_cmd+=(switch)
 
 if [[ "$os_name" == "Darwin" ]]; then
 	home_manager_cmd+=(--impure --flake "$flake_ref" -b "$backup_ext" "$@")

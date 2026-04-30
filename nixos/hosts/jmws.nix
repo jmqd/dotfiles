@@ -1,4 +1,25 @@
 { config, pkgs, ... }:
+let
+  enableTexliveOrgPdf = false;
+
+  texliveOrgPdf = pkgs.texlive.combine {
+    # Enough for normal Org LaTeX/PDF export, latexmk workflows, and CJK
+    # documents via LuaLaTeX/XeLaTeX without pulling in scheme-full's multi-GB
+    # closure.
+    inherit (pkgs.texlive)
+      scheme-small
+      latexmk
+      collection-luatex
+      collection-xetex
+      collection-langcjk
+      fontspec
+      unicode-math
+      xecjk
+      ctex
+      luatexja
+      ;
+  };
+in
 {
   imports = [
     ../hardware-configuration.nix
@@ -94,7 +115,8 @@
     shell = pkgs.zsh;
   };
 
-  environment.systemPackages = with pkgs; [
+  environment.systemPackages =
+    (with pkgs; [
     # system admin / linux core
     doas
     lshw
@@ -119,7 +141,6 @@
     offlineimap
     bandwhich
     lemmeknow
-    texlive.combined.scheme-full
     terraform
 
     # wine and gaming deps
@@ -177,7 +198,8 @@
     ))
     # others
     languagetool
-  ];
+  ])
+  ++ (if enableTexliveOrgPdf then [ texliveOrgPdf ] else [ ]);
 
   programs.nix-ld.enable = true;
   programs.nix-ld.libraries = with pkgs; [

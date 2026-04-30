@@ -269,6 +269,7 @@
           packages = {
             codex = codexPkg;
             flow = flowPkg;
+            home-manager = home-manager.packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             pi = piPkg;
             secrets-lint = secretsLint;
@@ -292,6 +293,10 @@
             flow = {
               type = "app";
               program = "${flowPkg}/bin/flow";
+            };
+            home-manager = {
+              type = "app";
+              program = "${home-manager.packages.${system}.home-manager}/bin/home-manager";
             };
             pi = {
               type = "app";
