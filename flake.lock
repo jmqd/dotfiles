@@ -141,11 +141,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1777518431,
-        "narHash": "sha256-SwgiG2T5pbyo33Vz7/vUCAhEMgwCK8Pa2nDSx5a6/WE=",
+        "lastModified": 1777594677,
+        "narHash": "sha256-h90sHwoRJLRvaTpZroTvU2JRHDFj0czUafM8eqLe1RI=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "2e54a938cdd4c8e414b2518edc3d82308027c670",
+        "rev": "899c08a15beae5da51a5cecd6b2b994777a948da",
         "type": "github"
       },
       "original": {
@@ -356,11 +356,11 @@
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
-        "lastModified": 1777572931,
-        "narHash": "sha256-/hdrWYgzW8tG2heA2KXfwxWCy2jhKMd3Jm2+yeWSnsU=",
+        "lastModified": 1777608306,
+        "narHash": "sha256-9fKRNRxRNn9if9YtCa9ofenDIZjM9HzhfHCAGbZpVnM=",
         "owner": "trueflow-dev",
         "repo": "trueflow",
-        "rev": "c20963bfbaa6c72ccd694394beaaad3a2cb9e8bb",
+        "rev": "f4b6084c0fa2a81393c0e888a8e2695f3dabcabe",
         "type": "github"
       },
       "original": {
