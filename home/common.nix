@@ -74,6 +74,7 @@ in
       basedpyright
       bottom
       broot
+      claude-code
       clang-tools
       cloc
       cmake
