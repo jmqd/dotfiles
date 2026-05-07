@@ -51,6 +51,7 @@ in
     ./git.nix
     ./ssh.nix
     ./tmux.nix
+    ./trueflow.nix
     ./wezterm.nix
     ./zsh.nix
   ];
