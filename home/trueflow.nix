@@ -48,7 +48,7 @@ in
     };
   };
 
-  config.home.file."src/trueflow.toml".source = tomlFormat.generate "trueflow.toml" {
+  config.home.file.".trueflow.toml".source = tomlFormat.generate "trueflow.toml" {
     ai = {
       inherit (cfg.ai)
         enabled
