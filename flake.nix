@@ -331,7 +331,8 @@
           ] ++ extraModules;
         };
 
-      mkMacosHome = system:
+      mkMacosHome =
+        { system, extraModules ? [ ] }:
         let
           bootstrapUser =
             let
@@ -360,7 +361,7 @@
               home.username = nixpkgs.lib.mkForce bootstrapUser;
               home.homeDirectory = nixpkgs.lib.mkForce bootstrapHome;
             }
-          ];
+          ] ++ extraModules;
         };
 
       mkNixosHost =
@@ -393,8 +394,16 @@
     perSystem
     // {
       homeConfigurations = {
-        "macos-aarch64" = mkMacosHome "aarch64-darwin";
-        "macos-x86_64" = mkMacosHome "x86_64-darwin";
+        "macos-aarch64" = mkMacosHome { system = "aarch64-darwin"; };
+        "macos-x86_64" = mkMacosHome { system = "x86_64-darwin"; };
+        "work-macos-aarch64" = mkMacosHome {
+          system = "aarch64-darwin";
+          extraModules = [ ./home/hosts/work-macos.nix ];
+        };
+        "work-macos-x86_64" = mkMacosHome {
+          system = "x86_64-darwin";
+          extraModules = [ ./home/hosts/work-macos.nix ];
+        };
         "linux-aarch64" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
