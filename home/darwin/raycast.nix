@@ -1,6 +1,6 @@
 { config, lib, pkgs, ... }:
 let
-  raycastExecutable = "${pkgs.raycast}/Applications/Raycast.app/Contents/MacOS/Raycast";
+  raycastApp = "${pkgs.raycast}/Applications/Raycast.app";
 in
 {
   home.packages = [ pkgs.raycast ];
@@ -8,8 +8,11 @@ in
   launchd.agents.raycast = {
     enable = true;
     config = {
-      Program = raycastExecutable;
-      KeepAlive = true;
+      ProgramArguments = [
+        "/usr/bin/open"
+        "-gj"
+        raycastApp
+      ];
       RunAtLoad = true;
       StandardOutPath = "/tmp/raycast.log";
       StandardErrorPath = "/tmp/raycast.err.log";
