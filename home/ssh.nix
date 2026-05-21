@@ -3,26 +3,25 @@
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
-    matchBlocks = {
+    settings = {
       "*" = {
-        forwardAgent = false;
-        addKeysToAgent = "no";
-        compression = false;
-        serverAliveInterval = 0;
-        serverAliveCountMax = 3;
-        hashKnownHosts = false;
-        userKnownHostsFile = "~/.ssh/known_hosts";
-        controlMaster = "no";
-        controlPath = "~/.ssh/master-%r@%n:%p";
-        controlPersist = "no";
+        ForwardAgent = "no";
+        AddKeysToAgent = "no";
+        Compression = "no";
+        ServerAliveInterval = 0;
+        ServerAliveCountMax = 3;
+        HashKnownHosts = "no";
+        UserKnownHostsFile = "~/.ssh/known_hosts";
+        ControlMaster = "no";
+        ControlPath = "~/.ssh/master-%r@%n:%p";
+        ControlPersist = "no";
       };
 
       "github.com" = {
-        addKeysToAgent = "yes";
-        identityFile = [ "~/.ssh/id_ed25519" ];
-        extraOptions = lib.optionalAttrs pkgs.stdenv.isDarwin {
-          UseKeychain = "yes";
-        };
+        AddKeysToAgent = "yes";
+        IdentityFile = [ "~/.ssh/id_ed25519" ];
+      } // lib.optionalAttrs pkgs.stdenv.isDarwin {
+        UseKeychain = "yes";
       };
     };
   };
