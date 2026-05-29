@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   # Keep expensive local-build packages out of the baseline switch path.
   # Flip these to true on machines that explicitly want them.
@@ -52,6 +57,7 @@ in
     ./ssh.nix
     ./tmux.nix
     ./trueflow.nix
+    ./yubikey.nix
     ./wezterm.nix
     ./zsh.nix
   ];
@@ -59,6 +65,10 @@ in
   home.stateVersion = "25.05";
   programs.home-manager.enable = true;
   fonts.fontconfig.enable = true;
+  jmq.yubikey = {
+    enable = true;
+    otp.longPressOnly.enforceOnActivation = true;
+  };
 
   # Home Manager's generated option manpage currently triggers a Nix string-context
   # warning via nixosOptionsDoc. Disable only that generated HM manpage; package
@@ -121,9 +131,12 @@ in
     ])
     ++ lib.optionals enableMise [ misePackage ]
     ++ lib.optionals enableTexliveOrgPdf [ texliveOrgPdf ]
-    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (with pkgs; [
-      gdb
-    ]);
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+      with pkgs;
+      [
+        gdb
+      ]
+    );
 
   home.sessionVariables = {
     LANG = "en_US.UTF-8";
