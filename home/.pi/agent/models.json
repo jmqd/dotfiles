@@ -2,7 +2,7 @@
   "providers": {
     "openai-codex": {
       "baseUrl": "https://chatgpt.com/backend-api",
-      "apiKey": "OPENAI_API_KEY",
+      "apiKey": "$OPENAI_API_KEY",
       "api": "openai-codex-responses",
       "models": [
         {
@@ -31,7 +31,7 @@
     },
     "openai-direct": {
       "baseUrl": "https://api.openai.com/v1",
-      "apiKey": "OPENAI_API_KEY",
+      "apiKey": "$OPENAI_API_KEY",
       "api": "openai-responses",
       "models": [
         {
