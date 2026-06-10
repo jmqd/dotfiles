@@ -91,6 +91,17 @@
         in
         pkgs.callPackage ./pkgs/pi { };
 
+      # Manually pinned claude-code (nixpkgs lags behind upstream releases).
+      mkClaudeCodePkg =
+        system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+          };
+        in
+        pkgs.callPackage ./pkgs/claude-code { };
+
       mkCodexPkg =
         system:
         let
@@ -135,6 +146,7 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          claudeCodePkg = mkClaudeCodePkg system;
           codexPkg = mkCodexPkg system;
           flowPkg = mkFlowPkg system;
         in
@@ -143,6 +155,7 @@
         }:
         {
           home.packages = [
+            claudeCodePkg
             codexPkg
             flowPkg
             googleworkspaceCliPkg
@@ -160,6 +173,7 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          claudeCodePkg = mkClaudeCodePkg system;
           codexPkg = mkCodexPkg system;
           flowPkg = mkFlowPkg system;
 
@@ -267,6 +281,7 @@
           };
 
           packages = {
+            claude-code = claudeCodePkg;
             codex = codexPkg;
             flow = flowPkg;
             home-manager = home-manager.packages.${system}.home-manager;
@@ -286,6 +301,10 @@
           };
 
           apps = {
+            claude-code = {
+              type = "app";
+              program = "${claudeCodePkg}/bin/claude";
+            };
             codex = {
               type = "app";
               program = "${codexPkg}/bin/codex";

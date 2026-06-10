@@ -84,7 +84,9 @@ in
       basedpyright
       bottom
       broot
-      claude-code
+      # claude-code is provided by the manually pinned package in flake.nix
+      # (mkClaudeCodePkg / pkgs/claude-code), which tracks upstream ahead of
+      # nixpkgs. See home.packages wired in via mkHomePackagesModule.
       clang-tools
       cloc
       cmake
