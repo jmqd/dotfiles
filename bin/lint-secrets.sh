@@ -20,10 +20,7 @@ if command -v nix >/dev/null 2>&1 && [ -f "$repo_root/flake.nix" ]; then
 	tmp_cache_dir="$(mktemp -d)"
 	trap 'rm -rf "$tmp_cache_dir"' EXIT
 
-	if XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command bash -lc '
-    set -euo pipefail
-    gitleaks dir --redact --exit-code 1 --no-banner .
-  '; then
+	if GITLEAKS_CONFIG="$repo_root/.gitleaks.toml" XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command gitleaks dir --redact --exit-code 1 --no-banner .; then
 		exit 0
 	fi
 
