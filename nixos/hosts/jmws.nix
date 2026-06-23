@@ -64,11 +64,20 @@ in
     }
   ];
 
-  services.openssh.enable = true;
+  services.openssh = {
+    enable = true;
+    openFirewall = false;
+    settings = {
+      PasswordAuthentication = false;
+      KbdInteractiveAuthentication = false;
+      PermitRootLogin = "no";
+    };
+  };
   services.tailscale = {
     enable = true;
     useRoutingFeatures = "both";
   };
+  networking.firewall.trustedInterfaces = [ "tailscale0" ];
   services.timesyncd.enable = true;
 
   services.displayManager.defaultSession = "none+i3";
