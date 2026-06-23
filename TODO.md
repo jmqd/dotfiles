@@ -17,6 +17,7 @@
 ## Pi / review tooling
 - [ ] Decide whether to add opinionated pi style defaults beyond the current agent config.
 - [ ] Consider a small smoke-test path for the `/review` extension beyond the current unit tests.
+- [ ] Get deeply familiar with ast-grep and dylint, then integrate deterministic AST-aware linting and rewrites into daily workflows.
 
 ## Hive follow-ups
 - [ ] Decide whether hive should move from live-repo worktrees to a local bare mirror.
