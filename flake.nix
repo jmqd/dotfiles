@@ -139,6 +139,16 @@
           nixpkgsPath = pkgs.path;
         };
 
+      mkCodexDesktopPkg =
+        system:
+        let
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+          };
+        in
+        pkgs.callPackage ./pkgs/codex-desktop { };
+
       mkFlowPkg =
         system:
         let
@@ -156,9 +166,12 @@
           oraclePkg = mkOraclePkg system;
           claudeCodePkg = mkClaudeCodePkg system;
           codexPkg = mkCodexPkg system;
+          codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
         in
         {
+          lib,
+          pkgs,
           ...
         }:
         {
@@ -171,7 +184,7 @@
             oraclePkg
             piPkg
             trueflowPkg
-          ];
+          ] ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
         };
 
       perSystem = flake-utils.lib.eachDefaultSystem (
@@ -185,6 +198,7 @@
           oraclePkg = mkOraclePkg system;
           claudeCodePkg = mkClaudeCodePkg system;
           codexPkg = mkCodexPkg system;
+          codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
 
           shellScriptFiles = [
@@ -299,6 +313,9 @@
             oracle = oraclePkg;
             pi = piPkg;
             secrets-lint = secretsLint;
+          }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+            codex-desktop = codexDesktopPkg;
           };
 
           checks = {
@@ -343,6 +360,12 @@
             secrets-lint = {
               type = "app";
               program = "${secretsLint}/bin/secrets-lint";
+            };
+          }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+            codex-desktop = {
+              type = "app";
+              program = "${codexDesktopPkg}/Applications/Codex.app/Contents/MacOS/Codex";
             };
           };
         }
@@ -390,6 +413,7 @@
             allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [
               "berkley-mono"
               "claude-code"
+              "codex-desktop"
               "orbstack"
               "raycast"
               "spotify"
