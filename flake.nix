@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    codex.url = "github:openai/codex?ref=rust-v0.140.0";
+    codex.url = "github:openai/codex?ref=rust-v0.142.0";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.3.5";
     notion-cli = {
       url = "github:lox/notion-cli/v0.5.0";
@@ -134,7 +134,7 @@
         in
         pkgs.callPackage ./pkgs/codex {
           inherit version darwinWebrtc;
-          cargoHash = "sha256-8nvIfbq2EKqbF4fyzB5wakQilV4NU5S2wSXJk1KGnB0=";
+          cargoHash = "sha256-fvEFNE12J6zaLZrN6oQB8X+jXoKPSCWrL17Sl28+7/c=";
           codexSrc = codex;
           nixpkgsPath = pkgs.path;
         };
