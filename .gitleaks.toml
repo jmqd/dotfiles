@@ -1,0 +1,21 @@
+title = "dotfiles gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Ignored local cache and build output paths"
+paths = [
+  '''(^|/)emacs/var/''',
+  '''(^|/)emacs/eln-cache/''',
+  '''(^|/)\.direnv/''',
+  '''(^|/)result($|/)''',
+  '''(^|/)\.hive/''',
+  '''(^|/)\.trueflow/''',
+]
+
+[[allowlists]]
+description = "Vendored oh-my-zsh dotenv README sample tokens"
+paths = [
+  '''^\.oh-my-zsh/plugins/dotenv/README\.md$''',
+]
