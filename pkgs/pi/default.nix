@@ -4,10 +4,10 @@
 }:
 buildNpmPackage rec {
   pname = "pi";
-  version = "0.78.0";
+  version = "0.79.10";
 
   src = ./.;
-  npmDepsHash = "sha256-8YdqDCLt4NzgUX4vCFNZB78+9GVltNy+hR+XimLMjig=";
+  npmDepsHash = "sha256-PzZcgZCTFbScThDoC6nEC2Ls+AeLOf+Ct0bcWNRZ29E=";
   npmDepsFetcherVersion = 2;
   dontNpmBuild = true;
 
