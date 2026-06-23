@@ -79,7 +79,6 @@ echo "Linking private data files ..."
 ensure_link "$private_cloud_root/secrets/dotfiles/.password-store" "$HOME/.password-store"
 ensure_link "$private_cloud_root/secrets/dotfiles/.gpg-id" "$HOME/.gpg-id"
 ensure_link "$private_cloud_root/dotfiles/.env" "$HOME/.env"
-ensure_link "$private_cloud_root/secrets/dotfiles/.git-credentials" "$HOME/.git-credentials"
 
 echo
 echo "Done. Home Manager handles public dotfiles; this script only links private data."

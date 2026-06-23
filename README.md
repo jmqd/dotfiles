@@ -43,6 +43,11 @@ Home Manager modules remain the canonical source of user-facing config, but
 only for the small set of personal files that still live outside the public
 flake.
 
+The private-data linker intentionally does not install `~/.git-credentials`.
+Use SSH remotes or the platform Git credential helper instead. On macOS, Home
+Manager configures `osxkeychain`; if a legacy plaintext `~/.git-credentials`
+file exists, remove it and rotate any personal access tokens it contained.
+
 ## git hooks
 
 ```bash
