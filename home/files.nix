@@ -13,6 +13,7 @@
     ".claude/CLAUDE.md".source = ./.pi/agent/AGENTS.md;
     ".claude/commands/caveman.md".source = ./.pi/agent/skills/caveman.md;
     ".codex/prompts/commit.md".source = ./.pi/agent/prompts/commit.md;
+    ".codex/prompts/oracle.md".source = ./codex/prompts/oracle.md;
     ".pi/agent/AGENTS.md".source = ./.pi/agent/AGENTS.md;
     ".pi/agent/keybindings.json".source = ./.pi/agent/keybindings.json;
     ".pi/agent/models.json".source = ./.pi/agent/models.json;

@@ -91,6 +91,13 @@
         in
         pkgs.callPackage ./pkgs/pi { };
 
+      mkOraclePkg =
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        pkgs.callPackage ./pkgs/oracle { };
+
       # Manually pinned claude-code (nixpkgs lags behind upstream releases).
       mkClaudeCodePkg =
         system:
@@ -146,6 +153,7 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          oraclePkg = mkOraclePkg system;
           claudeCodePkg = mkClaudeCodePkg system;
           codexPkg = mkCodexPkg system;
           flowPkg = mkFlowPkg system;
@@ -160,6 +168,7 @@
             flowPkg
             googleworkspaceCliPkg
             notionCliPkg
+            oraclePkg
             piPkg
             trueflowPkg
           ];
@@ -173,6 +182,7 @@
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
+          oraclePkg = mkOraclePkg system;
           claudeCodePkg = mkClaudeCodePkg system;
           codexPkg = mkCodexPkg system;
           flowPkg = mkFlowPkg system;
@@ -286,6 +296,7 @@
             flow = flowPkg;
             home-manager = home-manager.packages.${system}.home-manager;
             notion-cli = notionCliPkg;
+            oracle = oraclePkg;
             pi = piPkg;
             secrets-lint = secretsLint;
           };
@@ -316,6 +327,14 @@
             home-manager = {
               type = "app";
               program = "${home-manager.packages.${system}.home-manager}/bin/home-manager";
+            };
+            oracle = {
+              type = "app";
+              program = "${oraclePkg}/bin/oracle";
+            };
+            oracle-mcp = {
+              type = "app";
+              program = "${oraclePkg}/bin/oracle-mcp";
             };
             pi = {
               type = "app";
