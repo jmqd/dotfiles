@@ -72,6 +72,10 @@ nix run .#flow -- --help
 
 # Run credential-pattern lint manually
 nix run .#secrets-lint
+
+# Periodically scan Git history for committed secrets. Current allowlists cover
+# ignored local caches and old vendored oh-my-zsh dotenv sample-token docs.
+bin/lint-secrets.sh --history
 ```
 
 ## direnv
