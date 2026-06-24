@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     codex.url = "github:openai/codex?ref=rust-v0.142.0";
-    googleworkspace-cli.url = "github:googleworkspace/cli/v0.3.5";
+    googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
     notion-cli = {
       url = "github:lox/notion-cli/v0.5.0";
       flake = false;
@@ -36,13 +36,18 @@
         in
         pkgs.rustPlatform.buildRustPackage {
           pname = "gws";
-          version = "0.3.5";
+          version = "0.22.5";
           src = googleworkspace-cli;
           cargoLock.lockFile = "${googleworkspace-cli}/Cargo.lock";
 
           nativeBuildInputs = with pkgs; [
             pkg-config
           ];
+
+          preCheck = ''
+            export GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$TMPDIR/gws"
+            mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR"
+          '';
 
           meta = with pkgs.lib; {
             description = "Google Workspace CLI";
