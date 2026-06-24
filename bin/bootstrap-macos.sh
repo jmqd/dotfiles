@@ -5,9 +5,10 @@ repo_slug="${DOTFILES_REPO:-jmqd/dotfiles}"
 checkout_dir="${DOTFILES_CHECKOUT_DIR:-$HOME/src/dotfiles}"
 backup_ext="${HM_BACKUP_EXT:-hm-backup}"
 current_user="${DOTFILES_HOME_USER:-${USER:-$(id -un)}}"
+determinate_installer_url="${DETERMINATE_NIX_INSTALLER_URL:-https://install.determinate.systems/nix}"
 os_name="$(uname -s)"
 arch_name="$(uname -m)"
-readonly repo_slug checkout_dir backup_ext current_user os_name arch_name
+readonly repo_slug checkout_dir backup_ext current_user determinate_installer_url os_name arch_name
 
 has_nix() {
 	command -v nix >/dev/null 2>&1
@@ -40,9 +41,30 @@ install_determinate_nix() {
 		return
 	fi
 
+	local installer_path installer_hash
+	installer_path="$(mktemp "${TMPDIR:-/tmp}/determinate-nix-installer.XXXXXX")"
+
 	echo "Installing Determinate Nix..."
-	curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix |
-		sh -s -- install --determinate
+	curl --proto '=https' --tlsv1.2 -sSf -L "$determinate_installer_url" -o "$installer_path"
+	installer_hash="$(shasum -a 256 "$installer_path" | cut -d ' ' -f 1)"
+
+	cat <<EOF
+Downloaded Determinate Nix installer:
+  URL: $determinate_installer_url
+  File: $installer_path
+  SHA-256: $installer_hash
+EOF
+
+	if [[ "${DOTFILES_DETERMINATE_NIX_VERIFY_ONLY:-0}" == "1" ]]; then
+		cat <<EOF
+DOTFILES_DETERMINATE_NIX_VERIFY_ONLY=1 is set, so the installer was not run.
+Inspect the file above, verify the hash out of band if desired, then run:
+  sh "$installer_path" install --determinate
+EOF
+		exit 0
+	fi
+
+	sh "$installer_path" install --determinate
 }
 
 load_nix_profile() {
