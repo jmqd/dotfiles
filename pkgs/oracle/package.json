@@ -1,0 +1,13 @@
+{
+  "name": "oracle-wrapper",
+  "version": "0.15.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "oracle": "./bin/oracle.js",
+    "oracle-mcp": "./bin/oracle-mcp.js"
+  },
+  "dependencies": {
+    "@steipete/oracle": "0.15.0"
+  }
+}
