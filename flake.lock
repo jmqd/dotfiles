@@ -221,16 +221,16 @@
     "notion-cli": {
       "flake": false,
       "locked": {
-        "lastModified": 1774396169,
-        "narHash": "sha256-XzoKI9r999BH4/2h+DmPUNaCzUqnkrC/RhpT2tFKvZc=",
+        "lastModified": 1776510576,
+        "narHash": "sha256-DntNybAcWailxLn+/1iyvy+jWv5xtY7Xe2XHyKjPyCs=",
         "owner": "lox",
         "repo": "notion-cli",
-        "rev": "787ab6d732ac344228c40e43ec3049eeb4d9da81",
+        "rev": "f6a444bc0691a00c1de1ff4f4a92abb397b3678b",
         "type": "github"
       },
       "original": {
         "owner": "lox",
-        "ref": "v0.5.0",
+        "ref": "v0.6.0",
         "repo": "notion-cli",
         "type": "github"
       }

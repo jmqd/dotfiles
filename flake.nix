@@ -7,7 +7,7 @@
     codex.url = "github:openai/codex?ref=rust-v0.142.0";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
     notion-cli = {
-      url = "github:lox/notion-cli/v0.5.0";
+      url = "github:lox/notion-cli/v0.6.0";
       flake = false;
     };
     trueflow.url = "github:trueflow-dev/trueflow";
@@ -65,12 +65,12 @@
         in
         pkgs.buildGoModule {
           pname = "notion-cli";
-          version = "0.5.0";
+          version = "0.6.0";
           src = notion-cli;
           vendorHash = "sha256-SXs/voGAlA66aGMUC6GzttSejo9kSSOVdujp5Nl9GZM=";
 
           ldflags = [
-            "-X main.version=v0.5.0"
+            "-X main.version=v0.6.0"
           ];
 
           meta = with pkgs.lib; {
