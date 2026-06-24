@@ -8,7 +8,7 @@ let
   sources = {
     aarch64-darwin = {
       url = "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg";
-      hash = "sha256-7+3GyP+o+Ued3e0/7UDFytJhx3m3mP3RYYR/SBQZhcI=";
+      hash = "sha256-S7VSvxwZBL1m4oTTScRYKcWREORuSDLF1ps++vkQIT8=";
     };
     x86_64-darwin = {
       url = "https://persistent.oaistatic.com/codex-app-prod/Codex-latest-x64.dmg";
