@@ -1,39 +1,18 @@
 {
   lib,
-  nodejs,
-  nodejs_24 ? nodejs,
-  symlinkJoin,
-  writeShellApplication,
+  buildNpmPackage,
 }:
-let
+buildNpmPackage rec {
+  pname = "oracle";
   version = "0.15.0";
-  nodePackage = nodejs_24;
 
-  oracleCli = writeShellApplication {
-    name = "oracle";
-    runtimeInputs = [ nodePackage ];
-    text = ''
-      exec npx -y @steipete/oracle@${version} "$@"
-    '';
-  };
-
-  oracleMcp = writeShellApplication {
-    name = "oracle-mcp";
-    runtimeInputs = [ nodePackage ];
-    text = ''
-      exec npx -y @steipete/oracle@${version} oracle-mcp "$@"
-    '';
-  };
-in
-symlinkJoin {
-  name = "oracle-${version}";
-  paths = [
-    oracleCli
-    oracleMcp
-  ];
+  src = ./.;
+  npmDepsHash = "sha256-IVUNEe+Rt3tXOGsfOvVYsOcP8YsIQLRGUiz7y1/KDzo=";
+  npmDepsFetcherVersion = 2;
+  dontNpmBuild = true;
 
   meta = with lib; {
-    description = "Pinned wrappers for the Oracle CLI and MCP server";
+    description = "CLI and MCP server for delegating prompts to ChatGPT";
     homepage = "https://github.com/steipete/oracle";
     license = licenses.mit;
     mainProgram = "oracle";
