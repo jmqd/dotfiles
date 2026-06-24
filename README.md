@@ -18,6 +18,12 @@ curl --proto '=https' --tlsv1.2 -sSf -L \
   https://raw.githubusercontent.com/jmqd/dotfiles/master/bin/bootstrap-macos.sh | bash
 ```
 
+The macOS bootstrap downloads the Determinate Nix installer to a temporary file,
+prints its SHA-256 hash, and then runs that file. To inspect the installer
+without executing it, run the bootstrap with
+`DOTFILES_DETERMINATE_NIX_VERIFY_ONLY=1`; it will print the installer path and
+the exact `sh ... install --determinate` command to run after manual review.
+
 ```bash
 # Existing checkout with Home Manager (macOS or standalone Linux):
 mkdir -p ~/src
