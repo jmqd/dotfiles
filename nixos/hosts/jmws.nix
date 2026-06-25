@@ -193,8 +193,7 @@ in
       gdb
       poetry
       clang
-      nodejs_20
-      nodejs
+      nodejs_24
       yarn
       black
       pipenv
