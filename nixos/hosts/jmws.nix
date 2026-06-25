@@ -112,8 +112,7 @@ in
   boot.extraModulePackages = with config.boot.kernelPackages; [ v4l2loopback.out ];
 
   boot.extraModprobeConfig = ''
-    options kvm_intel nested=1
-    options kvm_intel emulate_invalid_guest_state=0
+    options kvm_amd nested=1
     options kvm ignore_msrs=1
     options v4l2loopback exclusive_caps=1 card_label="Virtual Camera"
   '';
