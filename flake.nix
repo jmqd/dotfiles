@@ -211,6 +211,7 @@
           flowPkg = mkFlowPkg system;
 
           shellScriptFiles = [
+            "bin/audit-deps.sh"
             "bin/bootstrap-macos.sh"
             "bin/bootstrap-rust.sh"
             "bin/hm-switch.sh"
@@ -374,9 +375,11 @@
               packages =
                 (with pkgs; [
                   awscli2
+                  curl
                   git
                   gitleaks
                   just
+                  jq
                   python3
                   shellcheck
                   shfmt
@@ -399,6 +402,7 @@
             claude-code = claudeCodePkg;
             codex = codexPkg;
             flow = flowPkg;
+            googleworkspace-cli = googleworkspaceCliPkg;
             home-manager = home-manager.packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             oracle = oraclePkg;

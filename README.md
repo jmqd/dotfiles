@@ -73,6 +73,10 @@ just check
 # Equivalent lower-level command
 nix flake check
 
+# Audit pinned dependencies and report available upgrades or known residual
+# upstream advisories
+just audit-deps
+
 # Regenerate the pi package lockfile with flake-pinned Node/npm
 nix develop .#pi-packaging -c bash -lc 'cd pkgs/pi && npm install --package-lock-only --ignore-scripts'
 
