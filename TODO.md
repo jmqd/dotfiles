@@ -1,7 +1,7 @@
 # TODO
 
 ## Current priorities
-- [ ] Add lightweight repo quality checks and a canonical `nix flake check` path.
+- [x] Add lightweight repo quality checks and a canonical `nix flake check` path.
 - [ ] Audit the remaining `bin/` scripts and decide which should be exposed in Home Manager PATH, kept repo-local, or archived.
 - [ ] Tighten bootstrap docs for macOS, Linux, NixOS, and the optional private-data follow-on flow.
 

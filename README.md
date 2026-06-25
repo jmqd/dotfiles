@@ -63,11 +63,14 @@ bash ~/src/dotfiles/bin/setup-git-hooks.sh
 ## nix tooling
 
 ```bash
-# Enter a dev shell with gitleaks/shellcheck/shfmt and bootstrap deps
+# Enter a dev shell with just/gitleaks/shellcheck/shfmt and bootstrap deps
 # (git/python3/awscli2)
 nix develop
 
-# Run the repo's lightweight automated checks
+# Run the repo's canonical lightweight automated checks
+just check
+
+# Equivalent lower-level command
 nix flake check
 
 # Regenerate the pi package lockfile with flake-pinned Node/npm

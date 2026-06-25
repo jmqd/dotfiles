@@ -29,14 +29,17 @@
       xdotool
       xwininfo
     ])
-    ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 (with pkgs; [
-      discord
-      lutris
-      slack
-      spotify
-      virt-manager
-      virt-viewer
-    ]);
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 (
+      with pkgs;
+      [
+        discord
+        lutris
+        slack
+        spotify
+        virt-manager
+        virt-viewer
+      ]
+    );
 
   programs = {
     chromium.enable = true;

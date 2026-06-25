@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   flowSearchStateDir = "${config.home.homeDirectory}/.local/share/flow-search";
   flowSearchIndexDir = "${flowSearchStateDir}/zoekt/index";

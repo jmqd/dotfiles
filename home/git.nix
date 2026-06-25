@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 {
   programs.git = {
     enable = true;
@@ -19,7 +24,8 @@
       pull.rebase = true;
       rebase.autoStash = true;
       url."git@github.com:".insteadOf = "https://github.com/";
-    } // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    }
+    // lib.optionalAttrs pkgs.stdenv.isDarwin {
       credential.helper = "osxkeychain";
     };
   };
