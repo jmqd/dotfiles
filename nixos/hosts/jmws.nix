@@ -83,10 +83,17 @@ in
   services.displayManager.defaultSession = "none+i3";
   services.xserver = {
     enable = true;
-    desktopManager = { xterm.enable = false; };
+    desktopManager = {
+      xterm.enable = false;
+    };
     windowManager.i3 = {
       enable = true;
-      extraPackages = with pkgs; [ dmenu i3status i3lock i3wsr ];
+      extraPackages = with pkgs; [
+        dmenu
+        i3status
+        i3lock
+        i3wsr
+      ];
     };
   };
 
@@ -120,95 +127,99 @@ in
 
   users.users.jmq = {
     isNormalUser = true;
-    extraGroups = [ "wheel" "libvirtd" "audio" ];
+    extraGroups = [
+      "wheel"
+      "libvirtd"
+      "audio"
+    ];
     shell = pkgs.zsh;
   };
 
   environment.systemPackages =
     (with pkgs; [
-    # system admin / linux core
-    doas
-    lshw
-    pciutils
-    vim
-    git
-    read-edid
-    nmap
-    arp-scan
-    fontconfig
-    freetype
-    expat
-    mesa-demos
-    ipmitool
-    inetutils
-    nixos-anywhere
-    inxi
-    openssl
-    openssl.dev
-    vlc
-    isync
-    offlineimap
-    bandwhich
-    lemmeknow
-    terraform
+      # system admin / linux core
+      doas
+      lshw
+      pciutils
+      vim
+      git
+      read-edid
+      nmap
+      arp-scan
+      fontconfig
+      freetype
+      expat
+      mesa-demos
+      ipmitool
+      inetutils
+      nixos-anywhere
+      inxi
+      openssl
+      openssl.dev
+      vlc
+      isync
+      offlineimap
+      bandwhich
+      lemmeknow
+      terraform
 
-    # wine and gaming deps
-    gimp
-    socat
-    spice
-    spice-gtk
-    spice-protocol
-    virtio-win
-    win-spice
-    adwaita-icon-theme
-    libgudev
-    libvdpau
-    dxvk
-    krb5
-    obs-studio
+      # wine and gaming deps
+      gimp
+      socat
+      spice
+      spice-gtk
+      spice-protocol
+      virtio-win
+      win-spice
+      adwaita-icon-theme
+      libgudev
+      libvdpau
+      dxvk
+      krb5
+      obs-studio
 
-    # development toolchain
-    emscripten
-    efibootmgr
-    certbot
-    gnumake42
-    dig
-    udev
-    systemd
-    gcc
-    gccgo13
-    bazel
-    flyctl
-    gdb
-    poetry
-    clang
-    nodejs_20
-    nodejs
-    yarn
-    black
-    pipenv
-    trunk
-    vultr-cli
+      # development toolchain
+      emscripten
+      efibootmgr
+      certbot
+      gnumake42
+      dig
+      udev
+      systemd
+      gcc
+      gccgo13
+      bazel
+      flyctl
+      gdb
+      poetry
+      clang
+      nodejs_20
+      nodejs
+      yarn
+      black
+      pipenv
+      trunk
+      vultr-cli
 
-    libGLU
-    libGL
+      libGLU
+      libGL
 
-    (python3.withPackages (
-      ps: with ps; [
-        openai
-        requests
-        boto3
-        pyflakes
-        black
-        isort
-        pipenv
-        pytest
-      ]
-    ))
-    # others
-    languagetool
-  ])
-  ++ (if enableTexliveOrgPdf then [ texliveOrgPdf ] else [ ]);
+      (python3.withPackages (
+        ps: with ps; [
+          openai
+          requests
+          boto3
+          pyflakes
+          black
+          isort
+          pipenv
+          pytest
+        ]
+      ))
+      # others
+      languagetool
+    ])
+    ++ (if enableTexliveOrgPdf then [ texliveOrgPdf ] else [ ]);
 
   programs.nix-ld.enable = true;
   programs.nix-ld.libraries = with pkgs; [

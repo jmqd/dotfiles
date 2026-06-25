@@ -121,21 +121,24 @@
           cargoToml = builtins.fromTOML (builtins.readFile "${codex}/codex-rs/Cargo.toml");
           version = cargoToml.workspace.package.version;
           darwinWebrtc =
-            if system == "aarch64-darwin"
-            then
-              "${pkgs.fetchzip {
-                url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-arm64-release.zip";
-                hash = "sha256-EcwfNpYMoD8zf1ihsoYZJX0k/BewK3QHx7LjVADNbf0=";
-                stripRoot = false;
-              }}/mac-arm64-release"
-            else if system == "x86_64-darwin"
-            then
-              "${pkgs.fetchzip {
-                url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-x64-release.zip";
-                hash = "sha256-6ARl0EDCwX296hcLvDsEPOhOQ4qAhXGLfHF+Bn8fFII=";
-                stripRoot = false;
-              }}/mac-x64-release"
-            else null;
+            if system == "aarch64-darwin" then
+              "${
+                pkgs.fetchzip {
+                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-arm64-release.zip";
+                  hash = "sha256-EcwfNpYMoD8zf1ihsoYZJX0k/BewK3QHx7LjVADNbf0=";
+                  stripRoot = false;
+                }
+              }/mac-arm64-release"
+            else if system == "x86_64-darwin" then
+              "${
+                pkgs.fetchzip {
+                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-x64-release.zip";
+                  hash = "sha256-6ARl0EDCwX296hcLvDsEPOhOQ4qAhXGLfHF+Bn8fFII=";
+                  stripRoot = false;
+                }
+              }/mac-x64-release"
+            else
+              null;
         in
         pkgs.callPackage ./pkgs/codex {
           inherit version darwinWebrtc;
@@ -189,7 +192,8 @@
             oraclePkg
             piPkg
             trueflowPkg
-          ] ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
+          ]
+          ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
         };
 
       perSystem = flake-utils.lib.eachDefaultSystem (
@@ -217,72 +221,153 @@
             "tests/hive-smoke.sh"
           ];
 
-          shellcheckCheck = pkgs.runCommand "shellcheck-bin-scripts" {
-            nativeBuildInputs = [ pkgs.shellcheck ];
-          } ''
-            cd ${./.}
-            shellcheck ${pkgs.lib.escapeShellArgs shellScriptFiles}
-            touch $out
-          '';
+          nixFiles = [
+            "flake.nix"
+            "home/common.nix"
+            "home/direnv.nix"
+            "home/emacs.nix"
+            "home/files.nix"
+            "home/flow-search.nix"
+            "home/git.nix"
+            "home/gpg.nix"
+            "home/linux-desktop.nix"
+            "home/linux.nix"
+            "home/ssh.nix"
+            "home/tmux.nix"
+            "home/trueflow.nix"
+            "home/wezterm.nix"
+            "home/yubikey.nix"
+            "home/zsh.nix"
+            "nixos/configuration.nix"
+            "nixos/hardware-configuration.nix"
+            "nixos/hosts/jmws.nix"
+            "pkgs/berkley-mono/default.nix"
+            "pkgs/claude-code/default.nix"
+            "pkgs/codex/default.nix"
+            "pkgs/codex-desktop/default.nix"
+            "pkgs/flow/default.nix"
+            "pkgs/oracle/default.nix"
+            "pkgs/pi/default.nix"
+          ];
 
-          shfmtCheck = pkgs.runCommand "shfmt-bin-scripts" {
-            nativeBuildInputs = [ pkgs.shfmt ];
-          } ''
-            cd ${./.}
-            shfmt -d ${pkgs.lib.escapeShellArgs shellScriptFiles}
-            touch $out
-          '';
+          nixfmtCheck =
+            pkgs.runCommand "nixfmt-check"
+              {
+                nativeBuildInputs = [ pkgs.nixfmt ];
+              }
+              ''
+                cd ${./.}
+                nixfmt --check ${pkgs.lib.escapeShellArgs nixFiles}
+                touch $out
+              '';
 
-          reviewOrchestratorTests = pkgs.runCommand "review-orchestrator-tests" {
-            nativeBuildInputs = [ pkgs.nodejs ];
-          } ''
-            cd ${./.}
-            node --test home/.pi/agent/extensions/review-orchestrator/core.test.ts
-            touch $out
-          '';
+          repoFormatter = pkgs.writeShellApplication {
+            name = "dotfiles-fmt";
+            runtimeInputs = [ pkgs.nixfmt ];
+            text = ''
+              if [ "$#" -eq 0 ]; then
+                set -- ${pkgs.lib.escapeShellArgs nixFiles}
+              fi
 
-          hiveOrchestratorTests = pkgs.runCommand "hive-orchestrator-tests" {
-            nativeBuildInputs = [ pkgs.nodejs ];
-          } ''
-            cd ${./.}
-            node --test \
-              home/.pi/agent/extensions/hive-orchestrator/core.test.ts \
-              home/.pi/agent/extensions/hive-orchestrator/orchestrator.test.ts
-            touch $out
-          '';
+              exec nixfmt "$@"
+            '';
+          };
 
-          hiveSmokeTests = pkgs.runCommand "hive-smoke-tests" {
-            nativeBuildInputs = [ pkgs.bash ];
-          } ''
-            cd ${./.}
-            bash tests/hive-smoke.sh
-            touch $out
-          '';
+          shellcheckCheck =
+            pkgs.runCommand "shellcheck-bin-scripts"
+              {
+                nativeBuildInputs = [ pkgs.shellcheck ];
+              }
+              ''
+                cd ${./.}
+                shellcheck ${pkgs.lib.escapeShellArgs shellScriptFiles}
+                touch $out
+              '';
 
-          flowSmokeTests = pkgs.runCommand "flow-smoke-tests" {
-            nativeBuildInputs = [
-              pkgs.bash
-              pkgs.git
-              pkgs.jq
-              flowPkg
-            ];
-          } ''
-            cd ${./.}
-            bash tests/flow-search-smoke.sh
-            touch $out
-          '';
+          shfmtCheck =
+            pkgs.runCommand "shfmt-bin-scripts"
+              {
+                nativeBuildInputs = [ pkgs.shfmt ];
+              }
+              ''
+                cd ${./.}
+                shfmt -d ${pkgs.lib.escapeShellArgs shellScriptFiles}
+                touch $out
+              '';
+
+          reviewOrchestratorTests =
+            pkgs.runCommand "review-orchestrator-tests"
+              {
+                nativeBuildInputs = [ pkgs.nodejs ];
+              }
+              ''
+                cd ${./.}
+                node --test home/.pi/agent/extensions/review-orchestrator/core.test.ts
+                touch $out
+              '';
+
+          hiveOrchestratorTests =
+            pkgs.runCommand "hive-orchestrator-tests"
+              {
+                nativeBuildInputs = [ pkgs.nodejs ];
+              }
+              ''
+                cd ${./.}
+                node --test \
+                  home/.pi/agent/extensions/hive-orchestrator/core.test.ts \
+                  home/.pi/agent/extensions/hive-orchestrator/orchestrator.test.ts
+                touch $out
+              '';
+
+          hiveSmokeTests =
+            pkgs.runCommand "hive-smoke-tests"
+              {
+                nativeBuildInputs = [ pkgs.bash ];
+              }
+              ''
+                cd ${./.}
+                bash tests/hive-smoke.sh
+                touch $out
+              '';
+
+          flowSmokeTests =
+            pkgs.runCommand "flow-smoke-tests"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.git
+                  pkgs.jq
+                  flowPkg
+                ];
+              }
+              ''
+                cd ${./.}
+                bash tests/flow-search-smoke.sh
+                touch $out
+              '';
 
           secretsLint = pkgs.writeShellApplication {
             name = "secrets-lint";
             runtimeInputs = [ pkgs.gitleaks ];
             text = ''
               set -euo pipefail
-              exec gitleaks dir --redact --exit-code 1 --no-banner .
+              exec gitleaks dir --config .gitleaks.toml --redact --exit-code 1 --no-banner .
             '';
           };
+
+          secretsLintCheck =
+            pkgs.runCommand "secrets-lint-check"
+              {
+                nativeBuildInputs = [ secretsLint ];
+              }
+              ''
+                cd ${./.}
+                secrets-lint
+                touch $out
+              '';
         in
         {
-          formatter = pkgs.nixfmt-rfc-style;
+          formatter = repoFormatter;
 
           devShells = {
             default = pkgs.mkShell {
@@ -291,6 +376,7 @@
                   awscli2
                   git
                   gitleaks
+                  just
                   python3
                   shellcheck
                   shfmt
@@ -328,7 +414,9 @@
             flow-smoke-tests = flowSmokeTests;
             hive-orchestrator-tests = hiveOrchestratorTests;
             hive-smoke-tests = hiveSmokeTests;
+            nixfmt = nixfmtCheck;
             review-orchestrator-tests = reviewOrchestratorTests;
+            secrets-lint = secretsLintCheck;
             shellcheck-bin-scripts = shellcheckCheck;
             shfmt-bin-scripts = shfmtCheck;
           };
@@ -394,20 +482,30 @@
           modules = [
             module
             (mkHomePackagesModule system)
-          ] ++ extraModules;
+          ]
+          ++ extraModules;
         };
 
       mkMacosHome =
-        { system, extraModules ? [ ] }:
+        {
+          system,
+          extraModules ? [ ],
+        }:
         let
           bootstrapUser =
             let
               explicitUser = builtins.getEnv "HM_BOOTSTRAP_USER";
               envUser = builtins.getEnv "USER";
             in
-            if explicitUser != "" then explicitUser else if envUser != "" then envUser else "jmq";
+            if explicitUser != "" then
+              explicitUser
+            else if envUser != "" then
+              envUser
+            else
+              "jmq";
           bootstrapHome =
-            let envHome = builtins.getEnv "HOME";
+            let
+              envHome = builtins.getEnv "HOME";
             in
             if envHome != "" then envHome else "/Users/${bootstrapUser}";
         in
@@ -415,21 +513,24 @@
           inherit system;
           module = ./home/hosts/jmq-macos.nix;
           nixpkgsConfig = {
-            allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) [
-              "berkley-mono"
-              "claude-code"
-              "codex-desktop"
-              "orbstack"
-              "raycast"
-              "spotify"
-            ];
+            allowUnfreePredicate =
+              pkg:
+              builtins.elem (nixpkgs.lib.getName pkg) [
+                "berkley-mono"
+                "claude-code"
+                "codex-desktop"
+                "orbstack"
+                "raycast"
+                "spotify"
+              ];
           };
           extraModules = [
             {
               home.username = nixpkgs.lib.mkForce bootstrapUser;
               home.homeDirectory = nixpkgs.lib.mkForce bootstrapHome;
             }
-          ] ++ extraModules;
+          ]
+          ++ extraModules;
         };
 
       mkNixosHost =
@@ -446,15 +547,16 @@
             {
               home-manager.backupFileExtension = "hm-backup";
               home-manager.useGlobalPkgs = true;
-              home-manager.users.jmq = {
-                ...
-              }:
-              {
-                imports = [
-                  homeModule
-                  (mkHomePackagesModule system)
-                ];
-              };
+              home-manager.users.jmq =
+                {
+                  ...
+                }:
+                {
+                  imports = [
+                    homeModule
+                    (mkHomePackagesModule system)
+                  ];
+                };
             }
           ];
         };

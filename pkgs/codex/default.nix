@@ -44,7 +44,8 @@ rustPlatform.buildRustPackage {
   buildInputs = [
     libclang
     openssl
-  ] ++ lib.optionals stdenv.hostPlatform.isLinux [
+  ]
+  ++ lib.optionals stdenv.hostPlatform.isLinux [
     libcap
   ];
 
@@ -59,7 +60,8 @@ rustPlatform.buildRustPackage {
       ]
     );
     RUSTY_V8_ARCHIVE = librusty_v8;
-  } // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
+  }
+  // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
     LK_CUSTOM_WEBRTC = darwinWebrtc;
   };
 

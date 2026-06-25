@@ -17,7 +17,12 @@ rustPlatform.buildRustPackage rec {
 
   postInstall = ''
     wrapProgram "$out/bin/flow" \
-      --prefix PATH : ${lib.makeBinPath [ git zoekt ]}
+      --prefix PATH : ${
+        lib.makeBinPath [
+          git
+          zoekt
+        ]
+      }
   '';
 
   meta = with lib; {
