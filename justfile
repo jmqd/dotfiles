@@ -9,6 +9,9 @@ fmt:
 check:
     nix flake check
 
+audit-deps:
+    bin/audit-deps.sh
+
 lint-secrets:
     bin/lint-secrets.sh
 
