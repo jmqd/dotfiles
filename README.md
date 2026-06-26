@@ -77,12 +77,10 @@ nix flake check
 # upstream advisories
 just audit-deps
 
-# Regenerate the pi package lockfile with flake-pinned Node/npm
-nix develop .#pi-packaging -c bash -lc 'cd pkgs/pi && npm install --package-lock-only --ignore-scripts'
-
-# Build or run the locally packaged pi coding agent
+# Build or run the pinned oh-my-pi agent (`pi` is kept as an alias)
 nix build .#pi
-nix run .#pi
+nix run .#pi -- --version
+nix run .#omp -- --version
 
 # Build or run the local flow jm.dev personal CLI
 nix build .#flow
