@@ -94,7 +94,7 @@
         let
           pkgs = import nixpkgs { inherit system; };
         in
-        pkgs.callPackage ./pkgs/pi { };
+        pkgs.callPackage ./pkgs/omp { };
 
       mkOraclePkg =
         system:
@@ -391,11 +391,6 @@
                 ];
             };
 
-            # Use the same pinned Node/npm source as buildNpmPackage when
-            # generating the package-local lockfile for pi.
-            pi-packaging = pkgs.mkShell {
-              packages = [ pkgs.nodejs ];
-            };
           };
 
           packages = {
@@ -405,6 +400,7 @@
             googleworkspace-cli = googleworkspaceCliPkg;
             home-manager = home-manager.packages.${system}.home-manager;
             notion-cli = notionCliPkg;
+            omp = piPkg;
             oracle = oraclePkg;
             pi = piPkg;
             secrets-lint = secretsLint;
@@ -441,6 +437,10 @@
             home-manager = {
               type = "app";
               program = "${home-manager.packages.${system}.home-manager}/bin/home-manager";
+            };
+            omp = {
+              type = "app";
+              program = "${piPkg}/bin/omp";
             };
             oracle = {
               type = "app";

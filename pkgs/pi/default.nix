@@ -1,21 +1,4 @@
-{
-  lib,
-  buildNpmPackage,
-}:
-buildNpmPackage rec {
-  pname = "pi";
-  version = "0.80.2";
-
-  src = ./.;
-  npmDepsHash = "sha256-o85HPoTQjXI5+bJUOFOflqRyzviACGCQewnPIHnaznE=";
-  npmDepsFetcherVersion = 2;
-  dontNpmBuild = true;
-
-  meta = with lib; {
-    description = "Minimal terminal coding harness";
-    homepage = "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent";
-    license = licenses.mit;
-    mainProgram = "pi";
-    platforms = platforms.unix;
-  };
-}
+# Legacy alias: the flake now packages the pinned oh-my-pi binary from
+# `pkgs/omp`, but keep this path resolving to the same derivation for anyone
+# looking under the old location.
+import ../omp/default.nix
