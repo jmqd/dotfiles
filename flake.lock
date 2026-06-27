@@ -20,6 +20,22 @@
         "type": "github"
       }
     },
+    "emacs-sops": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779076259,
+        "narHash": "sha256-Q7WEfZfEpyVh7jk6Xkd10Nbt4BLJx13TjeWPTx8+jQc=",
+        "owner": "djgoku",
+        "repo": "sops",
+        "rev": "95b2178a71dcbf3e69729c52cba2bc23171e059d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "djgoku",
+        "repo": "sops",
+        "type": "github"
+      }
+    },
     "flake-utils": {
       "inputs": {
         "systems": "systems"
@@ -198,6 +214,7 @@
     "root": {
       "inputs": {
         "codex": "codex",
+        "emacs-sops": "emacs-sops",
         "flake-utils": "flake-utils",
         "googleworkspace-cli": "googleworkspace-cli",
         "home-manager": "home-manager",

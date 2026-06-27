@@ -33,6 +33,18 @@
       (define-key (symbol-value map-symbol) (kbd "C-k") #'magit-section-forward)
       (define-key (symbol-value map-symbol) (kbd "H-i") #'magit-section-backward))))
 
+
+(use-package sops
+  :ensure nil
+  :demand t
+  :init
+  ;; Upstream SOPS does not support structured TOML encryption. Treat *.toml
+  ;; secrets as binary SOPS files so Emacs can still decrypt/edit/re-encrypt
+  ;; the whole file transparently. JSON remains the boring native path.
+  (setq sops-prefilter-regex "\\.\\(ya?ml\\|json\\|env\\|ini\\|txt\\|toml\\)\\'"
+        sops-input-type-overrides '(("\\.toml\\'" . "binary")))
+  :config
+  (global-sops-mode 1))
 (with-eval-after-load 'grep
   (define-key grep-mode-map (kbd "C-k") #'next-error-no-select)
   (define-key grep-mode-map (kbd "H-i") #'previous-error-no-select))
