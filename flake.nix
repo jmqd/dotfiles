@@ -15,6 +15,7 @@
       flake = false;
     };
     trueflow.url = "github:trueflow-dev/trueflow";
+    voxtype.url = "github:peteonrails/voxtype/v1.0.0-rc1";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -29,6 +30,7 @@
       googleworkspace-cli,
       notion-cli,
       trueflow,
+      voxtype,
       emacs-sops,
       home-manager,
       ...
@@ -169,6 +171,12 @@
         in
         pkgs.callPackage ./pkgs/flow { };
 
+      mkVoxtypePkg =
+        system:
+        # Vulkan gives the NVIDIA Linux desktop GPU acceleration without
+        # introducing the CUDA/ONNX closure into every Home Manager switch.
+        voxtype.packages.${system}.vulkan;
+
       mkHomePackagesModule =
         system:
         let
@@ -181,6 +189,7 @@
           codexPkg = mkCodexPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
+          voxtypePkg = mkVoxtypePkg system;
         in
         {
           lib,
@@ -198,7 +207,15 @@
             piPkg
             trueflowPkg
           ]
+          ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ voxtypePkg ]
           ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
+          programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+            enable = true;
+            package = voxtypePkg;
+            model.name = "base.en";
+            service.enable = true;
+            settings.hotkey.enabled = true;
+          };
         };
 
       perSystem = flake-utils.lib.eachDefaultSystem (
@@ -214,6 +231,7 @@
           codexPkg = mkCodexPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
+          voxtypePkg = mkVoxtypePkg system;
 
           shellScriptFiles = [
             "bin/audit-deps.sh"
@@ -410,6 +428,9 @@
             pi = piPkg;
             secrets-lint = secretsLint;
           }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            voxtype = voxtypePkg;
+          }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = codexDesktopPkg;
           };
@@ -464,6 +485,12 @@
               program = "${secretsLint}/bin/secrets-lint";
             };
           }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            voxtype = {
+              type = "app";
+              program = "${voxtypePkg}/bin/voxtype";
+            };
+          }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = {
               type = "app";
@@ -494,6 +521,7 @@
           modules = [
             module
             (mkHomePackagesModule system)
+            voxtype.homeManagerModules.default
           ]
           ++ extraModules;
         };
@@ -570,6 +598,7 @@
                   imports = [
                     homeModule
                     (mkHomePackagesModule system)
+                    voxtype.homeManagerModules.default
                   ];
                 };
             }

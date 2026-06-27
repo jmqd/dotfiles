@@ -27,6 +27,7 @@
       quickemu
       xclip
       xdotool
+      ydotool
       xwininfo
     ])
     ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 (
