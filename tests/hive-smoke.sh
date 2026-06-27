@@ -16,6 +16,24 @@ export HIVE_FAKE_STATE="$state_dir"
 export HOME="$home_dir"
 export HIVE_STATE="$tmp_dir/hive-state"
 
+patch_fake_bash_shebang() {
+	local script="$1"
+	local tmp="$script.tmp"
+	local first=1 line
+
+	: >"$tmp"
+	while IFS= read -r line || [ -n "$line" ]; do
+		if [ "$first" -eq 1 ]; then
+			printf '#!%s\n' "$BASH" >>"$tmp"
+			first=0
+		else
+			printf '%s\n' "$line" >>"$tmp"
+		fi
+	done <"$script"
+	mv "$tmp" "$script"
+	chmod +x "$script"
+}
+
 cat >"$fake_bin/git" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -378,6 +396,11 @@ cat "$1"
 EOF
 chmod +x "$fake_bin/tail"
 
+patch_fake_bash_shebang "$fake_bin/git"
+patch_fake_bash_shebang "$fake_bin/docker"
+patch_fake_bash_shebang "$fake_bin/orbctl"
+patch_fake_bash_shebang "$fake_bin/tail"
+
 assert_contains() {
 	local haystack="$1"
 	local needle="$2"
@@ -572,7 +595,10 @@ run_docker_autostart_smoke() {
 
 	local repo_key up_output
 	repo_key="$(repo_key_for "$repo_dir")"
-	up_output="$(HIVE_FAKE_DOCKER_REQUIRES_START=1 HIVE_FAKE_DOCKER_CONTEXT=orbstack hive docker up --repo "$repo_dir" --agents 1 2>&1)"
+	up_output="$(
+		export HIVE_FAKE_DOCKER_REQUIRES_START=1 HIVE_FAKE_DOCKER_CONTEXT=orbstack
+		hive docker up --repo "$repo_dir" --agents 1 2>&1
+	)"
 
 	assert_contains "$up_output" 'info: hive starting docker runtime via orbctl start'
 	assert_exists "$state_dir/docker-ready"

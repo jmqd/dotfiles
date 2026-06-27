@@ -129,7 +129,9 @@ in
     extraGroups = [
       "wheel"
       "libvirtd"
+      "input"
       "audio"
+      "ydotool"
     ];
     shell = pkgs.zsh;
   };
@@ -228,6 +230,14 @@ in
   programs.steam.enable = true;
   programs.dconf.enable = true;
   programs.zsh.enable = true;
+  programs.ydotool.enable = true;
+  security.rtkit.enable = true;
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true;
+    pulse.enable = true;
+  };
 
   hardware.graphics = {
     enable = true;
