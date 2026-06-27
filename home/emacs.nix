@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  emacs-sops,
   ...
 }:
 let
@@ -13,12 +14,21 @@ let
     LC_CTYPE = config.home.sessionVariables.LC_CTYPE;
     OSFONTDIR = config.home.sessionVariables.OSFONTDIR;
   };
+  sopsEl = pkgs.emacsPackages.trivialBuild {
+    pname = "sops";
+    version = "unstable";
+    src = emacs-sops;
+  };
 in
 {
   programs.emacs = {
     enable = true;
     package = emacsPkg;
   };
+
+  programs.emacs.extraPackages = _epkgs: [
+    sopsEl
+  ];
 
   services.emacs = {
     enable = true;

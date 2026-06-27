@@ -10,6 +10,10 @@
       url = "github:lox/notion-cli/v0.6.0";
       flake = false;
     };
+    emacs-sops = {
+      url = "github:djgoku/sops";
+      flake = false;
+    };
     trueflow.url = "github:trueflow-dev/trueflow";
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -25,6 +29,7 @@
       googleworkspace-cli,
       notion-cli,
       trueflow,
+      emacs-sops,
       home-manager,
       ...
     }:
@@ -483,6 +488,9 @@
         in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
+          extraSpecialArgs = {
+            inherit emacs-sops;
+          };
           modules = [
             module
             (mkHomePackagesModule system)
@@ -551,6 +559,9 @@
             {
               home-manager.backupFileExtension = "hm-backup";
               home-manager.useGlobalPkgs = true;
+              home-manager.extraSpecialArgs = {
+                inherit emacs-sops;
+              };
               home-manager.users.jmq =
                 {
                   ...
