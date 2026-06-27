@@ -79,6 +79,7 @@ in
   home.packages =
     (with pkgs; [
       berkleyMono
+      age
       aspellWithDicts
       awscli2
       basedpyright
@@ -118,6 +119,7 @@ in
       ripgrep
       rustup
       slackdump
+      sops
       shellcheck
       shfmt
       sqlite
