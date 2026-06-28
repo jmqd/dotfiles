@@ -18,6 +18,7 @@
       autorandr
       dmenu
       flameshot
+      geeqie
       i3lock
       i3wsr
       killall
