@@ -54,6 +54,7 @@ in
     ./flow-search.nix
     ./gpg.nix
     ./git.nix
+    ./nas.nix
     ./ssh.nix
     ./tmux.nix
     ./trueflow.nix
