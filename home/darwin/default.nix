@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 let
   fakeBrew = pkgs.writeShellScriptBin "brew" ''
     echo "brew: this system is managed by Nix — install packages there instead." >&2
@@ -16,6 +16,9 @@ in
     copyApps.enable = false;
     linkApps.enable = true;
   };
+
+  home.file."Applications/Screen Sharing.app".source =
+    config.lib.file.mkOutOfStoreSymlink "/System/Library/CoreServices/Applications/Screen Sharing.app";
 
   # First set of macOS user packages managed by Home Manager.
   home.packages = [
