@@ -1,6 +1,22 @@
-{ config, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   enableTexliveOrgPdf = false;
+  vncAllowedTailnetIpv4 = [
+    # jmws desktop
+    "100.80.51.119"
+    # Jordans-MacBook-Pro
+    "100.94.227.118"
+    # iphone-15
+    "100.106.214.30"
+  ];
+  vncTailnetFirewallRules = lib.concatMapStringsSep "\n" (
+    addr: "iptables -w -A tailscale-vnc -s ${addr}/32 -j ACCEPT"
+  ) vncAllowedTailnetIpv4;
 
   texliveOrgPdf = pkgs.texlive.combine {
     # Enough for normal Org LaTeX/PDF export, latexmk workflows, and CJK
@@ -78,7 +94,18 @@ in
     enable = true;
     useRoutingFeatures = "both";
   };
-  networking.firewall.trustedInterfaces = [ "tailscale0" ];
+  networking.firewall = {
+    trustedInterfaces = [ "tailscale0" ];
+    extraCommands = ''
+      iptables -w -D INPUT -i tailscale0 -p tcp --dport 5900 -j tailscale-vnc 2>/dev/null || true
+      iptables -w -F tailscale-vnc 2>/dev/null || true
+      iptables -w -X tailscale-vnc 2>/dev/null || true
+      iptables -w -N tailscale-vnc
+      ${vncTailnetFirewallRules}
+      iptables -w -A tailscale-vnc -j DROP
+      iptables -w -I INPUT 1 -i tailscale0 -p tcp --dport 5900 -j tailscale-vnc
+    '';
+  };
   services.timesyncd.enable = true;
 
   services.displayManager.defaultSession = "none+i3";
