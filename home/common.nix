@@ -50,6 +50,7 @@ in
   imports = [
     ./direnv.nix
     ./emacs.nix
+    ./env.nix
     ./files.nix
     ./flow-search.nix
     ./gpg.nix
