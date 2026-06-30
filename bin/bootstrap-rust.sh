@@ -23,6 +23,29 @@ get_active_toolchain() {
 	printf '%s\n' "${active%% *}"
 }
 
+missing_components() {
+	local installed
+	local component
+	local installed_component
+	local found
+	installed="$("$rustup_bin" component list --toolchain "$active_toolchain" --installed)"
+
+	for component in "${components[@]}"; do
+		found=0
+		while IFS= read -r installed_component; do
+			case "$installed_component" in
+			"$component" | "$component"-*)
+				found=1
+				break
+				;;
+			esac
+		done <<<"$installed"
+		if [[ "$found" -eq 0 ]]; then
+			printf '%s\n' "$component"
+		fi
+	done
+}
+
 active_toolchain=""
 if "$rustup_bin" show active-toolchain >/dev/null 2>&1; then
 	active_toolchain="$(get_active_toolchain)"
@@ -35,8 +58,13 @@ else
 fi
 
 if [[ ${#components[@]} -gt 0 ]]; then
-	echo "Ensuring rustup components on ${active_toolchain}: ${components[*]}"
-	"$rustup_bin" component add --toolchain "$active_toolchain" "${components[@]}"
+	mapfile -t missing < <(missing_components)
+	if [[ ${#missing[@]} -gt 0 ]]; then
+		echo "Installing missing rustup components on ${active_toolchain}: ${missing[*]}"
+		"$rustup_bin" component add --toolchain "$active_toolchain" "${missing[@]}"
+	else
+		echo "Rust components already installed on ${active_toolchain}: ${components[*]}"
+	fi
 fi
 
 echo "Rust bootstrap complete."

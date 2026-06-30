@@ -7,8 +7,11 @@ current_user="${HM_USER:-${USER:-$(id -un)}}"
 refresh_home_manager="${HM_REFRESH:-0}"
 print_build_logs="${HM_PRINT_BUILD_LOGS:-0}"
 verbose_home_manager="${HM_VERBOSE:-0}"
+accept_flake_config="${HM_ACCEPT_FLAKE_CONFIG:-1}"
+offline_mode="${HM_OFFLINE:-0}"
+home_profile="${HM_PROFILE:-full}"
 os_name="$(uname -s)"
-readonly repo_root backup_ext current_user refresh_home_manager print_build_logs verbose_home_manager os_name
+readonly repo_root backup_ext current_user refresh_home_manager print_build_logs verbose_home_manager accept_flake_config offline_mode home_profile os_name
 
 refuse_on_nixos_standalone_home_manager() {
 	if [[ "$os_name" != "Linux" ]] || [[ ! -r /etc/os-release ]]; then
@@ -34,6 +37,21 @@ EOF
 	fi
 }
 
+linux_profile_suffix() {
+	case "$home_profile" in
+	full)
+		printf '%s\n' ""
+		;;
+	lite)
+		printf '%s\n' "-lite"
+		;;
+	*)
+		echo "Unsupported HM_PROFILE: $home_profile (expected full or lite)" >&2
+		exit 1
+		;;
+	esac
+}
+
 detect_flake_ref() {
 	case "${os_name}:$(uname -m)" in
 	Darwin:arm64)
@@ -43,10 +61,10 @@ detect_flake_ref() {
 		printf '%s\n' "${repo_root}#macos-x86_64"
 		;;
 	Linux:aarch64)
-		printf '%s\n' "${repo_root}#linux-aarch64"
+		printf '%s\n' "${repo_root}#linux-aarch64$(linux_profile_suffix)"
 		;;
 	Linux:x86_64)
-		printf '%s\n' "${repo_root}#linux-x86_64"
+		printf '%s\n' "${repo_root}#linux-x86_64$(linux_profile_suffix)"
 		;;
 	*)
 		cat >&2 <<'EOF'
@@ -136,6 +154,13 @@ else
 fi
 
 home_manager_cmd=(nix run)
+if [[ "$accept_flake_config" == "1" ]]; then
+	home_manager_cmd+=(--accept-flake-config)
+fi
+
+if [[ "$offline_mode" == "1" ]]; then
+	home_manager_cmd+=(--offline)
+fi
 
 if [[ "$refresh_home_manager" == "1" ]]; then
 	home_manager_cmd+=(--refresh)
