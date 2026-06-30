@@ -23,7 +23,7 @@
 - [ ] Track upstream fixes for `googleworkspace/cli v0.22.5`: cargo-audit still reports `quinn-proto 0.11.14` (`RUSTSEC-2026-0185`, fixed in `>=0.11.15`) and `rustls-webpki 0.103.10` (`RUSTSEC-2026-0104`, `RUSTSEC-2026-0098`, `RUSTSEC-2026-0099`, fixed in `>=0.103.13` for the CRL panic and `>=0.103.12` for the name-constraint issues). No newer GitHub release was available on 2026-06-24.
 - [ ] Track upstream fixes for `openai/codex rust-v0.142.0`: cargo-audit reports `hickory-proto 0.25.2` (`RUSTSEC-2026-0118`, `RUSTSEC-2026-0119`, fixed by the 0.26.x line) and `quinn-proto 0.11.14` (`RUSTSEC-2026-0185`, fixed in `>=0.11.15`) in `codex-rs/Cargo.lock`, plus `tar 0.4.44` (`RUSTSEC-2026-0067`, `RUSTSEC-2026-0068`, fixed in `>=0.4.45`) in `tools/argument-comment-lint/Cargo.lock`. No newer Codex release was available on 2026-06-24.
 - [ ] Track upstream fixes for `lox/notion-cli v0.6.0`: govulncheck reports reachable `golang.org/x/net/html v0.49.0` advisories `GO-2026-5025`, `GO-2026-5027`, `GO-2026-5028`, `GO-2026-5029`, and `GO-2026-5030`, fixed in `golang.org/x/net v0.55.0`. No newer GitHub release was available on 2026-06-24.
-- [ ] Refresh `nixpkgs` when it carries Go `1.26.4` or newer; current pinned `nixpkgs` provides Go `1.26.3`, and govulncheck reports reachable standard-library advisories `GO-2026-5037` and `GO-2026-5039` fixed in Go `1.26.4`.
+- [x] Refresh `nixpkgs` once it carries Go `1.26.4` or newer; current lock builds Go binaries with `go1.26.4`, and binary-mode govulncheck no longer reports the `GO-2026-5037`/`GO-2026-5039` standard-library advisories.
 
 ## Emacs cleanup
 - [ ] Inventory any remaining `.doom.d/` assumptions and delete/archive stale Doom config if it is truly unused.
