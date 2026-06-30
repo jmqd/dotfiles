@@ -74,7 +74,7 @@ note_upgrade() {
 
 npm_latest_version() {
 	local package="$1"
-	nix develop --quiet .#pi-packaging -c npm view "$package" version
+	nix shell --quiet nixpkgs#nodejs -c npm view "$package" version
 }
 
 check_npm_latest() {
@@ -87,13 +87,39 @@ check_npm_latest() {
 	fi
 }
 
+github_api_headers() {
+	local args=(
+		--header "Accept: application/vnd.github+json"
+		--header "User-Agent: dotfiles-audit-deps"
+	)
+	if [ -n "${GITHUB_TOKEN:-}" ]; then
+		args+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
+	fi
+	printf '%s\n' "${args[@]}"
+}
+
+github_release_latest_api() {
+	local repo="$1"
+	local -a headers=()
+	while IFS= read -r header; do
+		headers+=("$header")
+	done < <(github_api_headers)
+	curl --fail --silent --show-error --location "${headers[@]}" "https://api.github.com/repos/${repo}/releases/latest" |
+		jq -er '.tag_name // empty'
+}
+
+github_release_latest_web() {
+	local repo="$1" latest_url latest_tag
+	latest_url="$(curl --fail --silent --show-error --location --write-out '%{url_effective}' --output /dev/null "https://github.com/${repo}/releases/latest")"
+	latest_tag="${latest_url##*/}"
+	[ -n "$latest_tag" ] && [ "$latest_tag" != "latest" ] || return 1
+	printf '%s\n' "$latest_tag"
+}
+
 check_github_release_latest() {
 	local repo="$1" current_tag="$2" latest_tag
 	section "latest check: $repo"
-	if latest_tag="$(
-		curl --fail --silent --show-error --location "https://api.github.com/repos/${repo}/releases/latest" |
-			jq -r '.tag_name'
-	)"; then
+	if latest_tag="$(github_release_latest_api "$repo" 2>/dev/null)" || latest_tag="$(github_release_latest_web "$repo")"; then
 		note_upgrade "$repo" "$current_tag" "$latest_tag"
 	else
 		fail "could not fetch latest GitHub release for $repo"
@@ -103,7 +129,7 @@ check_github_release_latest() {
 npm_audit() {
 	local name="$1" prefix="$2"
 	section "npm audit: $name"
-	run_required nix develop --quiet .#pi-packaging -c npm audit --prefix "$prefix" --omit dev
+	run_required nix shell --quiet nixpkgs#nodejs -c npm audit --prefix "$prefix" --omit dev
 }
 
 cargo_audit_lock() {
@@ -183,6 +209,10 @@ govulncheck_notion_cli() {
 	work_dir="$(mktemp -d)"
 	output_file="$(mktemp)"
 	tmp_paths+=("$work_dir" "$output_file")
+	local go_mod_cache go_build_cache
+	go_mod_cache="$(mktemp -d)"
+	go_build_cache="$(mktemp -d)"
+	tmp_paths+=("$go_mod_cache" "$go_build_cache")
 
 	cp -R "$notion_src"/. "$work_dir"/
 	chmod -R u+w "$work_dir"
@@ -191,9 +221,10 @@ govulncheck_notion_cli() {
 	(
 		cd "$work_dir"
 		env \
-			GOMODCACHE="${GOMODCACHE:-/private/tmp/gomodcache}" \
-			GOCACHE="${GOCACHE:-/private/tmp/gocache}" \
-			nix shell nixpkgs#govulncheck nixpkgs#go -c govulncheck ./...
+			GOMODCACHE="${GOMODCACHE:-$go_mod_cache}" \
+			GOCACHE="${GOCACHE:-$go_build_cache}" \
+			GOFLAGS="${GOFLAGS:-} -modcacherw" \
+			nix shell nixpkgs#govulncheck nixpkgs#go -c govulncheck -scan=module
 	) >"$output_file" 2>&1
 	status=$?
 	set -e
@@ -204,12 +235,17 @@ govulncheck_notion_cli() {
 		check_known_go_vulns \
 			"lox/notion-cli govulncheck" \
 			"$output_file" \
+			GO-2026-4514 \
+			GO-2026-4918 \
+			GO-2026-5024 \
 			GO-2026-5025 \
+			GO-2026-5026 \
 			GO-2026-5027 \
 			GO-2026-5028 \
 			GO-2026-5029 \
 			GO-2026-5030 \
 			GO-2026-5037 \
+			GO-2026-5038 \
 			GO-2026-5039
 	fi
 }
@@ -237,23 +273,24 @@ main() {
 	notion_version="$(package_version "$system" notion-cli)"
 	gws_version="$(package_version "$system" googleworkspace-cli)"
 
-	check_npm_latest "pi" "@earendil-works/pi-coding-agent" "$pi_version"
+	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
 	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
 	check_npm_latest "claude-code" "@anthropic-ai/claude-code" "$claude_version"
 	check_github_release_latest "openai/codex" "rust-v${codex_version}"
 	check_github_release_latest "googleworkspace/cli" "v${gws_version}"
 	check_github_release_latest "lox/notion-cli" "v${notion_version}"
 
-	warn "codex-desktop uses OpenAI's persistent DMG URL and fixed-output hashes; no public latest-release API is checked here"
+	warn "codex-desktop uses versioned OpenAI ZIP URLs; latest-version checks are not automated here"
 
 	npm_audit "pi" "pkgs/pi"
 	npm_audit "oracle" "pkgs/oracle"
 
-	local codex_src gws_src trueflow_src notion_src
+	local codex_src gws_src trueflow_src notion_src voxtype_src
 	codex_src="$(input_path codex)"
 	gws_src="$(input_path googleworkspace-cli)"
 	trueflow_src="$(input_path trueflow)"
 	notion_src="$(input_path notion-cli)"
+	voxtype_src="$(input_path voxtype)"
 
 	cargo_audit_lock "pkgs/flow" "pkgs/flow/Cargo.lock"
 	cargo_audit_lock \
@@ -264,6 +301,15 @@ main() {
 		RUSTSEC-2026-0098 \
 		RUSTSEC-2026-0099
 	cargo_audit_lock "trueflow" "$trueflow_src/trueflow/Cargo.lock"
+	cargo_audit_lock \
+		"voxtype" \
+		"$voxtype_src/Cargo.lock" \
+		RUSTSEC-2026-0007 \
+		RUSTSEC-2026-0185 \
+		RUSTSEC-2026-0049 \
+		RUSTSEC-2026-0104 \
+		RUSTSEC-2026-0098 \
+		RUSTSEC-2026-0099
 	cargo_audit_lock \
 		"openai/codex codex-rs" \
 		"$codex_src/codex-rs/Cargo.lock" \
