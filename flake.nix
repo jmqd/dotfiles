@@ -250,6 +250,7 @@
             "home/common.nix"
             "home/direnv.nix"
             "home/emacs.nix"
+            "home/env.nix"
             "home/files.nix"
             "home/flow-search.nix"
             "home/git.nix"
