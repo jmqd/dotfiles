@@ -6,18 +6,18 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1782164161,
-        "narHash": "sha256-F8wlv0vSuljNFDgIzoeuVxvD0dk90z2FBtpBTMih7AA=",
-        "owner": "openai",
-        "repo": "codex",
-        "rev": "3a76f3ac68c8949d1cac6ea769b6ec7b8953a415",
-        "type": "github"
+        "lastModified": 1782706821,
+        "narHash": "sha256-cYkdLy0+KMjcx0k7IDACsiTK3ZZks6cmwbeDMheN6WY=",
+        "ref": "refs/tags/rust-v0.142.4",
+        "rev": "d0fd96663e19a6cd5d6f315e3420c4d154562013",
+        "revCount": 7719,
+        "type": "git",
+        "url": "https://github.com/openai/codex"
       },
       "original": {
-        "owner": "openai",
-        "ref": "rust-v0.142.0",
-        "repo": "codex",
-        "type": "github"
+        "ref": "refs/tags/rust-v0.142.4",
+        "type": "git",
+        "url": "https://github.com/openai/codex"
       }
     },
     "emacs-sops": {
