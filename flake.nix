@@ -1,6 +1,15 @@
 {
   description = "dotfiles tooling";
 
+  nixConfig = {
+    extra-substituters = [
+      "https://nix-community.cachix.org"
+    ];
+    extra-trusted-public-keys = [
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
@@ -192,29 +201,42 @@
           voxtypePkg = mkVoxtypePkg system;
         in
         {
+          config,
           lib,
           pkgs,
           ...
         }:
         {
-          home.packages = [
-            claudeCodePkg
-            codexPkg
-            flowPkg
-            googleworkspaceCliPkg
-            notionCliPkg
-            oraclePkg
-            piPkg
-            trueflowPkg
-          ]
-          ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ voxtypePkg ]
-          ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
-          programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
-            enable = true;
-            package = voxtypePkg;
-            model.name = "base.en";
-            service.enable = true;
-            settings.hotkey.enabled = true;
+          options.jmq.packageSets.customCli.enable = lib.mkOption {
+            type = lib.types.bool;
+            default = true;
+            description = ''
+              Install locally packaged CLI/AI tools from this flake. Disable on
+              slower machines to keep Home Manager switches on mostly cached
+              nixpkgs packages.
+            '';
+          };
+
+          config = lib.mkIf config.jmq.packageSets.customCli.enable {
+            home.packages = [
+              claudeCodePkg
+              codexPkg
+              flowPkg
+              googleworkspaceCliPkg
+              notionCliPkg
+              oraclePkg
+              piPkg
+              trueflowPkg
+            ]
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ voxtypePkg ]
+            ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
+            programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+              enable = true;
+              package = voxtypePkg;
+              model.name = "base.en";
+              service.enable = true;
+              settings.hotkey.enabled = true;
+            };
           };
         };
 
@@ -574,6 +596,15 @@
           ++ extraModules;
         };
 
+      liteHomeModule =
+        { lib, ... }:
+        {
+          jmq.packageSets.customCli.enable = false;
+          jmq.linux.desktop.enable = false;
+          jmq.linux.heavyweightApps.enable = false;
+          jmq.yubikey.otp.longPressOnly.enforceOnActivation = lib.mkForce false;
+        };
+
       mkNixosHost =
         {
           system,
@@ -624,9 +655,21 @@
           module = ./home/hosts/jmq-linux.nix;
           nixpkgsConfig.allowUnfree = true;
         };
+        "linux-aarch64-lite" = mkHome {
+          system = "aarch64-linux";
+          module = ./home/hosts/jmq-linux.nix;
+          extraModules = [ liteHomeModule ];
+          nixpkgsConfig.allowUnfree = true;
+        };
         "linux-x86_64" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
+          nixpkgsConfig.allowUnfree = true;
+        };
+        "linux-x86_64-lite" = mkHome {
+          system = "x86_64-linux";
+          module = ./home/hosts/jmq-linux.nix;
+          extraModules = [ liteHomeModule ];
           nixpkgsConfig.allowUnfree = true;
         };
       };
