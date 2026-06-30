@@ -367,11 +367,11 @@
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
-        "lastModified": 1782272928,
-        "narHash": "sha256-sNkeSCsNeQjvtzFRlE2N40lfQAfQJtPzWEHsBwAbjN8=",
+        "lastModified": 1782674582,
+        "narHash": "sha256-ZHcq1R6giLH6IBgTIlhAUtpGxlqlBzg+ys4R3Anw0lo=",
         "owner": "trueflow-dev",
         "repo": "trueflow",
-        "rev": "e6ffcdf3962a01e51d1b2f5042df9457530cc2fb",
+        "rev": "d18b7c4e5e3abbf4041adc3baaa9ae7505b4aa4e",
         "type": "github"
       },
       "original": {
