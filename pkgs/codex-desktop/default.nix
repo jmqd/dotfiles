@@ -2,17 +2,17 @@
   fetchurl,
   lib,
   stdenvNoCC,
-  undmg,
+  unzip,
 }:
 let
   sources = {
     aarch64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/Codex.dmg";
-      hash = "sha256-S7VSvxwZBL1m4oTTScRYKcWREORuSDLF1ps++vkQIT8=";
+      url = "https://persistent.oaistatic.com/codex-app-prod/Codex-darwin-arm64-26.623.61825.zip";
+      hash = "sha256-pIizpeiOjBbA92N0xUt1c97C+9v5eJxGZvtT7BJl3r8=";
     };
     x86_64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/Codex-latest-x64.dmg";
-      hash = "sha256-tPv6V5PP4cU5H489+myQh9ZgAe6XTN4I0tigPmmzmwU=";
+      url = "https://persistent.oaistatic.com/codex-app-prod/Codex-darwin-x64-26.623.61825.zip";
+      hash = "sha256-D6Ymc5VyOHf5rlid8kfHd0hf4NsuzFFmh9sP79XGEfI=";
     };
   };
   source =
@@ -21,11 +21,11 @@ let
 in
 stdenvNoCC.mkDerivation {
   pname = "codex-desktop";
-  version = "26.616.71553";
+  version = "26.623.61825";
 
   src = fetchurl source;
 
-  nativeBuildInputs = [ undmg ];
+  nativeBuildInputs = [ unzip ];
   sourceRoot = ".";
 
   installPhase = ''
@@ -34,7 +34,7 @@ stdenvNoCC.mkDerivation {
     mkdir -p "$out/Applications"
     app_bundle="$(find . -maxdepth 1 -name '*.app' -type d -print -quit)"
     if [ -z "$app_bundle" ]; then
-      echo "no .app bundle found in Codex DMG" >&2
+      echo "no .app bundle found in Codex ZIP" >&2
       exit 1
     fi
     cp -R "$app_bundle" "$out/Applications/Codex.app"
@@ -50,5 +50,6 @@ stdenvNoCC.mkDerivation {
       "aarch64-darwin"
       "x86_64-darwin"
     ];
+    sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
   };
 }
