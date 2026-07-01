@@ -48,6 +48,10 @@ in
           dmenu
           flameshot
           geeqie
+          hotspot
+          kdePackages.kcachegrind
+          kdePackages.massif-visualizer
+          kernelshark
           i3lock
           i3wsr
           pavucontrol
