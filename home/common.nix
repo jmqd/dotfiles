@@ -140,7 +140,64 @@ in
     ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (
       with pkgs;
       [
+        # Linux observability and tracing, Brendan Gregg style: perf, ftrace,
+        # eBPF, flame graphs, and the classic first-response CLI tools.
+        bcc
+        bpftrace
+        flamegraph
+        ltrace
+        perf
+        (lib.lowPrio perf-tools)
+        strace
+        sysstat
+        trace-cmd
+
+        # CPU, memory, and allocator profilers.
         gdb
+        gperftools
+        heaptrack
+        samply
+        valgrind
+
+        # Benchmarking and load generation.
+        fio
+        hyperfine
+        iperf3
+        stress-ng
+
+        # I/O, network, power, and topology inspection.
+        blktrace
+        ethtool
+        hwloc
+        iftop
+        iotop
+        nethogs
+        numactl
+        powertop
+        tcpdump
+
+        # Compiler, ELF, DWARF, and post-link analysis.
+        binutils
+        elfutils
+        llvmPackages.bolt
+        llvmPackages.llvm
+        pahole
+
+        # Rust application profiling and code-size analysis.
+        cargo-bloat
+        cargo-criterion
+        cargo-flamegraph
+        cargo-llvm-lines
+        cargo-show-asm
+
+        linuxPackages.cpupower
+      ]
+    )
+    ++ lib.optionals (pkgs.stdenv.hostPlatform.isLinux && pkgs.stdenv.hostPlatform.isx86_64) (
+      with pkgs;
+      [
+        linuxPackages.turbostat
+        msr-tools
       ]
     );
 
