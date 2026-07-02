@@ -138,6 +138,139 @@ let
     "turbostat"
     "wrmsr"
   ];
+
+  coreSecurityTools = [
+    "aircrack-ng"
+    "amass"
+    "arp-scan"
+    "auditctl"
+    "aureport"
+    "ausearch"
+    "bettercap"
+    "binwalk"
+    "bwrap"
+    "capinfos"
+    "cewl"
+    "clamscan"
+    "conftest"
+    "cosign"
+    "crane"
+    "crunch"
+    "dc3dd"
+    "ddrescue"
+    "detect-secrets"
+    "dig"
+    "dive"
+    "dnsx"
+    "dumpcap"
+    "editcap"
+    "exiftool"
+    "feroxbuster"
+    "ffuf"
+    "fls"
+    "foremost"
+    "freshclam"
+    "fsstat"
+    "gau"
+    "gcrane"
+    "gitleaks"
+    "gobuster"
+    "grype"
+    "hashcat"
+    "hashcat-utils"
+    "hexyl"
+    "host"
+    "httpx"
+    "hydra"
+    "hydra-wizard"
+    "icat"
+    "john"
+    "katana"
+    "keepass2john"
+    "kube-bench"
+    "kubeaudit"
+    "kubescape"
+    "lynis"
+    "masscan"
+    "mergecap"
+    "mitmdump"
+    "mitmproxy"
+    "mitmweb"
+    "mmls"
+    "mtr"
+    "naabu"
+    "ncat"
+    "nc"
+    "ncrack"
+    "netcat"
+    "netsniff-ng"
+    "ngrep"
+    "nikto"
+    "nmap"
+    "nping"
+    "nslookup"
+    "nuclei"
+    "oscap"
+    "osqueryd"
+    "osqueryi"
+    "osv-scanner"
+    "photorec"
+    "prowler"
+    "pw-inspector"
+    "r2"
+    "rabin2"
+    "radare2"
+    "rahash2"
+    "randpkt"
+    "rar2john"
+    "rasm2"
+    "rawshark"
+    "rizin"
+    "rustscan"
+    "scapy"
+    "searchsploit"
+    "semgrep"
+    "sherlock"
+    "sharkd"
+    "slsa-verifier"
+    "socat"
+    "sqlmap"
+    "sqlmapapi"
+    "ssh-audit"
+    "sslscan"
+    "subfinder"
+    "syft"
+    "termshark"
+    "testdisk"
+    "testssl"
+    "testssl.sh"
+    "text2pcap"
+    "theHarvester"
+    "theharvester"
+    "traceroute"
+    "trivy"
+    "trufflehog"
+    "tsk_recover"
+    "tshark"
+    "unshadow"
+    "vol"
+    "volatility3"
+    "vulnix"
+    "wafw00f"
+    "waybackurls"
+    "whatweb"
+    "whois"
+    "yara"
+    "zizmor"
+    "zip2john"
+  ];
+
+  desktopSecurityTools = [
+    "cutter"
+    "ghidra"
+    "imhex"
+    "wireshark"
+  ];
 in
 {
   imports = [
@@ -167,6 +300,9 @@ in
         ++ lib.optionals cfg.desktop.enable desktopPerfTools
         ++ lib.optionals pkgs.stdenv.hostPlatform.isx86_64 x86PerfTools
       );
+      JM_SECURITY_TOOLS = lib.concatStringsSep " " (
+        coreSecurityTools ++ lib.optionals cfg.desktop.enable desktopSecurityTools
+      );
     };
 
     home.shellAliases = {
@@ -189,6 +325,10 @@ in
           kdePackages.kcachegrind
           kdePackages.massif-visualizer
           kernelshark
+          cutter
+          ghidra
+          imhex
+          wireshark
           i3lock
           i3wsr
           pavucontrol

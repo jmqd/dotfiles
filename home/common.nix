@@ -199,6 +199,109 @@ in
         linuxPackages.turbostat
         msr-tools
       ]
+    )
+    ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+      with pkgs;
+      [
+        # Security reconnaissance and network discovery.
+        amass
+        arp-scan
+        dnsutils
+        masscan
+        mtr
+        netcat-openbsd
+        nmap
+        rustscan
+        sherlock
+        socat
+        subfinder
+        theharvester
+        traceroute
+        whois
+
+        # Web, TLS, and attack-surface assessment.
+        dnsx
+        exploitdb
+        feroxbuster
+        ffuf
+        gau
+        gobuster
+        httpx
+        katana
+        naabu
+        nikto
+        nuclei
+        nuclei-templates
+        sqlmap
+        sslscan
+        testssl
+        wafw00f
+        waybackurls
+        whatweb
+
+        # Packet, protocol, and traffic analysis.
+        bettercap
+        mitmproxy
+        netsniff-ng
+        ngrep
+        python3Packages.scapy
+        termshark
+        (lib.lowPrio wireshark-cli)
+
+        # Secrets, supply-chain, cloud, and container scanning.
+        conftest
+        cosign
+        detect-secrets
+        dive
+        gitleaks
+        go-containerregistry
+        grype
+        kube-bench
+        kubeaudit
+        kubescape
+        osv-scanner
+        prowler
+        semgrep
+        slsa-verifier
+        syft
+        trivy
+        trufflehog
+        zizmor
+
+        # Host audit and malware triage.
+        audit
+        (lib.lowPrio bubblewrap)
+        clamav
+        lynis
+        openscap
+        osquery
+        ssh-audit
+        vulnix
+        yara
+
+        # Forensics and reverse-engineering CLI tools.
+        binwalk
+        dc3dd
+        ddrescue
+        exiftool
+        foremost
+        hexyl
+        radare2
+        rizin
+        sleuthkit
+        testdisk
+        volatility3
+
+        # Password auditing and wireless assessment.
+        aircrack-ng
+        cewl
+        crunch
+        hashcat
+        hashcat-utils
+        hydra
+        john
+        ncrack
+      ]
     );
 
   home.sessionVariables = {
