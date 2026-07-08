@@ -140,16 +140,16 @@
             if system == "aarch64-darwin" then
               "${
                 pkgs.fetchzip {
-                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-arm64-release.zip";
-                  hash = "sha256-EcwfNpYMoD8zf1ihsoYZJX0k/BewK3QHx7LjVADNbf0=";
+                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/webrtc-mac-arm64-release.zip";
+                  hash = "sha256-T4+hPS5qGghUsXIP/AQsTPokpM84KpsDekL+Q8/evmk=";
                   stripRoot = false;
                 }
               }/mac-arm64-release"
             else if system == "x86_64-darwin" then
               "${
                 pkgs.fetchzip {
-                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-24f6822-2/webrtc-mac-x64-release.zip";
-                  hash = "sha256-6ARl0EDCwX296hcLvDsEPOhOQ4qAhXGLfHF+Bn8fFII=";
+                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/webrtc-mac-x64-release.zip";
+                  hash = "sha256-cCOPpxkkI0TsjjW9mQJok8K+CGa3ax+9ZPJiF5LQbz8=";
                   stripRoot = false;
                 }
               }/mac-x64-release"
