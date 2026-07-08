@@ -4,10 +4,10 @@
 }:
 buildNpmPackage rec {
   pname = "oracle";
-  version = "0.15.0";
+  version = "0.15.2";
 
   src = ./.;
-  npmDepsHash = "sha256-IVUNEe+Rt3tXOGsfOvVYsOcP8YsIQLRGUiz7y1/KDzo=";
+  npmDepsHash = "sha256-jvXi3X6/IKscxupcJkyRhKfLMKFNjsDXccOxQ+KXBDE=";
   npmDepsFetcherVersion = 2;
   dontNpmBuild = true;
 
