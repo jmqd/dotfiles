@@ -11,6 +11,8 @@
   libcap,
   libclang,
   makeBinaryWrapper,
+  livekit-libwebrtc,
+  lld,
   pkg-config,
   openssl,
   ripgrep,
@@ -20,7 +22,6 @@
   codexSrc,
   version,
   cargoHash,
-  darwinWebrtc ? null,
   librusty_v8 ? callPackage "${nixpkgsPath}/pkgs/by-name/co/codex/librusty_v8.nix" {
     inherit (callPackage "${nixpkgsPath}/pkgs/by-name/co/codex/fetchers.nix" { }) fetchLibrustyV8;
   },
@@ -31,6 +32,26 @@ rustPlatform.buildRustPackage {
 
   src = codexSrc;
   sourceRoot = "source/codex-rs";
+
+  # Match upstream's release build for the codex binary only.
+  cargoBuildFlags = [
+    "--package"
+    "codex-cli"
+  ];
+  cargoCheckFlags = [
+    "--package"
+    "codex-cli"
+  ];
+
+  postPatch = ''
+    # webrtc-sys asks rustc to link libwebrtc statically by default, but
+    # nixpkgs provides libwebrtc as a shared library.
+    substituteInPlace $cargoDepsCopy/*/webrtc-sys-*/build.rs \
+      --replace-fail "cargo:rustc-link-lib=static=webrtc" "cargo:rustc-link-lib=dylib=webrtc"
+    substituteInPlace Cargo.toml \
+      --replace-fail 'lto = "thin"' "" \
+      --replace-fail 'codegen-units = 4' ""
+  '';
 
   nativeBuildInputs = [
     clang
@@ -51,6 +72,7 @@ rustPlatform.buildRustPackage {
 
   env = {
     LIBCLANG_PATH = "${lib.getLib libclang}/lib";
+    LK_CUSTOM_WEBRTC = lib.getDev livekit-libwebrtc;
     NIX_CFLAGS_COMPILE = toString (
       lib.optionals stdenv.cc.isGNU [
         "-Wno-error=stringop-overflow"
@@ -62,7 +84,9 @@ rustPlatform.buildRustPackage {
     RUSTY_V8_ARCHIVE = librusty_v8;
   }
   // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
-    LK_CUSTOM_WEBRTC = darwinWebrtc;
+    # Link with lld on Darwin. nixpkgs' classic open-source ld64 fails to insert
+    # ARM64 branch thunks for this binary, producing `b(l) ARM64 branch out of range`.
+    NIX_CFLAGS_LINK = "-fuse-ld=${lib.getExe' lld "ld64.lld"}";
   };
 
   doCheck = false;

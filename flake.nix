@@ -13,7 +13,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    codex.url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.143.0";
+    codex.url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.144.1";
     googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
     notion-cli = {
       url = "github:lox/notion-cli/v0.6.0";
@@ -136,29 +136,10 @@
           pkgs = import nixpkgs { inherit system; };
           cargoToml = builtins.fromTOML (builtins.readFile "${codex}/codex-rs/Cargo.toml");
           version = cargoToml.workspace.package.version;
-          darwinWebrtc =
-            if system == "aarch64-darwin" then
-              "${
-                pkgs.fetchzip {
-                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/webrtc-mac-arm64-release.zip";
-                  hash = "sha256-T4+hPS5qGghUsXIP/AQsTPokpM84KpsDekL+Q8/evmk=";
-                  stripRoot = false;
-                }
-              }/mac-arm64-release"
-            else if system == "x86_64-darwin" then
-              "${
-                pkgs.fetchzip {
-                  url = "https://github.com/livekit/rust-sdks/releases/download/webrtc-51ef663/webrtc-mac-x64-release.zip";
-                  hash = "sha256-cCOPpxkkI0TsjjW9mQJok8K+CGa3ax+9ZPJiF5LQbz8=";
-                  stripRoot = false;
-                }
-              }/mac-x64-release"
-            else
-              null;
         in
         pkgs.callPackage ./pkgs/codex {
-          inherit version darwinWebrtc;
-          cargoHash = "sha256-YUQYPo4joZwHlderRA4f5A/04+rI+R1jd7RsfA5+P1E=";
+          inherit version;
+          cargoHash = "sha256-S4dsZXfmKvJItL2XYKyxfhqdCMATEG6oPjrtVRwkuYc=";
           codexSrc = codex;
           nixpkgsPath = pkgs.path;
         };
