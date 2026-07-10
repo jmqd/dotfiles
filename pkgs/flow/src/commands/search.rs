@@ -672,7 +672,7 @@ mod tests {
                 },
                 SearchResult::Dirty {
                     repo: "dotfiles".to_owned(),
-                    path: "bin/hive".to_owned(),
+                    path: "bin/linear".to_owned(),
                     line: 12,
                     snippet: "echo dirty".to_owned(),
                 },

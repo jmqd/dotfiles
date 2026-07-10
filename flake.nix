@@ -245,7 +245,6 @@
             "bin/lint-secrets.sh"
             "bin/setup-git-hooks.sh"
             "tests/flow-search-smoke.sh"
-            "tests/hive-smoke.sh"
           ];
 
           nixFiles = [
@@ -334,30 +333,6 @@
                 touch $out
               '';
 
-          hiveOrchestratorTests =
-            pkgs.runCommand "hive-orchestrator-tests"
-              {
-                nativeBuildInputs = [ pkgs.nodejs ];
-              }
-              ''
-                cd ${./.}
-                node --test \
-                  home/.pi/agent/extensions/hive-orchestrator/core.test.ts \
-                  home/.pi/agent/extensions/hive-orchestrator/orchestrator.test.ts
-                touch $out
-              '';
-
-          hiveSmokeTests =
-            pkgs.runCommand "hive-smoke-tests"
-              {
-                nativeBuildInputs = [ pkgs.bash ];
-              }
-              ''
-                cd ${./.}
-                bash tests/hive-smoke.sh
-                touch $out
-              '';
-
           flowSmokeTests =
             pkgs.runCommand "flow-smoke-tests"
               {
@@ -442,8 +417,6 @@
           checks = {
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
-            hive-orchestrator-tests = hiveOrchestratorTests;
-            hive-smoke-tests = hiveSmokeTests;
             nixfmt = nixfmtCheck;
             review-orchestrator-tests = reviewOrchestratorTests;
             secrets-lint = secretsLintCheck;

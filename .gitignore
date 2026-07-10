@@ -5,6 +5,5 @@ result
 emacs/var/
 emacs/eln-cache/
 blobs/*.zip
-.hive/
 .trueflow/
 home/.pi/agent/auth.json

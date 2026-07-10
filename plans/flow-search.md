@@ -161,7 +161,7 @@ Return a unified typed result list, e.g.:
     {
       "kind": "dirty",
       "repo": "dotfiles",
-      "path": "bin/hive",
+      "path": "bin/linear",
       "line": 12,
       "snippet": "..."
     }
