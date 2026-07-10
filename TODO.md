@@ -35,7 +35,3 @@
 - [ ] Consider a small smoke-test path for the `/review` extension beyond the current unit tests.
 - [ ] Get deeply familiar with ast-grep and dylint, then integrate deterministic AST-aware linting and rewrites into daily workflows.
 
-## Hive follow-ups
-- [ ] Decide whether hive should move from live-repo worktrees to a local bare mirror.
-- [ ] Evaluate stronger sandboxing defaults (`--hardened`, non-root user, read-only rootfs, dedicated store).
-- [ ] Add a small Docker/OrbStack smoke-test path for hive.

@@ -10,7 +10,6 @@ paths = [
   '''(^|/)emacs/eln-cache/''',
   '''(^|/)\.direnv/''',
   '''(^|/)result($|/)''',
-  '''(^|/)\.hive/''',
   '''(^|/)\.trueflow/''',
 ]
 
