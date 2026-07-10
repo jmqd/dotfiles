@@ -6,16 +6,16 @@
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1783471380,
-        "narHash": "sha256-4xJcE8/lFwp1r/J8z7HMb7A59WXkj3rtm9QDtjJfC04=",
-        "ref": "refs/tags/rust-v0.143.0",
-        "rev": "c4d748f586a84a3ed5b6aceb82e9a1db4abb1cda",
-        "revCount": 7972,
+        "lastModified": 1783635027,
+        "narHash": "sha256-KHgrqIZyAmLhTZSRYbb7huBO8neOib/B1Vx/oPW2nEU=",
+        "ref": "refs/tags/rust-v0.144.1",
+        "rev": "44918ea10c0f99151c6710411b4322c2f5c96bea",
+        "revCount": 8054,
         "type": "git",
         "url": "https://github.com/openai/codex"
       },
       "original": {
-        "ref": "refs/tags/rust-v0.143.0",
+        "ref": "refs/tags/rust-v0.144.1",
         "type": "git",
         "url": "https://github.com/openai/codex"
       }
@@ -266,11 +266,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1783488441,
-        "narHash": "sha256-jmWf+H3iC/0z7/mmvTovaJx1E/LME1QyHkyk+AFfJPk=",
+        "lastModified": 1783614422,
+        "narHash": "sha256-zSX553aXiIKJHWzUF6nrDKgeNRlfNK/SdyNYSbs2nkM=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "7dc3a177a239ed879c5581a80f6dc246c7e102f1",
+        "rev": "e8e9d70b96113fd49ccde6c3e08fb260b6ef5dd6",
         "type": "github"
       },
       "original": {
