@@ -1,7 +1,7 @@
 {
   "lastChangelogVersion": "0.64.0",
   "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.5",
+  "defaultModel": "gpt-5.6",
   "defaultThinkingLevel": "xhigh",
   "enableSkillCommands": true,
   "theme": "light-minimal"

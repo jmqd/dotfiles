@@ -1,5 +1,5 @@
 ---
-description: Ask Oracle GPT-5.5 Pro through the Oracle CLI and fold the answer into this Codex thread
+description: Ask Oracle GPT-5.6 Pro through the Oracle CLI and fold the answer into this Codex thread
 argument-hint: PROMPT
 ---
 
@@ -7,10 +7,10 @@ Use the Oracle CLI as an advisory second-model consult for this request:
 
 $ARGUMENTS
 
-Route through `oracle` with ChatGPT browser mode and GPT-5.5 Pro:
+Route through `oracle` with ChatGPT browser mode and GPT-5.6 Pro:
 
 ```sh
-oracle --engine browser --model gpt-5.5-pro -p "<standalone prompt>"
+oracle --engine browser --model gpt-5.6-pro -p "<standalone prompt>"
 ```
 
 Workflow:
@@ -20,7 +20,7 @@ Workflow:
 3. For file-backed consults, preview first:
 
 ```sh
-oracle --engine browser --model gpt-5.5-pro \
+oracle --engine browser --model gpt-5.6-pro \
   --dry-run summary --files-report \
   -p "<standalone prompt>" \
   --file "<glob-or-path>"
@@ -29,7 +29,7 @@ oracle --engine browser --model gpt-5.5-pro \
 4. If the preview is reasonable, run Oracle. Use a short slug when the prompt is likely to run for a while:
 
 ```sh
-oracle --engine browser --model gpt-5.5-pro \
+oracle --engine browser --model gpt-5.6-pro \
   --slug "<short-slug>" \
   -p "<standalone prompt>" \
   --file "<glob-or-path>"
