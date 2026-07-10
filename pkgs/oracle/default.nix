@@ -7,7 +7,7 @@ buildNpmPackage rec {
   version = "0.15.2";
 
   src = ./.;
-  npmDepsHash = "sha256-jvXi3X6/IKscxupcJkyRhKfLMKFNjsDXccOxQ+KXBDE=";
+  npmDepsHash = "sha256-UQNWM6zcwZ9Enen8kSm3uDG07POLL6gouzOuikqCxS0=";
   npmDepsFetcherVersion = 2;
   dontNpmBuild = true;
 
