@@ -550,6 +550,11 @@
           ++ extraModules;
         };
 
+      linuxNixpkgsConfig = {
+        allowUnfree = true;
+        permittedInsecurePackages = [ "googleearth-pro-7.3.7.1155" ];
+      };
+
       liteHomeModule =
         { lib, ... }:
         {
@@ -607,24 +612,24 @@
         "linux-aarch64" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
-          nixpkgsConfig.allowUnfree = true;
+          nixpkgsConfig = linuxNixpkgsConfig;
         };
         "linux-aarch64-lite" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
           extraModules = [ liteHomeModule ];
-          nixpkgsConfig.allowUnfree = true;
+          nixpkgsConfig = linuxNixpkgsConfig;
         };
         "linux-x86_64" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
-          nixpkgsConfig.allowUnfree = true;
+          nixpkgsConfig = linuxNixpkgsConfig;
         };
         "linux-x86_64-lite" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
           extraModules = [ liteHomeModule ];
-          nixpkgsConfig.allowUnfree = true;
+          nixpkgsConfig = linuxNixpkgsConfig;
         };
       };
 
