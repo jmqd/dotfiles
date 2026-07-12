@@ -344,6 +344,7 @@ in
         with pkgs;
         [
           discord
+          googleearth-pro
           lutris
           slack
           spotify
