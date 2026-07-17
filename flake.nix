@@ -12,9 +12,17 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     flake-utils.url = "github:numtide/flake-utils";
-    codex.url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.144.1";
-    googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
+    codex = {
+      url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.144.5";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    googleworkspace-cli = {
+      url = "github:googleworkspace/cli/v0.22.5";
+      inputs.flake-utils.follows = "flake-utils";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     notion-cli = {
       url = "github:lox/notion-cli/v0.6.0";
       flake = false;
@@ -23,32 +31,59 @@
       url = "github:djgoku/sops";
       flake = false;
     };
-    trueflow.url = "github:trueflow-dev/trueflow";
-    voxtype.url = "github:peteonrails/voxtype/v1.0.0-rc1";
+    trueflow = {
+      url = "github:trueflow-dev/trueflow";
+      inputs.flake-utils.follows = "flake-utils";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    trueflow-darwin-x86 = {
+      # Same source as `trueflow`; only the Nixpkgs edge differs for Intel Darwin.
+      url = "github:trueflow-dev/trueflow/3af46222bd98a4bb6d881cb5f6687530e9ab1fdd";
+      inputs.flake-utils.follows = "flake-utils";
+      inputs.rust-overlay.follows = "trueflow/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
+    };
+    voxtype = {
+      url = "github:peteonrails/voxtype/v1.0.0-rc1";
+      inputs.flake-utils.follows = "flake-utils";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
+    };
+    home-manager-darwin-x86 = {
+      url = "github:nix-community/home-manager/release-26.05";
+      inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
     };
   };
 
   outputs =
     {
       nixpkgs,
+      nixpkgs-darwin-x86,
       flake-utils,
       codex,
       googleworkspace-cli,
       notion-cli,
       trueflow,
+      trueflow-darwin-x86,
       voxtype,
       emacs-sops,
       home-manager,
+      home-manager-darwin-x86,
       ...
     }:
     let
+      nixpkgsFor = system: if system == "x86_64-darwin" then nixpkgs-darwin-x86 else nixpkgs;
+      trueflowFor = system: if system == "x86_64-darwin" then trueflow-darwin-x86 else trueflow;
+      homeManagerFor =
+        system: if system == "x86_64-darwin" then home-manager-darwin-x86 else home-manager;
+
       mkGoogleworkspaceCliPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import (nixpkgsFor system) { inherit system; };
         in
         pkgs.rustPlatform.buildRustPackage {
           pname = "gws";
@@ -86,7 +121,7 @@
       mkNotionCliPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import (nixpkgsFor system) { inherit system; };
         in
         pkgs.buildGoModule {
           pname = "notion-cli";
@@ -110,21 +145,21 @@
       mkTrueflowPkg =
         system:
         let
-          packages = trueflow.packages.${system};
+          packages = (trueflowFor system).packages.${system};
         in
         if packages ? native then packages.native else packages.default;
 
       mkPiPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import (nixpkgsFor system) { inherit system; };
         in
         pkgs.callPackage ./pkgs/omp { };
 
       mkOraclePkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import (nixpkgsFor system) { inherit system; };
         in
         pkgs.callPackage ./pkgs/oracle { };
 
@@ -132,7 +167,7 @@
       mkClaudeCodePkg =
         system:
         let
-          pkgs = import nixpkgs {
+          pkgs = import (nixpkgsFor system) {
             inherit system;
             config.allowUnfree = true;
           };
@@ -142,7 +177,7 @@
       mkCodexPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import (nixpkgsFor system) { inherit system; };
           cargoToml = builtins.fromTOML (builtins.readFile "${codex}/codex-rs/Cargo.toml");
           version = cargoToml.workspace.package.version;
         in
@@ -156,7 +191,7 @@
       mkCodexDesktopPkg =
         system:
         let
-          pkgs = import nixpkgs {
+          pkgs = import (nixpkgsFor system) {
             inherit system;
             config.allowUnfree = true;
           };
@@ -166,7 +201,7 @@
       mkFlowPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import (nixpkgsFor system) { inherit system; };
         in
         pkgs.callPackage ./pkgs/flow { };
 
@@ -218,7 +253,6 @@
               piPkg
               trueflowPkg
             ]
-            ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [ voxtypePkg ]
             ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
             programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
               enable = true;
@@ -233,7 +267,7 @@
       perSystem = flake-utils.lib.eachDefaultSystem (
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = import (nixpkgsFor system) { inherit system; };
           googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
@@ -382,7 +416,7 @@
           formatter = repoFormatter;
 
           devShells = {
-            default = pkgs.mkShell {
+            default = pkgs.mkShellNoCC {
               packages =
                 (with pkgs; [
                   awscli2
@@ -409,7 +443,7 @@
             codex = codexPkg;
             flow = flowPkg;
             googleworkspace-cli = googleworkspaceCliPkg;
-            home-manager = home-manager.packages.${system}.home-manager;
+            home-manager = (homeManagerFor system).packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             omp = piPkg;
             oracle = oraclePkg;
@@ -448,7 +482,7 @@
             };
             home-manager = {
               type = "app";
-              program = "${home-manager.packages.${system}.home-manager}/bin/home-manager";
+              program = "${(homeManagerFor system).packages.${system}.home-manager}/bin/home-manager";
             };
             omp = {
               type = "app";
@@ -494,12 +528,12 @@
           nixpkgsConfig ? { },
         }:
         let
-          pkgs = import nixpkgs {
+          pkgs = import (nixpkgsFor system) {
             inherit system;
             config = nixpkgsConfig;
           };
         in
-        home-manager.lib.homeManagerConfiguration {
+        (homeManagerFor system).lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
             inherit emacs-sops;

@@ -2,9 +2,18 @@
   lib,
   makeWrapper,
   rustPlatform,
-  git,
+  gitMinimal,
   zoekt,
 }:
+let
+  zoektForFlow = zoekt.overrideAttrs (_: {
+    pname = "zoekt-flow";
+    subPackages = [
+      "cmd/zoekt"
+      "cmd/zoekt-git-index"
+    ];
+  });
+in
 rustPlatform.buildRustPackage rec {
   pname = "flow";
   version = "0.1.0";
@@ -13,14 +22,14 @@ rustPlatform.buildRustPackage rec {
   cargoLock.lockFile = ./Cargo.lock;
 
   nativeBuildInputs = [ makeWrapper ];
-  nativeCheckInputs = [ git ];
+  nativeCheckInputs = [ gitMinimal ];
 
   postInstall = ''
     wrapProgram "$out/bin/flow" \
       --prefix PATH : ${
         lib.makeBinPath [
-          git
-          zoekt
+          gitMinimal
+          zoektForFlow
         ]
       }
   '';

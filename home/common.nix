@@ -97,7 +97,6 @@ in
       fd
       flock
       gh
-      git
       git-lfs
       gopls
       gnuplot
