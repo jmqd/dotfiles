@@ -287,6 +287,7 @@
             "bin/link-private-data.sh"
             "bin/lint-secrets.sh"
             "bin/setup-git-hooks.sh"
+            "tests/bootstrap-rust-mapfile.sh"
             "tests/flow-search-smoke.sh"
             "tests/hm-switch-failure.sh"
           ];
@@ -374,6 +375,20 @@
               ''
                 cd ${./.}
                 node --test home/.pi/agent/extensions/review-orchestrator/core.test.ts
+                touch $out
+              '';
+
+          bootstrapRustTests =
+            pkgs.runCommand "bootstrap-rust-tests"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.coreutils
+                ];
+              }
+              ''
+                cd ${./.}
+                bash tests/bootstrap-rust-mapfile.sh
                 touch $out
               '';
 
@@ -474,6 +489,7 @@
           };
 
           checks = {
+            bootstrap-rust-tests = bootstrapRustTests;
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
             hm-switch-tests = hmSwitchTests;
