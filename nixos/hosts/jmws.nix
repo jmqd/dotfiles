@@ -60,6 +60,7 @@ in
   environment.pathsToLink = [ "/libexec" ];
 
   nix.settings = {
+    auto-optimise-store = true;
     allowed-users = [ "@wheel" ];
     trusted-users = [
       "root"
