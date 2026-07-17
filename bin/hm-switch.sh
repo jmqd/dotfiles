@@ -126,8 +126,9 @@ run_home_manager_switch() {
 		if "${cmd[@]}" 2>&1 | tee "$log_file"; then
 			rm -f "$log_file"
 			return 0
+		else
+			status=$?
 		fi
-		status=$?
 
 		if [[ "$os_name" == "Darwin" ]] && [[ $attempt -eq 1 ]] && home_manager_hit_app_management_error "$log_file"; then
 			prompt_for_app_management_permission
