@@ -288,6 +288,7 @@
             "bin/lint-secrets.sh"
             "bin/setup-git-hooks.sh"
             "tests/flow-search-smoke.sh"
+            "tests/hm-switch-failure.sh"
           ];
 
           nixFiles = [
@@ -392,6 +393,21 @@
                 touch $out
               '';
 
+          hmSwitchTests =
+            pkgs.runCommand "hm-switch-tests"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.coreutils
+                  pkgs.gnugrep
+                ];
+              }
+              ''
+                cd ${./.}
+                bash tests/hm-switch-failure.sh
+                touch $out
+              '';
+
           secretsLint = pkgs.writeShellApplication {
             name = "secrets-lint";
             runtimeInputs = [ pkgs.gitleaks ];
@@ -460,6 +476,7 @@
           checks = {
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
+            hm-switch-tests = hmSwitchTests;
             nixfmt = nixfmtCheck;
             review-orchestrator-tests = reviewOrchestratorTests;
             secrets-lint = secretsLintCheck;
