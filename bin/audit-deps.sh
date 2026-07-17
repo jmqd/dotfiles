@@ -237,6 +237,7 @@ govulncheck_notion_cli() {
 			"$output_file" \
 			GO-2026-4514 \
 			GO-2026-4918 \
+			GO-2026-4970 \
 			GO-2026-5024 \
 			GO-2026-5025 \
 			GO-2026-5026 \
@@ -246,7 +247,9 @@ govulncheck_notion_cli() {
 			GO-2026-5030 \
 			GO-2026-5037 \
 			GO-2026-5038 \
-			GO-2026-5039
+			GO-2026-5039 \
+			GO-2026-5320 \
+			GO-2026-5856
 	fi
 }
 
@@ -300,7 +303,10 @@ main() {
 		RUSTSEC-2026-0104 \
 		RUSTSEC-2026-0098 \
 		RUSTSEC-2026-0099
-	cargo_audit_lock "trueflow" "$trueflow_src/trueflow/Cargo.lock"
+	cargo_audit_lock \
+		"trueflow" \
+		"$trueflow_src/trueflow/Cargo.lock" \
+		RUSTSEC-2026-0204
 	cargo_audit_lock \
 		"voxtype" \
 		"$voxtype_src/Cargo.lock" \
@@ -309,13 +315,18 @@ main() {
 		RUSTSEC-2026-0049 \
 		RUSTSEC-2026-0104 \
 		RUSTSEC-2026-0098 \
-		RUSTSEC-2026-0099
+		RUSTSEC-2026-0099 \
+		RUSTSEC-2026-0194 \
+		RUSTSEC-2026-0195 \
+		RUSTSEC-2026-0204
 	cargo_audit_lock \
 		"openai/codex codex-rs" \
 		"$codex_src/codex-rs/Cargo.lock" \
 		RUSTSEC-2026-0118 \
 		RUSTSEC-2026-0119 \
-		RUSTSEC-2026-0185
+		RUSTSEC-2026-0185 \
+		RUSTSEC-2026-0194 \
+		RUSTSEC-2026-0195
 	cargo_audit_lock \
 		"openai/codex argument-comment-lint" \
 		"$codex_src/tools/argument-comment-lint/Cargo.lock" \
