@@ -55,6 +55,15 @@
           version = "0.22.5";
           src = googleworkspace-cli;
           cargoLock.lockFile = "${googleworkspace-cli}/Cargo.lock";
+          # Upstream's encrypted-credentials test leaves this process-global
+          # variable set to a temporary directory, which can make the later
+          # config_dir test fail nondeterministically.
+          postPatch = ''
+            substituteInPlace crates/google-workspace-cli/src/auth.rs \
+              --replace-fail \
+                'std::env::set_var("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", dir.path());' \
+                'let _config_guard = EnvVarGuard::set("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", dir.path());'
+          '';
 
           nativeBuildInputs = with pkgs; [
             pkg-config
