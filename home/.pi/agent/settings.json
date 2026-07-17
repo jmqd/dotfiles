@@ -3,6 +3,7 @@
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.6",
   "defaultThinkingLevel": "xhigh",
+  "textVerbosity": "low",
   "enableSkillCommands": true,
   "theme": "light-minimal"
 }
