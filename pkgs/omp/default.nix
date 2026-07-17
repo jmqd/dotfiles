@@ -24,11 +24,11 @@ let
     };
     "x86_64-darwin" = {
       asset = "omp-darwin-x64";
-      hash = "sha256-4tSxE3nlAfNaJnYVpcLaEQ3JX4/S0mXUtWXjJyKZipQ=";
+      hash = "sha256-eaBKonimd+GLWQK1ZeSOTC/PLwMpjrmEzV/VaBEe9uw=";
     };
     "aarch64-linux" = {
       asset = "omp-linux-arm64";
-      hash = "sha256-eaBKonimd+GLWQK1ZeSOTC/PLwMpjrmEzV/VaBEe9uw=";
+      hash = "sha256-4tSxE3nlAfNaJnYVpcLaEQ3JX4/S0mXUtWXjJyKZipQ=";
     };
     "x86_64-linux" = {
       asset = "omp-linux-x64";
