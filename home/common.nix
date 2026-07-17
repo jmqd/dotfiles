@@ -211,7 +211,10 @@ in
         netcat-openbsd
         nmap
         rustscan
-        sherlock
+        (sherlock.overridePythonAttrs (_: {
+          # Nixpkgs #540584: Sherlock works with pandas 3; upstream metadata is stale.
+          pythonRelaxDeps = [ "pandas" ];
+        }))
         socat
         subfinder
         theharvester
