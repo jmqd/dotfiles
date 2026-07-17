@@ -31,7 +31,7 @@ in
 
     model = lib.mkOption {
       type = lib.types.str;
-      default = "gpt-5.6-codex";
+      default = "gpt-5.6-sol";
       description = "Trueflow AI model.";
     };
 
