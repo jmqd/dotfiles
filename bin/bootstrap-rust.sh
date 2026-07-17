@@ -58,7 +58,10 @@ else
 fi
 
 if [[ ${#components[@]} -gt 0 ]]; then
-	mapfile -t missing < <(missing_components)
+	missing=()
+	while IFS= read -r missing_component; do
+		missing+=("$missing_component")
+	done < <(missing_components)
 	if [[ ${#missing[@]} -gt 0 ]]; then
 		echo "Installing missing rustup components on ${active_toolchain}: ${missing[*]}"
 		"$rustup_bin" component add --toolchain "$active_toolchain" "${missing[@]}"
