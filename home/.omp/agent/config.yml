@@ -27,6 +27,12 @@ tools:
   approval:
     delete: prompt
     move: prompt
+checkpoint:
+  enabled: true
+task:
+  isolation:
+    mode: auto
+    merge: patch
 dev:
   autoqa:
     consent: granted
