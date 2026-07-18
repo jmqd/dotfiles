@@ -19,6 +19,9 @@ textVerbosity: low
 codexResets:
   autoRedeem: "yes"
 hideThinkingBlock: true
+lsp:
+  diagnosticsOnEdit: true
+  diagnosticsOnWrite: true
 dev:
   autoqa:
     consent: granted
