@@ -22,6 +22,11 @@ hideThinkingBlock: true
 lsp:
   diagnosticsOnEdit: true
   diagnosticsOnWrite: true
+tools:
+  approvalMode: yolo
+  approval:
+    delete: prompt
+    move: prompt
 dev:
   autoqa:
     consent: granted
