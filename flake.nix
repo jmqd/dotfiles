@@ -15,7 +15,7 @@
     nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     flake-utils.url = "github:numtide/flake-utils";
     codex = {
-      url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.144.5";
+      url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.144.6";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     googleworkspace-cli = {
