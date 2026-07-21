@@ -11,6 +11,7 @@
 
     ".claude/CLAUDE.md".source = ./.pi/agent/AGENTS.md;
     ".claude/commands/caveman.md".source = ./.pi/agent/skills/caveman.md;
+    ".codex/AGENTS.md".source = ./.pi/agent/AGENTS.md;
     ".codex/config.toml".source = ./codex/config.toml;
     ".codex/prompts/commit.md".source = ./.pi/agent/prompts/commit.md;
     ".codex/prompts/oracle.md".source = ./codex/prompts/oracle.md;
