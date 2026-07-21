@@ -319,7 +319,7 @@ in
         [
           autorandr
           dmenu
-          flameshot
+          ksnip
           geeqie
           hotspot
           kdePackages.kcachegrind
