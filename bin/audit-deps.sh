@@ -259,7 +259,7 @@ cargo_audit_lock() {
 	nix run nixpkgs#cargo-audit -- audit --file "$lock_file" --json >"$json_file" 2>"$json_stderr"
 	set -e
 
-	if ! jq -r '[.vulnerabilities.list[]?.advisory.id] | sort | .[]' "$json_file" >"$actual_file"; then
+	if ! jq -r '[.vulnerabilities.list[]?.advisory.id] | sort | .[]' "$json_file" | sort -u >"$actual_file"; then
 		cat "$json_stderr" "$json_file"
 		fail "cargo audit JSON failed for $name"
 		return
