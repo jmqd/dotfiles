@@ -313,13 +313,14 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version oracle_version claude_version codex_version notion_version gws_version
+	local pi_version oracle_version claude_version codex_version codex_desktop_version notion_version gws_version
 	pi_version="$(package_version "$system" pi)"
 	oracle_version="$(package_version "$system" oracle)"
 	claude_version="$(package_version "$system" claude-code)"
 	codex_version="$(package_version "$system" codex)"
 	notion_version="$(package_version "$system" notion-cli)"
 	gws_version="$(package_version "$system" googleworkspace-cli)"
+	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
 
 	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
 	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
@@ -328,7 +329,7 @@ main() {
 	check_github_release_latest "googleworkspace/cli" "v${gws_version}"
 	check_github_release_latest "lox/notion-cli" "v${notion_version}"
 
-	warn "codex-desktop uses versioned OpenAI ZIP URLs; latest-version checks are not automated here"
+	check_codex_desktop_latest "$codex_desktop_version"
 
 	npm_audit "pi" "pkgs/pi"
 	npm_audit "oracle" "pkgs/oracle"
