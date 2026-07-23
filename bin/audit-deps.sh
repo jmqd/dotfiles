@@ -201,8 +201,8 @@ npm_audit() {
  		 | .url // empty
  		 | select(test("/advisories/"))
  		 | split("/")[-1]]
- 		 | unique
- 		 | .[]
+ 		| unique
+ 		| .[]
  	' "$output_file" >"$found_file"; then
 		cat "$output_file"
 		fail "npm audit failed for $name"
@@ -245,14 +245,55 @@ cargo_audit_lock() {
 
 	section "cargo audit: $name"
 
-	local args=(audit --file "$lock_file")
-	if [ "$#" -gt 0 ]; then
-		printf 'known residual upstream advisories ignored for pass/fail: %s\n' "$*"
-		residuals=$((residuals + $#))
-		for advisory in "$@"; do
-			args+=(--ignore "$advisory")
-		done
+	local -a allowed_ids=("$@")
+	local json_file json_stderr actual_file allowed_file unexpected_file stale_file
+	json_file="$(mktemp)"
+	json_stderr="$(mktemp)"
+	actual_file="$(mktemp)"
+	allowed_file="$(mktemp)"
+	unexpected_file="$(mktemp)"
+	stale_file="$(mktemp)"
+	tmp_paths+=("$json_file" "$json_stderr" "$actual_file" "$allowed_file" "$unexpected_file" "$stale_file")
+
+	set +e
+	nix run nixpkgs#cargo-audit -- audit --file "$lock_file" --json >"$json_file" 2>"$json_stderr"
+	set -e
+
+	if ! jq -r '[.vulnerabilities.list[]?.advisory.id] | sort | .[]' "$json_file" >"$actual_file"; then
+		cat "$json_stderr" "$json_file"
+		fail "cargo audit JSON failed for $name"
+		return
 	fi
+
+	: >"$allowed_file"
+	if [ "${#allowed_ids[@]}" -gt 0 ]; then
+		printf '%s\n' "${allowed_ids[@]}" | sort -u >"$allowed_file"
+	fi
+	comm -23 "$actual_file" "$allowed_file" >"$unexpected_file"
+	comm -13 "$actual_file" "$allowed_file" >"$stale_file"
+
+	if [ -s "$unexpected_file" ] || [ -s "$stale_file" ]; then
+		cat "$json_stderr" "$json_file"
+		if [ -s "$unexpected_file" ]; then
+			fail "$name reported unexpected cargo advisories: $(tr '\n' ' ' <"$unexpected_file")"
+		fi
+		if [ -s "$stale_file" ]; then
+			fail "$name cargo advisory allowlist is stale: $(tr '\n' ' ' <"$stale_file")"
+		fi
+		return
+	fi
+
+	local actual_count
+	actual_count="$(wc -l <"$actual_file" | tr -d ' ')"
+	if [ "$actual_count" -gt 0 ]; then
+		residuals=$((residuals + actual_count))
+		printf 'known residual upstream advisories ignored for pass/fail: %s\n' "$(tr '\n' ' ' <"$actual_file")"
+	fi
+
+	local args=(audit --file "$lock_file")
+	for advisory in "${allowed_ids[@]}"; do
+		args+=(--ignore "$advisory")
+	done
 
 	local output_file status
 	output_file="$(mktemp)"
@@ -280,15 +321,20 @@ check_known_go_vulns() {
 	local name="$1" output_file="$2"
 	shift 2
 
-	local found_ids known_ids unknown_ids
+	local found_ids known_ids unknown_ids stale_ids
 	found_ids="$(mktemp)"
 	known_ids="$(mktemp)"
 	unknown_ids="$(mktemp)"
-	tmp_paths+=("$found_ids" "$known_ids" "$unknown_ids")
+	stale_ids="$(mktemp)"
+	tmp_paths+=("$found_ids" "$known_ids" "$unknown_ids" "$stale_ids")
 
 	sorted_ids_file "$output_file" "$found_ids"
-	printf '%s\n' "$@" | sort -u >"$known_ids"
+	: >"$known_ids"
+	if [ "$#" -gt 0 ]; then
+		printf '%s\n' "$@" | sort -u >"$known_ids"
+	fi
 	comm -23 "$found_ids" "$known_ids" >"$unknown_ids"
+	comm -13 "$found_ids" "$known_ids" >"$stale_ids"
 
 	if [ ! -s "$found_ids" ]; then
 		cat "$output_file"
@@ -296,9 +342,14 @@ check_known_go_vulns() {
 		return
 	fi
 
-	if [ -s "$unknown_ids" ]; then
+	if [ -s "$unknown_ids" ] || [ -s "$stale_ids" ]; then
 		cat "$output_file"
-		fail "$name reported new Go vulnerability IDs: $(tr '\n' ' ' <"$unknown_ids")"
+		if [ -s "$unknown_ids" ]; then
+			fail "$name reported new Go vulnerability IDs: $(tr '\n' ' ' <"$unknown_ids")"
+		fi
+		if [ -s "$stale_ids" ]; then
+			fail "$name Go vulnerability allowlist is stale: $(tr '\n' ' ' <"$stale_ids")"
+		fi
 		return
 	fi
 
@@ -352,11 +403,10 @@ govulncheck_notion_cli() {
 			GO-2026-5028 \
 			GO-2026-5029 \
 			GO-2026-5030 \
-			GO-2026-5037 \
-			GO-2026-5038 \
-			GO-2026-5039 \
 			GO-2026-5320 \
-			GO-2026-5856
+			GO-2026-5856 \
+			GO-2026-5942 \
+			GO-2026-5970
 	fi
 }
 
