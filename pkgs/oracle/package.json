@@ -1,6 +1,6 @@
 {
   "name": "oracle-wrapper",
-  "version": "0.16.0",
+  "version": "0.16.1",
   "private": true,
   "type": "module",
   "bin": {
@@ -8,6 +8,9 @@
     "oracle-mcp": "./bin/oracle-mcp.js"
   },
   "dependencies": {
-    "@steipete/oracle": "0.16.0"
+    "@steipete/oracle": "0.16.1"
+  },
+  "overrides": {
+    "@hono/node-server": "2.0.11"
   }
 }
