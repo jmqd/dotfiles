@@ -44,10 +44,6 @@ rustPlatform.buildRustPackage {
   ];
 
   postPatch = ''
-    # webrtc-sys asks rustc to link libwebrtc statically by default, but
-    # nixpkgs provides libwebrtc as a shared library.
-    substituteInPlace $cargoDepsCopy/*/webrtc-sys-*/build.rs \
-      --replace-fail "cargo:rustc-link-lib=static=webrtc" "cargo:rustc-link-lib=dylib=webrtc"
     substituteInPlace Cargo.toml \
       --replace-fail 'lto = "thin"' "" \
       --replace-fail 'codegen-units = 4' ""

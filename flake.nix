@@ -15,7 +15,7 @@
     nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     flake-utils.url = "github:numtide/flake-utils";
     codex = {
-      url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.144.6";
+      url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.145.0";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     googleworkspace-cli = {
@@ -183,7 +183,7 @@
         in
         pkgs.callPackage ./pkgs/codex {
           inherit version;
-          cargoHash = "sha256-S4dsZXfmKvJItL2XYKyxfhqdCMATEG6oPjrtVRwkuYc=";
+          cargoHash = "sha256-t9IMRK9R+Z67ThEcgBI0HQU0E4aJHcOjKp22RFclh9U=";
           codexSrc = codex;
           nixpkgsPath = pkgs.path;
         };
