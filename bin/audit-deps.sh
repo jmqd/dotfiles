@@ -173,8 +173,70 @@ check_codex_desktop_latest() {
 
 npm_audit() {
 	local name="$1" prefix="$2"
+	shift 2
+	local -a allowed_ids=("$@")
 	section "npm audit: $name"
-	run_required nix shell --quiet nixpkgs#nodejs -c npm audit --prefix "$prefix" --omit dev
+
+	local output_file found_file allowed_file unexpected_file stale_file status
+	output_file="$(mktemp)"
+	found_file="$(mktemp)"
+	allowed_file="$(mktemp)"
+	unexpected_file="$(mktemp)"
+	stale_file="$(mktemp)"
+	tmp_paths+=("$output_file" "$found_file" "$allowed_file" "$unexpected_file" "$stale_file")
+
+	set +e
+	nix shell --quiet nixpkgs#nodejs -c npm audit --json --prefix "$prefix" --omit dev >"$output_file" 2>&1
+	status=$?
+	set -e
+
+	if [ "$#" -eq 0 ] && [ "$status" -eq 0 ]; then
+		ok "npm audit passed for $name"
+		return
+	fi
+
+	if ! jq -r '
+ 		[.vulnerabilities[]?.via[]?
+ 		 | select(type == "object")
+ 		 | .url // empty
+ 		 | select(test("/advisories/"))
+ 		 | split("/")[-1]]
+ 		 | unique
+ 		 | .[]
+ 	' "$output_file" >"$found_file"; then
+		cat "$output_file"
+		fail "npm audit failed for $name"
+		return
+	fi
+
+	printf '%s\n' "${allowed_ids[@]}" | sort -u >"$allowed_file"
+	comm -23 "$found_file" "$allowed_file" >"$unexpected_file"
+	comm -13 "$found_file" "$allowed_file" >"$stale_file"
+
+	if [ -s "$unexpected_file" ] || [ -s "$stale_file" ] || [ ! -s "$found_file" ]; then
+		cat "$output_file"
+		if [ -s "$unexpected_file" ]; then
+			fail "$name reported unexpected npm advisories: $(tr '\n' ' ' <"$unexpected_file")"
+		fi
+		if [ -s "$stale_file" ]; then
+			fail "$name npm advisory allowlist is stale: $(tr '\n' ' ' <"$stale_file")"
+		fi
+		if [ ! -s "$found_file" ]; then
+			fail "npm audit failed for $name without advisory IDs"
+		fi
+		return
+	fi
+
+	if [ "$status" -eq 0 ]; then
+		fail "$name npm audit unexpectedly passed with residual advisories"
+		return
+	fi
+
+	local count
+	count="$(wc -l <"$found_file" | tr -d ' ')"
+	residuals=$((residuals + count))
+	printf 'known residual npm advisories ignored for pass/fail: %s\n' "$(tr '\n' ' ' <"$found_file")"
+	ok "npm audit passed for $name with documented residuals"
 }
 
 cargo_audit_lock() {
@@ -313,7 +375,7 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version oracle_version claude_version codex_version codex_desktop_version notion_version gws_version
+	local pi_version pi_wrapper_version oracle_version claude_version codex_version codex_desktop_version notion_version gws_version
 	pi_version="$(package_version "$system" pi)"
 	oracle_version="$(package_version "$system" oracle)"
 	claude_version="$(package_version "$system" claude-code)"
@@ -321,8 +383,10 @@ main() {
 	notion_version="$(package_version "$system" notion-cli)"
 	gws_version="$(package_version "$system" googleworkspace-cli)"
 	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
+	pi_wrapper_version="$(jq -er '.dependencies["@earendil-works/pi-coding-agent"]' pkgs/pi/package.json)"
 
 	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
+	check_npm_latest "pi-coding-agent" "@earendil-works/pi-coding-agent" "$pi_wrapper_version"
 	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
 	check_npm_latest "claude-code" "@anthropic-ai/claude-code" "$claude_version"
 	check_github_release_latest "openai/codex" "rust-v${codex_version}"
@@ -331,7 +395,7 @@ main() {
 
 	check_codex_desktop_latest "$codex_desktop_version"
 
-	npm_audit "pi" "pkgs/pi"
+	npm_audit "pi" "pkgs/pi" GHSA-j3f2-48v5-ccww
 	npm_audit "oracle" "pkgs/oracle"
 
 	local codex_src gws_src trueflow_src notion_src voxtype_src

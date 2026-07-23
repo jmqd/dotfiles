@@ -16,6 +16,7 @@
 - [x] Harden NixOS SSH settings explicitly in `nixos/hosts/jmws.nix` (`PasswordAuthentication`, `KbdInteractiveAuthentication`, `PermitRootLogin`, and firewall/Tailscale scoping).
 - [x] Replace the private-data `.git-credentials` symlink with an OS-backed credential helper, encrypted provisioning, or a documented rotation policy.
 - [x] Package Oracle through fixed-output Nix/npm dependencies instead of executing `npx -y @steipete/oracle@...` at runtime.
+- [ ] Track upstream fix for standalone Pi wrapper `v0.81.1`: `npm audit --omit dev` reports `GHSA-j3f2-48v5-ccww` in bundled `protobufjs 7.6.4` (fixed in `>=7.6.5`); the published `@earendil-works/pi-coding-agent` `npm-shrinkwrap.json` pins 7.6.4 and its nested lock defeats the root npm override.
 - [x] Review the macOS bootstrap `curl | sh` Determinate Nix installer path and add checksum/signature verification or a documented manual verification option.
 - [x] Update `pkgs/flow` Rust dependencies to remove the cargo-audit yanked-crate warning for `fastrand 2.4.0` via `tempfile`.
 - [ ] Confirm YubiKey serials are acceptable to publish, then register all personal YubiKeys in `home/yubikey.nix` with stable names/serials.
