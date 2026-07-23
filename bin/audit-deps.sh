@@ -305,8 +305,7 @@ main() {
 		RUSTSEC-2026-0099
 	cargo_audit_lock \
 		"trueflow" \
-		"$trueflow_src/trueflow/Cargo.lock" \
-		RUSTSEC-2026-0204
+		"$trueflow_src/trueflow/Cargo.lock"
 	cargo_audit_lock \
 		"voxtype" \
 		"$voxtype_src/Cargo.lock" \
