@@ -547,7 +547,7 @@
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = {
               type = "app";
-              program = "${codexDesktopPkg}/Applications/Codex.app/Contents/MacOS/Codex";
+              program = "${codexDesktopPkg}/Applications/Codex.app/Contents/MacOS/ChatGPT";
             };
           };
         }
