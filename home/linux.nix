@@ -343,6 +343,7 @@ in
       ++ lib.optionals (cfg.desktop.enable && cfg.heavyweightApps.enable) (
         with pkgs;
         [
+          bambu-studio
           discord
           googleearth-pro
           lutris
