@@ -24,10 +24,12 @@ repo_context() {
 
         clean_name="${file#./}"
         echo "Processing: $clean_name" >&2
-        echo "  <file name=\"$clean_name\">" >> "$OUT_FILE"
-        cat "$file" >> "$OUT_FILE"
-        echo "" >> "$OUT_FILE"
-        echo "  </file>" >> "$OUT_FILE"
+        {
+            echo "  <file name=\"$clean_name\">"
+            cat "$file"
+            echo ""
+            echo "  </file>"
+        } >> "$OUT_FILE"
     done
 
     echo "</codebase>" >> "$OUT_FILE"
