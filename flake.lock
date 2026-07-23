@@ -215,11 +215,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1769136478,
-        "narHash": "sha256-8UNd5lmGf8phCr/aKxagJ4kNsF0pCHLish2G4ZKCFFY=",
+        "lastModified": 1784438913,
+        "narHash": "sha256-NYF7ZM5ip0u+w1pBFDpIGEbrbgN/wpnLFAmBkWkYMXw=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "470ee44393bb19887056b557ea2c03fc5230bd5a",
+        "rev": "afacd6819d3765a05814ee8e3de74c77d42ac799",
         "type": "github"
       },
       "original": {
@@ -254,11 +254,11 @@
         "rust-overlay": "rust-overlay_2"
       },
       "locked": {
-        "lastModified": 1784282033,
-        "narHash": "sha256-Ge5dqhZa4O0jjz+2jo03GX2JxLP3Xa75gCnfL1UcLPg=",
+        "lastModified": 1784699449,
+        "narHash": "sha256-UO99V194SC7oaH17uEQkXzpec70u7H8whHwCyT9NVyw=",
         "owner": "trueflow-dev",
         "repo": "trueflow",
-        "rev": "64fcb90517bea0a3b5d198902bc5b6853628a913",
+        "rev": "d79c9eddc06bd1f7611ef501861682021f1f3e9f",
         "type": "github"
       },
       "original": {
@@ -281,17 +281,17 @@
         ]
       },
       "locked": {
-        "lastModified": 1784282033,
-        "narHash": "sha256-Ge5dqhZa4O0jjz+2jo03GX2JxLP3Xa75gCnfL1UcLPg=",
+        "lastModified": 1784699449,
+        "narHash": "sha256-UO99V194SC7oaH17uEQkXzpec70u7H8whHwCyT9NVyw=",
         "owner": "trueflow-dev",
         "repo": "trueflow",
-        "rev": "64fcb90517bea0a3b5d198902bc5b6853628a913",
+        "rev": "d79c9eddc06bd1f7611ef501861682021f1f3e9f",
         "type": "github"
       },
       "original": {
         "owner": "trueflow-dev",
         "repo": "trueflow",
-        "rev": "64fcb90517bea0a3b5d198902bc5b6853628a913",
+        "rev": "d79c9eddc06bd1f7611ef501861682021f1f3e9f",
         "type": "github"
       }
     },
