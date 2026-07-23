@@ -125,6 +125,51 @@ check_github_release_latest() {
 		fail "could not fetch latest GitHub release for $repo"
 	fi
 }
+check_codex_desktop_latest() {
+	local current="$1" feed_arm feed_x64 latest_arm latest_x64
+	section "latest check: codex-desktop"
+
+	if ! feed_arm="$(curl --fail --silent --show-error --location \
+		"https://persistent.oaistatic.com/codex-app-prod/appcast.xml")"; then
+		fail "could not fetch Codex Desktop arm64 appcast"
+		return
+	fi
+	if ! feed_x64="$(curl --fail --silent --show-error --location \
+		"https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml")"; then
+		fail "could not fetch Codex Desktop x86_64 appcast"
+		return
+	fi
+
+	local version_pattern='<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>'
+	local release_version_pattern='^[0-9]+\.[0-9]+\.[0-9]+$'
+	if [[ "$feed_arm" =~ $version_pattern ]]; then
+		latest_arm="${BASH_REMATCH[1]}"
+	else
+		fail "Codex Desktop arm64 appcast is missing a short version"
+		return
+	fi
+	if [[ ! "$latest_arm" =~ $release_version_pattern ]]; then
+		fail "Codex Desktop arm64 appcast has malformed version: $latest_arm"
+		return
+	fi
+	if [[ "$feed_x64" =~ $version_pattern ]]; then
+		latest_x64="${BASH_REMATCH[1]}"
+	else
+		fail "Codex Desktop x86_64 appcast is missing a short version"
+		return
+	fi
+	if [[ ! "$latest_x64" =~ $release_version_pattern ]]; then
+		fail "Codex Desktop x86_64 appcast has malformed version: $latest_x64"
+		return
+	fi
+
+	if [ "$latest_arm" != "$latest_x64" ]; then
+		fail "Codex Desktop appcast versions differ: arm64 $latest_arm, x86_64 $latest_x64"
+		return
+	fi
+
+	note_upgrade "codex-desktop" "$current" "$latest_arm"
+}
 
 npm_audit() {
 	local name="$1" prefix="$2"

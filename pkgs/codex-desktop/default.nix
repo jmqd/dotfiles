@@ -7,12 +7,12 @@
 let
   sources = {
     aarch64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/Codex-darwin-arm64-26.623.141536.zip";
-      hash = "sha256-2UjcNrg1j1opJLAz+/CDmO6nhg3J6Xy1q5s1RJAoOgo=";
+      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.721.30844.zip";
+      hash = "sha256-KV23v9Rvzj94xPvV3J3tYe82SPwt+GuqoTAVuyEne5s=";
     };
     x86_64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/Codex-darwin-x64-26.623.141536.zip";
-      hash = "sha256-Wo65vKDAIbmU5WyT7zUCvbwQWXW8uD+ZrvQPKuVtSMw=";
+      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-x64-26.721.30844.zip";
+      hash = "sha256-+am7pBTPmnUQ3/qB3ZD7M+7ASbRONDeEOIL7YjqfFqg=";
     };
   };
   source =
@@ -21,7 +21,7 @@ let
 in
 stdenvNoCC.mkDerivation {
   pname = "codex-desktop";
-  version = "26.623.141536";
+  version = "26.721.30844";
 
   src = fetchurl source;
 
