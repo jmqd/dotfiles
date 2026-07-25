@@ -6,6 +6,10 @@
 }:
 let
   enableTexliveOrgPdf = false;
+  poetry = pkgs.poetry.overridePythonAttrs (_: {
+    # Poetry's Python 3.14 test suite currently fails three executor tests.
+    doCheck = false;
+  });
   vncAllowedTailnetIpv4 = [
     # jmws desktop
     "100.80.51.119"
