@@ -16,26 +16,26 @@
   socat,
 }:
 let
-  version = "2.1.219";
+  version = "2.1.220";
 
   # `claude` ships as a self-contained native executable in a per-platform
   # package. `hash` is the npm `dist.integrity` of that package's tarball.
   sources = {
     "aarch64-darwin" = {
       plat = "darwin-arm64";
-      hash = "sha512-/t/JlmaHh6vtXbZ0R8iRnSBzhc1OSQLybS8HB5RA/BtbueODKQKvtCiCBVwdXXjmdn3aBFrmWRbGzpYZRVcZtw==";
+      hash = "sha512-rmtd41Bf+n+YnhjSjtQ8WG5qy8KKogUp3YRfQrkLsTgPUD0H3j869rBInBJT3SHrKQ0hLghQLGM73CC1C+USLQ==";
     };
     "x86_64-darwin" = {
       plat = "darwin-x64";
-      hash = "sha512-+xuRyR76Q4ZtorDuZVaTvfFEKunCsthZxR+c8/cHtvViaYt4cZ11Aof2GYH0qQhyY5DaoQphO21Lnr/VfzpGqQ==";
+      hash = "sha512-hbuoG+YCo37VzSKzKJ47ymRmt/YjASc3dRcsZtCcftLYdopv8KL889x/IbCl3cfp/VqV2rRDZ0f3aUDpHUFweQ==";
     };
     "aarch64-linux" = {
       plat = "linux-arm64";
-      hash = "sha512-G5yLidk2u6djL5PPuBYXVwVhTsZY5zLoZwh1Jnrd/IRyYb0P0x4gKTzVvGlsGepkBrOp0H2k/KuicyNPrXt57Q==";
+      hash = "sha512-VHFI8mKruIntKn7eq81sbyS19/KWmQcmJQsS/C+j9M/E+w0s4UytgsL7DADPjBE/GByNiKoRtLYDMntCjRlOdA==";
     };
     "x86_64-linux" = {
       plat = "linux-x64";
-      hash = "sha512-Eq8aJpMrfy5rwQZQys/MdDD5Ph96ugZMgmwZmo4mXveEvp7JTZX8vUvqN/sHBn/yVmhzJNWcvepzQuBkcrLXZw==";
+      hash = "sha512-3CGFCnI0gpgsqNeJruFALBDGJaKXOuok3alQEg56ty2yOPpIrOx/r2Y0+T4uhJl7kP5Hzw4IFkxo4DZKWvzQ7Q==";
     };
   };
 
