@@ -10,10 +10,15 @@ let
 in
 {
   options.jmq.trueflow.ai = {
-    enabled = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Whether trueflow AI hints are enabled.";
+    mode = lib.mkOption {
+      type = lib.types.enum [
+        "off"
+        "review_plan"
+        "block_hints"
+        "review_plan_and_block_hints"
+      ];
+      default = "review_plan";
+      description = "Trueflow AI review mode.";
     };
 
     provider = lib.mkOption {
@@ -38,20 +43,20 @@ in
     maxContextLines = lib.mkOption {
       type = lib.types.ints.positive;
       default = 80;
-      description = "Maximum context lines for trueflow AI hints.";
+      description = "Maximum context lines for AI review briefings and block hints.";
     };
 
     cache = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Whether trueflow should cache AI hints.";
+      description = "Whether trueflow should cache per-block AI hint responses.";
     };
   };
 
   config.home.file.".trueflow.toml".source = tomlFormat.generate "trueflow.toml" {
     ai = {
       inherit (cfg.ai)
-        enabled
+        mode
         provider
         model
         cache
