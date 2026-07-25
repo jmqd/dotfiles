@@ -45,6 +45,9 @@ let
         })
     else
       pkgs.mise;
+  mitmproxyPackage = pkgs.mitmproxy.overridePythonAttrs (old: {
+    pythonRelaxDeps = (old.pythonRelaxDeps or [ ]) ++ [ "msgpack" ];
+  });
 in
 {
   imports = [
@@ -243,7 +246,7 @@ in
 
         # Packet, protocol, and traffic analysis.
         bettercap
-        mitmproxy
+        mitmproxyPackage
         netsniff-ng
         ngrep
         python3Packages.scapy
