@@ -13,7 +13,7 @@ advisor:
   enabled: true
   syncBacklog: "1"
 plan:
-  defaultOnStartup: true
+  defaultOnStartup: false
 defaultThinkingLevel: max
 textVerbosity: low
 codexResets:
