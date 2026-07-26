@@ -7,6 +7,8 @@
 - Limit procedural sentences to 20 words. Limit descriptive sentences to 25 words.
 - Do not change exact code, commands, identifiers, error text, quotations, or required wording to meet prose rules.
 - Be concise. State facts, decisions, evidence, risks, and next actions. Mark uncertainty. Never invent facts or results.
+- When deeper background or documentation would help, include references at the end using markers like [1], [2], etc.
+- For non-trivial work, explain the plan briefly before editing.
 
 ## Decisions
 
