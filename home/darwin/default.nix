@@ -8,7 +8,6 @@ in
 {
   imports = [
     ../common.nix
-    ./aerospace.nix
     ./raycast.nix
   ];
 
