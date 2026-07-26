@@ -9,6 +9,27 @@ find ~ -name ".*" -maxdepth 1
 User-facing documentation for the shipped `flow search` feature lives in
 [`docs/flow-search.md`](docs/flow-search.md).
 
+## PostgreSQL
+
+Home Manager runs a personal PostgreSQL 17 server after login on macOS and
+Linux. The first service start initializes
+`~/.local/share/postgresql/17`; later starts reuse that cluster. PostgreSQL
+listens only on the private Unix socket at
+`~/.local/share/postgresql/run`, not on TCP.
+
+New shells inherit `PGHOST`, `PGPORT`, `PGUSER`, and `PGDATABASE`, so the
+default cluster is directly available:
+
+```bash
+pg_isready
+psql
+```
+
+Inspect the service with `systemctl --user status postgresql` on Linux or
+`launchctl print gui/"$UID"/org.nix-community.home.postgresql` on macOS.
+Changing the pinned PostgreSQL major version intentionally selects a new data
+directory; migrate the existing cluster before changing that pin.
+
 
 ## bootstrap
 

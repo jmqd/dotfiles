@@ -62,6 +62,7 @@ in
     ./flow-search.nix
     ./gpg.nix
     ./git.nix
+    ./postgresql.nix
     ./nas.nix
     ./ssh.nix
     ./tmux.nix
@@ -114,7 +115,6 @@ in
       lefthook
       languagetool
       lldb
-      postgresql
       nil
       noto-fonts-cjk-sans-static
       noto-fonts-cjk-serif-static
