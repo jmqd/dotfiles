@@ -90,9 +90,10 @@
           version = "0.22.5";
           src = googleworkspace-cli;
           cargoLock.lockFile = "${googleworkspace-cli}/Cargo.lock";
-          # Upstream's encrypted-credentials test leaves this process-global
-          # variable set to a temporary directory, which can make the later
-          # config_dir test fail nondeterministically.
+          checkFlags = [ "--test-threads=1" ];
+          # Upstream's encrypted-credentials test mutates process-global state; guard
+          # its temporary config directory and serialize the Rust test harness so
+          # credential tests cannot race on the shared encryption key.
           postPatch = ''
             substituteInPlace crates/google-workspace-cli/src/auth.rs \
               --replace-fail \
