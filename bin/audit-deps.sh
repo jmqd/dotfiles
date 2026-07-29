@@ -445,7 +445,7 @@ main() {
 
 	check_codex_desktop_latest "$codex_desktop_version"
 
-	npm_audit "pi" "pkgs/pi"
+	npm_audit "pi" "pkgs/pi" GHSA-mh99-v99m-4gvg
 	npm_audit "oracle" "pkgs/oracle"
 
 	local codex_src gws_src trueflow_src notion_src voxtype_src
