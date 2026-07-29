@@ -46,7 +46,11 @@ let
     else
       pkgs.mise;
   mitmproxyPackage = pkgs.mitmproxy.overridePythonAttrs (old: {
-    pythonRelaxDeps = (old.pythonRelaxDeps or [ ]) ++ [ "msgpack" ];
+    pythonRelaxDeps =
+      let
+        relaxDeps = old.pythonRelaxDeps or [ ];
+      in
+      if relaxDeps == true then true else relaxDeps ++ [ "msgpack" ];
   });
 in
 {
