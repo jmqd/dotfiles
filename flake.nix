@@ -38,7 +38,7 @@
     };
     trueflow-darwin-x86 = {
       # Same source as `trueflow`; only the Nixpkgs edge differs for Intel Darwin.
-      url = "github:trueflow-dev/trueflow/d79c9eddc06bd1f7611ef501861682021f1f3e9f";
+      url = "github:trueflow-dev/trueflow/a4026de978bae55ef75b4e0159b2299f3504331f";
       inputs.flake-utils.follows = "flake-utils";
       inputs.rust-overlay.follows = "trueflow/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
