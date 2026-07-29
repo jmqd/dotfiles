@@ -184,7 +184,7 @@
         in
         pkgs.callPackage ./pkgs/codex {
           inherit version;
-          cargoHash = "sha256-t9IMRK9R+Z67ThEcgBI0HQU0E4aJHcOjKp22RFclh9U=";
+          cargoHash = "sha256-N9jbH/cgAyu2QxneSnpkdaF0MgV3ZtDmN9q6rr9u+hE=";
           codexSrc = codex;
           nixpkgsPath = pkgs.path;
         };
