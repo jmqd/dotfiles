@@ -85,11 +85,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1785119570,
-        "narHash": "sha256-Rgs2xKnGLFWQscxUaXX07oyZeuMDOHEbqDOsgliLFGM=",
+        "lastModified": 1787146702,
+        "narHash": "sha256-YbRcLdU/yK4gWsQg7V8WTKZHfXL33g8+wSFUX3wyevs=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "d4fd24667c8cbef124bb70a20380cab75ec8474d",
+        "rev": "173b7e8d40fdc8c296a9c99854314f17a3a1704c",
         "type": "github"
       },
       "original": {
@@ -117,11 +117,11 @@
     },
     "nixpkgs-darwin-x86": {
       "locked": {
-        "lastModified": 1785067121,
-        "narHash": "sha256-rdJdWxAcg5fnntU4DjPivPdVEN4F+VJavw+UWpEMeUI=",
+        "lastModified": 1786920013,
+        "narHash": "sha256-tlbRqzZ3suDUO3vyR0QFBk0TrxJiRP50t7VWfHhtVrw=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "329c3d2af6d1b618705150ea39f72c15eb4e613e",
+        "rev": "33da5f36e599b50aa7dbbfacb718254423b18354",
         "type": "github"
       },
       "original": {
@@ -171,11 +171,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784438913,
-        "narHash": "sha256-NYF7ZM5ip0u+w1pBFDpIGEbrbgN/wpnLFAmBkWkYMXw=",
+        "lastModified": 1787281715,
+        "narHash": "sha256-5yIL5XL31hCZBPWDdUOvUy4cYAl27XZrke7JELhHlnI=",
         "owner": "oxalica",
         "repo": "rust-overlay",
-        "rev": "afacd6819d3765a05814ee8e3de74c77d42ac799",
+        "rev": "89abdfd661ea493cde2f73d7b1332cb34150aa43",
         "type": "github"
       },
       "original": {
@@ -261,16 +261,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1780607139,
-        "narHash": "sha256-6biLnRdAGpjpNQNYZjYn0zXeukt0qePNeXehbnqzbTM=",
+        "lastModified": 1787024526,
+        "narHash": "sha256-6uEJBTwzlY+A+uqF6wZvChFC9qwa2asvV5aSwCvh78o=",
         "owner": "peteonrails",
         "repo": "voxtype",
-        "rev": "0a1a185491fea77b6b7c654b1c0136d5a1a6d428",
+        "rev": "82c50d86f868dc140a69f0b535aa37867ccea352",
         "type": "github"
       },
       "original": {
         "owner": "peteonrails",
-        "ref": "v1.0.0-rc1",
+        "ref": "v1.0.0-rc2",
         "repo": "voxtype",
         "type": "github"
       }
