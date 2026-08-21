@@ -40,7 +40,7 @@
       inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
     };
     voxtype = {
-      url = "github:peteonrails/voxtype/v1.0.0-rc1";
+      url = "github:peteonrails/voxtype/v1.0.0-rc2";
       inputs.flake-utils.follows = "flake-utils";
       inputs.nixpkgs.follows = "nixpkgs";
     };
@@ -196,9 +196,15 @@
 
       mkVoxtypePkg =
         system:
+        let
+          package = voxtype.packages.${system}.vulkan;
+        in
         # Vulkan gives the NVIDIA Linux desktop GPU acceleration without
         # introducing the CUDA/ONNX closure into every Home Manager switch.
-        voxtype.packages.${system}.vulkan;
+        package
+        // {
+          inherit (voxtype.packages.${system}.voxtype-vulkan-unwrapped) version;
+        };
 
       mkHomePackagesModule =
         system:
