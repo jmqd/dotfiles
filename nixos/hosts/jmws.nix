@@ -237,12 +237,12 @@ in
       emscripten
       efibootmgr
       certbot
-      gnumake42
+      gnumake
       dig
       udev
       systemd
       gcc
-      gccgo13
+      gccgo
       bazel
       flyctl
       gdb
