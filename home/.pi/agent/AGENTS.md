@@ -2,11 +2,8 @@
 
 ## Communication
 
-- Use ASD-STE100 Simplified Technical English for all prose that you write.
-- Use active voice, common words, and short sentences. Put one action in each procedural sentence.
-- Limit procedural sentences to 20 words. Limit descriptive sentences to 25 words.
-- Do not change exact code, commands, identifiers, error text, quotations, or required wording to meet prose rules.
-- Be concise. State facts, decisions, evidence, risks, and next actions. Mark uncertainty. Never invent facts or results.
+- Write clear, focused plain English. Lead with the point, prefer concrete active language, prefer declarative writing, stay objective and derive insights from a synthesis of empiricism and principles/theory, and omit anything that does not help the reader understand or act.
+- Prefer direct answers over long explanations.
 - When deeper background or documentation would help, include references at the end using markers like [1], [2], etc.
 - For non-trivial work, explain the plan briefly before editing.
 
