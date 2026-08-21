@@ -1,114 +1,87 @@
 {
   lib,
   stdenv,
-  callPackage,
-  rustPlatform,
+  stdenvNoCC,
+  fetchurl,
+  gnutar,
   installShellFiles,
-  bubblewrap,
-  clang,
-  cmake,
-  gitMinimal,
-  libcap,
-  libclang,
   makeBinaryWrapper,
-  livekit-libwebrtc,
-  lld,
-  pkg-config,
-  openssl,
+  bubblewrap,
   ripgrep,
-  versionCheckHook,
   installShellCompletions ? stdenv.buildPlatform.canExecute stdenv.hostPlatform,
-  nixpkgsPath,
-  codexSrc,
-  version,
-  cargoHash,
-  librusty_v8 ? callPackage "${nixpkgsPath}/pkgs/by-name/co/codex/librusty_v8.nix" {
-    inherit (callPackage "${nixpkgsPath}/pkgs/by-name/co/codex/fetchers.nix" { }) fetchLibrustyV8;
-  },
 }:
-rustPlatform.buildRustPackage {
+let
+  version = "0.149.0";
+  assets = {
+    "aarch64-darwin" = {
+      binary = "codex-aarch64-apple-darwin";
+      hash = "sha256-DO9Plimve2vMS03irbYzN9HnegCoEeZigdpTVuPnT8Y=";
+    };
+    "x86_64-darwin" = {
+      binary = "codex-x86_64-apple-darwin";
+      hash = "sha256-x4p1/6R1WyH9ngX7GxBjYOMbS6Vu8IPABQgRiAtCDmU=";
+    };
+    "aarch64-linux" = {
+      binary = "codex-aarch64-unknown-linux-musl";
+      hash = "sha256-HMPrTC+6sEjIr64L67HlR0X4jZHlJJpEh2XTSiorqbs=";
+    };
+    "x86_64-linux" = {
+      binary = "codex-x86_64-unknown-linux-musl";
+      hash = "sha256-c2iyBV7QIVf+omlbufWvPuew5AxaO+vIHfxZZwQkTP0=";
+    };
+  };
+  system = stdenv.hostPlatform.system;
+  asset = assets.${system} or (throw "Codex prebuilt binary is unavailable for ${system}");
+in
+stdenvNoCC.mkDerivation {
   pname = "codex";
-  inherit version cargoHash;
+  inherit version;
 
-  src = codexSrc;
-  sourceRoot = "source/codex-rs";
-
-  # Match upstream's release build for the codex binary only.
-  cargoBuildFlags = [
-    "--package"
-    "codex-cli"
-  ];
-  cargoCheckFlags = [
-    "--package"
-    "codex-cli"
-  ];
-
-  postPatch = ''
-    substituteInPlace Cargo.toml \
-      --replace-fail 'lto = "thin"' "" \
-      --replace-fail 'codegen-units = 4' ""
-  '';
+  src = fetchurl {
+    url = "https://github.com/openai/codex/releases/download/rust-v${version}/${asset.binary}.tar.gz";
+    hash = asset.hash;
+  };
+  dontUnpack = true;
 
   nativeBuildInputs = [
-    clang
-    cmake
-    gitMinimal
-    installShellFiles
+    gnutar
     makeBinaryWrapper
-    pkg-config
-  ];
-
-  buildInputs = [
-    libclang
-    openssl
   ]
-  ++ lib.optionals stdenv.hostPlatform.isLinux [
-    libcap
-  ];
+  ++ lib.optional installShellCompletions installShellFiles;
 
-  env = {
-    LIBCLANG_PATH = "${lib.getLib libclang}/lib";
-    LK_CUSTOM_WEBRTC = lib.getDev livekit-libwebrtc;
-    NIX_CFLAGS_COMPILE = toString (
-      lib.optionals stdenv.cc.isGNU [
-        "-Wno-error=stringop-overflow"
-      ]
-      ++ lib.optionals stdenv.cc.isClang [
-        "-Wno-error=character-conversion"
-      ]
-    );
-    RUSTY_V8_ARCHIVE = librusty_v8;
-  }
-  // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
-    # Link with lld on Darwin. nixpkgs' classic open-source ld64 fails to insert
-    # ARM64 branch thunks for this binary, producing `b(l) ARM64 branch out of range`.
-    NIX_CFLAGS_LINK = "-fuse-ld=${lib.getExe' lld "ld64.lld"}";
-  };
-
-  doCheck = false;
-
-  postInstall = lib.optionalString installShellCompletions ''
-    installShellCompletion --cmd codex \
-      --bash <($out/bin/codex completion bash) \
-      --fish <($out/bin/codex completion fish) \
-      --zsh <($out/bin/codex completion zsh)
+  installPhase = ''
+    runHook preInstall
+    install -d "$out/bin"
+    tar -xzf "$src" -C "$out/bin"
+    mv "$out/bin/${asset.binary}" "$out/bin/codex"
+    ${lib.optionalString installShellCompletions ''
+      installShellCompletion --cmd codex \
+        --bash <($out/bin/codex completion bash) \
+        --fish <($out/bin/codex completion fish) \
+        --zsh <($out/bin/codex completion zsh)
+    ''}
+    runHook postInstall
   '';
 
   postFixup = ''
-    wrapProgram $out/bin/codex --prefix PATH : ${
+    wrapProgram "$out/bin/codex" --prefix PATH : ${
       lib.makeBinPath ([ ripgrep ] ++ lib.optionals stdenv.hostPlatform.isLinux [ bubblewrap ])
     }
   '';
 
   doInstallCheck = true;
-  nativeInstallCheckInputs = [ versionCheckHook ];
+  installCheckPhase = ''
+    runHook preInstallCheck
+    "$out/bin/codex" --version | grep -F "${version}"
+    runHook postInstallCheck
+  '';
 
   meta = {
     description = "Lightweight coding agent that runs in your terminal";
     homepage = "https://github.com/openai/codex";
-    changelog = "https://raw.githubusercontent.com/openai/codex/refs/tags/rust-v${version}/CHANGELOG.md";
+    changelog = "https://github.com/openai/codex/releases/tag/rust-v${version}";
     license = lib.licenses.asl20;
     mainProgram = "codex";
-    platforms = lib.platforms.unix;
+    platforms = builtins.attrNames assets;
   };
 }
