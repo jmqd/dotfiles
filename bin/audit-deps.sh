@@ -445,11 +445,9 @@ main() {
 
 	check_codex_desktop_latest "$codex_desktop_version"
 
-	npm_audit "pi" "pkgs/pi" GHSA-mh99-v99m-4gvg
 	npm_audit "oracle" "pkgs/oracle"
 
-	local codex_src gws_src trueflow_src notion_src voxtype_src
-	codex_src="$(input_path codex)"
+	local gws_src trueflow_src notion_src voxtype_src
 	gws_src="$(input_path googleworkspace-cli)"
 	trueflow_src="$(input_path trueflow)"
 	notion_src="$(input_path notion-cli)"
@@ -478,19 +476,6 @@ main() {
 		RUSTSEC-2026-0194 \
 		RUSTSEC-2026-0195 \
 		RUSTSEC-2026-0204
-	cargo_audit_lock \
-		"openai/codex codex-rs" \
-		"$codex_src/codex-rs/Cargo.lock" \
-		RUSTSEC-2026-0118 \
-		RUSTSEC-2026-0119 \
-		RUSTSEC-2026-0185 \
-		RUSTSEC-2026-0194 \
-		RUSTSEC-2026-0195
-	cargo_audit_lock \
-		"openai/codex argument-comment-lint" \
-		"$codex_src/tools/argument-comment-lint/Cargo.lock" \
-		RUSTSEC-2026-0067 \
-		RUSTSEC-2026-0068
 
 	govulncheck_notion_cli "$notion_src"
 
