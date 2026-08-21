@@ -395,7 +395,6 @@ govulncheck_notion_cli() {
 			"$output_file" \
 			GO-2026-4514 \
 			GO-2026-4918 \
-			GO-2026-4970 \
 			GO-2026-5024 \
 			GO-2026-5025 \
 			GO-2026-5026 \
@@ -404,9 +403,14 @@ govulncheck_notion_cli() {
 			GO-2026-5029 \
 			GO-2026-5030 \
 			GO-2026-5320 \
-			GO-2026-5856 \
 			GO-2026-5942 \
-			GO-2026-5970
+			GO-2026-5970 \
+			GO-2026-5972 \
+			GO-2026-6088 \
+			GO-2026-6089 \
+			GO-2026-6090 \
+			GO-2026-6091 \
+			GO-2026-6218
 	fi
 }
 
@@ -457,10 +461,11 @@ main() {
 	cargo_audit_lock \
 		"googleworkspace/cli" \
 		"$gws_src/Cargo.lock" \
-		RUSTSEC-2026-0185 \
-		RUSTSEC-2026-0104 \
 		RUSTSEC-2026-0098 \
-		RUSTSEC-2026-0099
+		RUSTSEC-2026-0099 \
+		RUSTSEC-2026-0104 \
+		RUSTSEC-2026-0185 \
+		RUSTSEC-2026-0258
 	cargo_audit_lock \
 		"trueflow" \
 		"$trueflow_src/trueflow/Cargo.lock"
