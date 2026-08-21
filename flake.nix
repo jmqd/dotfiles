@@ -14,10 +14,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     flake-utils.url = "github:numtide/flake-utils";
-    codex = {
-      url = "git+https://github.com/openai/codex?ref=refs/tags/rust-v0.146.0";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     googleworkspace-cli = {
       url = "github:googleworkspace/cli/v0.22.5";
       inputs.flake-utils.follows = "flake-utils";
@@ -63,7 +59,6 @@
       nixpkgs,
       nixpkgs-darwin-x86,
       flake-utils,
-      codex,
       googleworkspace-cli,
       notion-cli,
       trueflow,
@@ -179,15 +174,8 @@
         system:
         let
           pkgs = import (nixpkgsFor system) { inherit system; };
-          cargoToml = builtins.fromTOML (builtins.readFile "${codex}/codex-rs/Cargo.toml");
-          version = cargoToml.workspace.package.version;
         in
-        pkgs.callPackage ./pkgs/codex {
-          inherit version;
-          cargoHash = "sha256-N9jbH/cgAyu2QxneSnpkdaF0MgV3ZtDmN9q6rr9u+hE=";
-          codexSrc = codex;
-          nixpkgsPath = pkgs.path;
-        };
+        pkgs.callPackage ./pkgs/codex { };
 
       mkCodexDesktopPkg =
         system:

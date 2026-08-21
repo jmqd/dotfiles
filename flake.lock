@@ -1,27 +1,5 @@
 {
   "nodes": {
-    "codex": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ],
-        "rust-overlay": "rust-overlay"
-      },
-      "locked": {
-        "lastModified": 1785286504,
-        "narHash": "sha256-/kTIOX/klxm1nq2bJsBqS8f1jZZp2ilaTeULQFPJgDk=",
-        "ref": "refs/tags/rust-v0.146.0",
-        "rev": "e363b08c9175ac1cbe5893615dd2cb9ddf95043b",
-        "revCount": 8613,
-        "type": "git",
-        "url": "https://github.com/openai/codex"
-      },
-      "original": {
-        "ref": "refs/tags/rust-v0.146.0",
-        "type": "git",
-        "url": "https://github.com/openai/codex"
-      }
-    },
     "emacs-sops": {
       "flake": false,
       "locked": {
@@ -172,7 +150,6 @@
     },
     "root": {
       "inputs": {
-        "codex": "codex",
         "emacs-sops": "emacs-sops",
         "flake-utils": "flake-utils",
         "googleworkspace-cli": "googleworkspace-cli",
@@ -187,27 +164,6 @@
       }
     },
     "rust-overlay": {
-      "inputs": {
-        "nixpkgs": [
-          "codex",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1785302874,
-        "narHash": "sha256-fpKEww3TJoo1ANHO2q918ei+ayOrp0YEQAO1DuBLOB4=",
-        "owner": "oxalica",
-        "repo": "rust-overlay",
-        "rev": "b99d48435bc3e34309d2c7ae6f7d45e77a156c38",
-        "type": "github"
-      },
-      "original": {
-        "owner": "oxalica",
-        "repo": "rust-overlay",
-        "type": "github"
-      }
-    },
-    "rust-overlay_2": {
       "inputs": {
         "nixpkgs": [
           "trueflow",
@@ -251,7 +207,7 @@
         "nixpkgs": [
           "nixpkgs"
         ],
-        "rust-overlay": "rust-overlay_2"
+        "rust-overlay": "rust-overlay"
       },
       "locked": {
         "lastModified": 1785006152,
