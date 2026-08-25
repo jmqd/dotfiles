@@ -193,7 +193,6 @@ in
   environment.systemPackages =
     (with pkgs; [
       # system admin / linux core
-      doas
       lshw
       pciutils
       vim
@@ -285,6 +284,7 @@ in
   programs.dconf.enable = true;
   programs.zsh.enable = true;
   programs.ydotool.enable = true;
+  security.doas.enable = true;
   security.rtkit.enable = true;
   services.pipewire = {
     enable = true;
