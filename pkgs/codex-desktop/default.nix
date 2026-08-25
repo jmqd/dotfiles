@@ -45,6 +45,14 @@ stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
+  doInstallCheck = true;
+  installCheckPhase = ''
+    runHook preInstallCheck
+    /usr/bin/codesign --verify --deep --strict "$out/Applications/Codex.app"
+    test -x "$out/Applications/Codex.app/Contents/MacOS/ChatGPT"
+    runHook postInstallCheck
+  '';
+
   meta = {
     description = "Codex desktop app";
     homepage = "https://developers.openai.com/codex/app";
