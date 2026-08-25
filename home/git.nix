@@ -25,7 +25,7 @@
       rebase.autoStash = true;
       url."git@github.com:".insteadOf = "https://github.com/";
     }
-    // lib.optionalAttrs pkgs.stdenv.isDarwin {
+    // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
       credential.helper = "osxkeychain";
     };
   };

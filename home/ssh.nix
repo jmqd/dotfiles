@@ -21,7 +21,7 @@
         AddKeysToAgent = "yes";
         IdentityFile = [ "~/.ssh/id_ed25519" ];
       }
-      // lib.optionalAttrs pkgs.stdenv.isDarwin {
+      // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
         UseKeychain = "yes";
       };
     };
