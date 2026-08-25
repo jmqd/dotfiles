@@ -12,12 +12,12 @@ in
   ];
 
   targets.darwin = {
-    copyApps.enable = false;
-    linkApps.enable = true;
+    copyApps.enable = true;
+    linkApps.enable = false;
   };
 
   home.file."Applications/Screen Sharing.app".source =
-    config.lib.file.mkOutOfStoreSymlink "/System/Library/CoreServices/Applications/Screen Sharing.app";
+    config.lib.file.mkOutOfStoreSymlink "/System/Applications/Utilities/Screen Sharing.app";
 
   # First set of macOS user packages managed by Home Manager.
   home.packages = [
