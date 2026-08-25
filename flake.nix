@@ -462,14 +462,26 @@
 
           checks = {
             bootstrap-rust-tests = bootstrapRustTests;
+            claude-code = claudeCodePkg;
+            codex = codexPkg;
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
+            googleworkspace-cli = googleworkspaceCliPkg;
             hm-switch-tests = hmSwitchTests;
             nixfmt = nixfmtCheck;
+            notion-cli = notionCliPkg;
+            omp = piPkg;
+            oracle = oraclePkg;
             review-orchestrator-tests = reviewOrchestratorTests;
             secrets-lint = secretsLintCheck;
             shellcheck-bin-scripts = shellcheckCheck;
             shfmt-bin-scripts = shfmtCheck;
+          }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+            voxtype = voxtypePkg;
+          }
+          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+            codex-desktop = codexDesktopPkg;
           };
 
           apps = {
