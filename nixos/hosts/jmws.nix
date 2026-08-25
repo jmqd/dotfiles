@@ -284,6 +284,7 @@ in
   programs.dconf.enable = true;
   programs.zsh.enable = true;
   programs.ydotool.enable = true;
+  programs.yubikey-manager.enable = true;
   security.doas.enable = true;
   security.rtkit.enable = true;
   services.pipewire = {
