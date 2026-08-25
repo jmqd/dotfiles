@@ -275,6 +275,7 @@
           voxtypePkg = mkVoxtypePkg system;
 
           shellScriptFiles = [
+            ".githooks/pre-push"
             "bin/audit-deps.sh"
             "bin/bootstrap-macos.sh"
             "bin/bootstrap-rust.sh"
