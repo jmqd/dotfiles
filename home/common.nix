@@ -101,6 +101,7 @@ in
       clang-tools
       cloc
       cmake
+      curl
       difftastic
       fd
       flock
