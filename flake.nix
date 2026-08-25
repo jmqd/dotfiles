@@ -288,35 +288,11 @@
             "tests/hm-switch-failure.sh"
           ];
 
-          nixFiles = [
-            "flake.nix"
-            "home/common.nix"
-            "home/direnv.nix"
-            "home/emacs.nix"
-            "home/env.nix"
-            "home/files.nix"
-            "home/flow-search.nix"
-            "home/git.nix"
-            "home/gpg.nix"
-            "home/linux-desktop.nix"
-            "home/linux.nix"
-            "home/ssh.nix"
-            "home/tmux.nix"
-            "home/trueflow.nix"
-            "home/wezterm.nix"
-            "home/yubikey.nix"
-            "home/zsh.nix"
-            "nixos/configuration.nix"
-            "nixos/hardware-configuration.nix"
-            "nixos/hosts/jmws.nix"
-            "pkgs/berkley-mono/default.nix"
-            "pkgs/claude-code/default.nix"
-            "pkgs/codex/default.nix"
-            "pkgs/codex-desktop/default.nix"
-            "pkgs/flow/default.nix"
-            "pkgs/oracle/default.nix"
-            "pkgs/pi/default.nix"
-          ];
+          nixFiles = map (path: pkgs.lib.removePrefix "${toString ./.}/" (toString path)) (
+            builtins.filter (path: pkgs.lib.hasSuffix ".nix" (toString path)) (
+              pkgs.lib.filesystem.listFilesRecursive ./.
+            )
+          );
 
           nixfmtCheck =
             pkgs.runCommand "nixfmt-check"
