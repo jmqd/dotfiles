@@ -7,12 +7,12 @@
 let
   sources = {
     aarch64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.818.32112.zip";
-      hash = "sha256-aM9MGbnzvgHXaaXhXpqa6JzIS9OSS3RCqAXiFx0i0WU=";
+      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.818.61809.zip";
+      hash = "sha256-NqTEfQve52cQwJibmwd/PD6IvAukUkabhsgRzGOKALw=";
     };
     x86_64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-x64-26.818.32112.zip";
-      hash = "sha256-UgYhox2Ruy538RUaLSZrXVAYoufBwvcPspGChUQ20EA=";
+      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-x64-26.818.61809.zip";
+      hash = "sha256-gu6OopkApRrZo1VwDa3Vp7qtYhcNjd4AX47icUhgvvw=";
     };
   };
   source =
@@ -21,12 +21,15 @@ let
 in
 stdenvNoCC.mkDerivation {
   pname = "codex-desktop";
-  version = "26.818.32112";
+  version = "26.818.61809";
 
   src = fetchurl source;
 
   nativeBuildInputs = [ unzip ];
   sourceRoot = ".";
+
+  # Generic fixup rewrites bundled scripts and invalidates Apple's signature.
+  dontFixup = true;
 
   installPhase = ''
     runHook preInstall
