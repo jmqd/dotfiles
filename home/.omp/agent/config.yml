@@ -2,17 +2,25 @@ symbolPreset: nerd
 theme:
   light: light
 setupVersion: 2
+# The generated -pro selectors send OpenAI's reasoning.mode: pro.
+# In OMP, :xhigh maps to the GPT-5.6 maximum reasoning effort.
 modelRoles:
-  default: openai-codex/gpt-5.6-luna:max
-  slow: openai-codex/gpt-5.6-luna:max
+  # Highest-capability interactive and architecture work.
+  default: openai-codex/gpt-5.6-sol-pro:xhigh
+  slow: openai-codex/gpt-5.6-sol-pro:xhigh
   advisor: openai-codex/gpt-5.6-luna:max
-  plan: openai-codex/gpt-5.6-luna:max
+  plan: openai-codex/gpt-5.6-sol-pro:xhigh
+
+  # Full subagents favor the balanced tier; fan-out stays responsive.
+  task: openai-codex/gpt-5.6-terra-pro:xhigh
+  smol: openai-codex/gpt-5.6-luna:medium
 advisor:
   enabled: true
   syncBacklog: "1"
 plan:
   defaultOnStartup: false
-defaultThinkingLevel: max
+# Any ad-hoc model selection without an explicit role also gets maximum effort.
+defaultThinkingLevel: xhigh
 textVerbosity: low
 codexResets:
   autoRedeem: "yes"
