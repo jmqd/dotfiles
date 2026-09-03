@@ -6,18 +6,33 @@
   ...
 }:
 let
-  emacsPkg = if pkgs.stdenv.hostPlatform.isDarwin then pkgs.emacs-macport else pkgs.emacs;
+  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
+  emacs31 =
+    if pkgs ? emacs31 then
+      pkgs.emacs31.overrideAttrs {
+        version = "31.1";
+        src = pkgs.fetchgit {
+          url = "https://git.savannah.gnu.org/git/emacs.git";
+          rev = "emacs-31.1";
+          hash = "sha256-lFT5Vt49G17t/fRm5yppO5p9ui10I9JNJVaGO1GPZFI=";
+        };
+      }
+    else
+      null;
+  # The Intel Darwin package set has no Emacs 31; retain its supported Mac port.
+  emacsPkg =
+    if emacs31 != null then
+      emacs31
+    else if isDarwin then
+      pkgs.emacs-macport
+    else
+      pkgs.emacs;
   handcraftedBinDir = "${config.home.homeDirectory}/.local/bin";
   handcraftedClient = "${handcraftedBinDir}/emacs-handcrafted-client";
   latexExportEnvironment = {
     LANG = config.home.sessionVariables.LANG;
     LC_CTYPE = config.home.sessionVariables.LC_CTYPE;
     OSFONTDIR = config.home.sessionVariables.OSFONTDIR;
-  };
-  sopsEl = pkgs.emacsPackages.trivialBuild {
-    pname = "sops";
-    version = "unstable";
-    src = emacs-sops;
   };
 in
 {
@@ -26,8 +41,12 @@ in
     package = emacsPkg;
   };
 
-  programs.emacs.extraPackages = _epkgs: [
-    sopsEl
+  programs.emacs.extraPackages = epkgs: [
+    (epkgs.trivialBuild {
+      pname = "sops";
+      version = "0.2.0";
+      src = emacs-sops;
+    })
   ];
 
   services.emacs = {
