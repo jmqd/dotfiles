@@ -52,11 +52,11 @@ git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
 bash ~/src/dotfiles/bin/hm-switch.sh
 ```
 
-On a fresh macOS profile, open Raycast with Option-Space and set **Raycast
-Hotkey** to Command-Space under **Raycast Settings → General**. Raycast does not
-provide a supported noninteractive hotkey setter; Home Manager disables the
-conflicting Spotlight shortcut but preserves the rest of the macOS shortcut
-domain.
+Raycast is the Option-Space launcher on macOS. If that shortcut was changed,
+open **Raycast Settings → General** and set **Raycast Hotkey** to Option-Space;
+Raycast does not provide a supported noninteractive hotkey setter. Home Manager
+owns the running Raycast process so old Nix-store versions cannot compete for
+the global shortcut.
 
 ```bash
 # NixOS host rebuild (jmws):
