@@ -15,24 +15,24 @@
   versionCheckHook,
 }:
 let
-  version = "18.0.4";
+  version = "18.1.7";
 
   sources = {
     "aarch64-darwin" = {
       asset = "omp-darwin-arm64";
-      hash = "sha256-1JMWOIe8+Pd7mZGrchn3dxK1sn3mVk969ygwZKyoSCQ=";
+      hash = "sha256-XHUtOWBhkplZO4KIBcvDTeaB4NbUBXvZlqWR6fgDhS8=";
     };
     "x86_64-darwin" = {
       asset = "omp-darwin-x64";
-      hash = "sha256-8hd1L19XnSsiCBhGL8UVrTM+ikEPG7/NYweCW3BSYPU=";
+      hash = "sha256-H7XMHiDLCjJD60fDPyR9XLItLpvNjuquyzA/F1VFDmc=";
     };
     "aarch64-linux" = {
       asset = "omp-linux-arm64";
-      hash = "sha256-8rfIoBloHt4xSsFlEAwcW1zUkAE5B1lI2oCcAEvsXOc=";
+      hash = "sha256-tupfZG1yyx9g6hSrPV1lvyrJ/Yi5+OaxQjHy/glG+2A=";
     };
     "x86_64-linux" = {
       asset = "omp-linux-x64";
-      hash = "sha256-lOxC0X1xl1o4HiAzW7PABaf9fuwZsxk1jfbSLyjhazc=";
+      hash = "sha256-aUD78kLtcZc11Uv5pR15CAfPdlF7GvhqygnHVr02O6Y=";
     };
   };
 
