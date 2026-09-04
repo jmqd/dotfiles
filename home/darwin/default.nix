@@ -15,6 +15,22 @@ let
       }
     else
       pkgs.orbstack;
+  spotifyPackage =
+    if pkgs.stdenv.hostPlatform.system == "aarch64-darwin" then
+      pkgs.spotify.overrideAttrs {
+        # Nixpkgs pins this exact release through the Wayback Machine. The
+        # official CDN currently serves the same fixed-output artifact, so use
+        # it as a fallback when the archive responds with HTTP 429.
+        src = pkgs.fetchurl {
+          urls = [
+            "https://web.archive.org/web/20260829115632/https://download.scdn.co/SpotifyARM64.dmg"
+            "https://download.scdn.co/SpotifyARM64.dmg"
+          ];
+          hash = "sha256-iFLqFQXKPkeCHfzB6hshbZDWjumKN2u4Bj7lvl8waUY=";
+        };
+      }
+    else
+      pkgs.spotify;
 in
 {
   imports = [
@@ -35,6 +51,6 @@ in
     fakeBrew
     pkgs.google-cloud-sdk
     orbstackPackage
-    pkgs.spotify
+    spotifyPackage
   ];
 }
