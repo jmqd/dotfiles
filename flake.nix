@@ -14,6 +14,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     googleworkspace-cli = {
       url = "github:googleworkspace/cli/v0.22.5";
       inputs.flake-utils.follows = "flake-utils";
@@ -30,13 +34,14 @@
     trueflow = {
       url = "github:trueflow-dev/trueflow";
       inputs.flake-utils.follows = "flake-utils";
+      inputs.rust-overlay.follows = "rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     trueflow-darwin-x86 = {
       # Same source as `trueflow`; only the Nixpkgs edge differs for Intel Darwin.
       url = "github:trueflow-dev/trueflow/a4026de978bae55ef75b4e0159b2299f3504331f";
       inputs.flake-utils.follows = "flake-utils";
-      inputs.rust-overlay.follows = "trueflow/rust-overlay";
+      inputs.rust-overlay.follows = "rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
     };
     voxtype = {
