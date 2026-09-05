@@ -127,6 +127,27 @@ nix run .#secrets-lint
 bin/lint-secrets.sh --history
 ```
 
+## Nix storage maintenance
+
+Keep the current generation and four rollback generations for each user profile:
+
+```bash
+profiles="${XDG_STATE_HOME:-$HOME/.local/state}/nix/profiles"
+nix-env --profile "$profiles/home-manager" --delete-generations +5
+nix-env --profile "$profiles/profile" --delete-generations +5
+nix-store --gc
+```
+
+Generation pruning removes rollback points, not the active configuration. Garbage
+collection removes only unreferenced store paths; discarded build results may need
+to be downloaded or rebuilt later. Determinate Nix already runs automatic GC, so
+do not add a competing scheduled collector. If macOS denies access to an old app
+bundle, resolve App Management permission rather than changing store permissions.
+
+Inspect project `rust-toolchain` files and `rustup override list` before using
+`rustup toolchain uninstall VERSION`; different selectors such as `1.93` and
+`1.93.0` are not interchangeable.
+
 ## direnv
 
 ```bash
