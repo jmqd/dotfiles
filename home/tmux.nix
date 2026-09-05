@@ -1,17 +1,8 @@
-{ lib, pkgs, ... }:
-let
-  tmuxPackage = pkgs.tmux.overrideAttrs (oldAttrs: {
-    # tmux 3.7 requires an explicit allocator choice on macOS.
-    buildInputs =
-      oldAttrs.buildInputs ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ pkgs.jemalloc ];
-    configureFlags =
-      oldAttrs.configureFlags ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ "--enable-jemalloc" ];
-  });
-in
+{ pkgs, ... }:
 {
   programs.tmux = {
     enable = true;
-    package = tmuxPackage;
+    package = pkgs.tmux;
     keyMode = "vi";
     historyLimit = 10000;
     escapeTime = 15;
