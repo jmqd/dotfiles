@@ -260,9 +260,9 @@ export async function loadRepoTarget(
 	let truncated = false;
 	const chunks: string[] = [];
 	for (const rel of files) {
-		const fullPath = path.join(cwd, rel);
 		let text: string;
 		try {
+			const fullPath = await resolveReviewFilePath(cwd, `./${rel}`);
 			text = await readTextFileImpl(fullPath);
 		} catch {
 			continue;
@@ -333,7 +333,8 @@ export async function loadUncommittedTarget(
 	for (const rel of untrackedFiles) {
 		let text: string;
 		try {
-			text = await readTextFileImpl(path.join(cwd, rel));
+			const fullPath = await resolveReviewFilePath(cwd, `./${rel}`);
+			text = await readTextFileImpl(fullPath);
 		} catch {
 			omittedUntracked.push(`${rel} (binary or unreadable)`);
 			continue;
@@ -512,7 +513,7 @@ async function resolveReviewFilePath(cwd: string, value: string): Promise<string
 		throw new Error(`File review path must stay within the current working directory: ${value}`);
 	}
 
-	return filePath;
+	return resolvedFilePath;
 }
 
 function isPathWithinRoot(root: string, candidate: string): boolean {

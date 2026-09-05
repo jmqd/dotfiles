@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import {
 	extractText,
 	loadGitHistoryContext,
@@ -31,6 +31,35 @@ function createExec(responses: Record<string, { stdout: string; stderr?: string 
 		return { stdout: response.stdout, stderr: response.stderr ?? "" };
 	};
 }
+
+async function reviewFiles(t: TestContext, files: Record<string, string | Buffer>): Promise<string> {
+	const cwd = await mkdtemp(path.join(os.tmpdir(), "review-files-"));
+	t.after(() => rm(cwd, { recursive: true, force: true }));
+	await Promise.all(Object.entries(files).map(([name, contents]) => writeFile(path.join(cwd, name), contents)));
+	return cwd;
+}
+
+test("tree reviews do not include files reached through escaping symlinks", async (t) => {
+	const root = await reviewFiles(t, { "private.txt": "outside-private-content" });
+	const cwd = path.join(root, "repo");
+	await mkdir(cwd);
+	await writeFile(path.join(cwd, "safe.txt"), "inside-repo-content");
+	await symlink("../private.txt", path.join(cwd, "escape.txt"));
+	await symlink("safe.txt", path.join(cwd, "internal.txt"));
+	const files = "escape.txt\ninternal.txt\nsafe.txt\n";
+	const exec = createExec({
+		"git ls-files": { stdout: files },
+		"git diff HEAD --no-ext-diff --minimal": { stdout: "" },
+		"git ls-files --others --exclude-standard": { stdout: files },
+	});
+	for (const load of [loadRepoTarget, loadUncommittedTarget]) {
+		const target = await load(cwd, { exec });
+		assert.ok(target);
+		assert.doesNotMatch(target.content, /outside-private-content/);
+		assert.match(target.content, /inside-repo-content/);
+		assert.match(target.content, /internal\.txt/);
+	}
+});
 
 test("normalizeScopeKind maps aliases and defaults unknown values to staged", () => {
 	assert.equal(normalizeScopeKind("working"), "uncommitted");
@@ -281,36 +310,13 @@ test("loadTarget file scope rejects paths outside cwd", async () => {
 	);
 });
 
-test("loadTarget file scope propagates injected reader errors", async () => {
-	const cwd = await mkdtemp(path.join(os.tmpdir(), "review-target-reader-"));
-	const filePath = path.join(cwd, "notes.txt");
-	await writeFile(filePath, "placeholder\n", "utf8");
-	const exec = createExec({});
-	const realFilePath = await realpath(filePath);
-
-	await assert.rejects(
-		() =>
-			loadTarget(cwd, { kind: "file", value: "notes.txt" }, {
-				exec,
-				readTextFile: async (requestedPath) => {
-					assert.equal(requestedPath, realFilePath);
-					throw new Error("Binary file");
-				},
-			}),
-		/Binary file/,
-	);
-});
-
-test("loadRepoTarget truncates oversized first files instead of returning null", async () => {
+test("loadRepoTarget truncates oversized first files instead of returning null", async (t) => {
 	const content = "x".repeat(MAX_REVIEW_CHARS + 500);
-	const repoTarget = await loadRepoTarget("/repo", {
+	const cwd = await reviewFiles(t, { "big.txt": content, "small.txt": "small" });
+	const repoTarget = await loadRepoTarget(cwd, {
 		exec: createExec({
 			"git ls-files": { stdout: "big.txt\nsmall.txt\n" },
 		}),
-		readTextFile: async (filePath) => {
-			if (filePath.endsWith("big.txt")) return content;
-			return "small";
-		},
 	});
 
 	assert.ok(repoTarget);
@@ -335,13 +341,13 @@ test("loadUncommittedTarget handles tracked-only changes", async () => {
 	assert.doesNotMatch(target!.content, /## Omitted untracked files/);
 });
 
-test("loadUncommittedTarget handles untracked-only changes", async () => {
-	const target = await loadUncommittedTarget("/repo", {
+test("loadUncommittedTarget handles untracked-only changes", async (t) => {
+	const cwd = await reviewFiles(t, { "one.txt": "first file contents", "two.txt": "second file contents" });
+	const target = await loadUncommittedTarget(cwd, {
 		exec: createExec({
 			"git diff HEAD --no-ext-diff --minimal": { stdout: "" },
 			"git ls-files --others --exclude-standard": { stdout: "one.txt\ntwo.txt\n" },
 		}),
-		readTextFile: async (filePath) => `contents for ${path.basename(filePath)}`,
 	});
 
 	assert.ok(target);
@@ -350,15 +356,13 @@ test("loadUncommittedTarget handles untracked-only changes", async () => {
 	assert.match(target!.content, /## Untracked file: two\.txt/);
 });
 
-test("loadUncommittedTarget marks unreadable files as omitted", async () => {
-	const target = await loadUncommittedTarget("/repo", {
+test("loadUncommittedTarget marks unreadable files as omitted", async (t) => {
+	const cwd = await reviewFiles(t, { "bin.dat": Buffer.from([0, 1, 2]) });
+	const target = await loadUncommittedTarget(cwd, {
 		exec: createExec({
 			"git diff HEAD --no-ext-diff --minimal": { stdout: "" },
 			"git ls-files --others --exclude-standard": { stdout: "bin.dat\n" },
 		}),
-		readTextFile: async () => {
-			throw new Error("binary");
-		},
 	});
 
 	assert.ok(target);
@@ -366,14 +370,14 @@ test("loadUncommittedTarget marks unreadable files as omitted", async () => {
 	assert.match(target!.content, /- bin\.dat \(binary or unreadable\)/);
 });
 
-test("loadUncommittedTarget splits prompt budget between tracked and untracked content", async () => {
+test("loadUncommittedTarget splits prompt budget between tracked and untracked content", async (t) => {
 	const trackedDiff = "d".repeat(MAX_REVIEW_CHARS);
-	const target = await loadUncommittedTarget("/repo", {
+	const cwd = await reviewFiles(t, { "note.txt": "small note" });
+	const target = await loadUncommittedTarget(cwd, {
 		exec: createExec({
 			"git diff HEAD --no-ext-diff --minimal": { stdout: trackedDiff },
 			"git ls-files --others --exclude-standard": { stdout: "note.txt\n" },
 		}),
-		readTextFile: async () => "small note",
 	});
 
 	assert.ok(target);
@@ -382,14 +386,14 @@ test("loadUncommittedTarget splits prompt budget between tracked and untracked c
 	assert.match(target!.content, /## Untracked file: note\.txt/);
 });
 
-test("loadUncommittedTarget omits oversized untracked files and caps the omitted list", async () => {
+test("loadUncommittedTarget omits oversized untracked files and caps the omitted list", async (t) => {
 	const names = Array.from({ length: 25 }, (_, index) => `file-${index}.txt`);
-	const target = await loadUncommittedTarget("/repo", {
+	const cwd = await reviewFiles(t, Object.fromEntries(names.map((name) => [name, "x".repeat(MAX_REVIEW_CHARS)])));
+	const target = await loadUncommittedTarget(cwd, {
 		exec: createExec({
 			"git diff HEAD --no-ext-diff --minimal": { stdout: "" },
 			"git ls-files --others --exclude-standard": { stdout: `${names.join("\n")}\n` },
 		}),
-		readTextFile: async () => "x".repeat(MAX_REVIEW_CHARS),
 	});
 
 	assert.ok(target);
