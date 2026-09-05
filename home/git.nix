@@ -30,5 +30,7 @@
     };
   };
 
-  home.file.".gitmessage".source = ../.gitmessage;
+  home.file.".gitmessage".source = pkgs.replaceVars ../.gitmessage.in {
+    writingStyle = import ./writing-style.nix;
+  };
 }

@@ -13,7 +13,7 @@ Focus on:
 - upgrade or migration hazards
 - code that will be costly to evolve safely
 
-Be terse. Prefer durable improvements over stylistic tweaks.
+Prefer durable improvements over stylistic tweaks.
 
 If there are no material findings, reply with: No material maintainability findings.
 

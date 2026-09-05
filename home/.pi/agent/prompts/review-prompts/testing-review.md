@@ -20,7 +20,7 @@ Rules:
 - Only mention assertion weakness here when it creates a real coverage gap in the observed behavior.
 - Prefer the smallest high-value test additions over broad wishlist coverage.
 
-Be terse. For each finding, include:
+For each finding, include:
 - priority
 - location
 - missing or weak coverage

@@ -21,7 +21,9 @@ Specialized findings:
 
 {{SUB_REVIEW_RESULTS}}
 
-Produce a terse Markdown report with these sections:
+@writingStyle@
+
+Produce a Markdown report with these sections:
 1. Must fix
 2. Should fix
 3. Follow-up tests

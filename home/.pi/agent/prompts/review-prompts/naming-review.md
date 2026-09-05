@@ -13,7 +13,7 @@ Focus on:
 - names that are too generic, overloaded, or ambiguous
 - places where a better name would reduce the need for comments
 
-Be terse. Prefer naming issues that affect correct understanding or safe use.
+Prefer naming issues that affect correct understanding or safe use.
 
 Special rule:
 - Test names are allowed to be long and descriptive when that improves clarity and coverage-report usefulness. Do not flag test names for length alone.

@@ -13,7 +13,7 @@ Focus on:
 - state transitions that appear invalid or incomplete
 - places where the implementation may not match intended behavior
 
-Be terse. If you must infer intent, say so explicitly.
+If you must infer intent, say so explicitly.
 
 For each finding, include:
 - confidence
