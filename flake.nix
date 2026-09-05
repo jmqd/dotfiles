@@ -488,50 +488,61 @@
             claude-code = {
               type = "app";
               program = "${claudeCodePkg}/bin/claude";
+              meta.description = "Run Claude Code";
             };
             codex = {
               type = "app";
               program = "${codexPkg}/bin/codex";
+              meta.description = "Run Codex";
             };
             flow = {
               type = "app";
               program = "${flowPkg}/bin/flow";
+              meta.description = "Run Flow";
             };
             home-manager = {
               type = "app";
               program = "${(homeManagerFor system).packages.${system}.home-manager}/bin/home-manager";
+              meta.description = "Run Home Manager";
             };
             omp = {
               type = "app";
               program = "${piPkg}/bin/omp";
+              meta.description = "Run OMP";
             };
             oracle = {
               type = "app";
               program = "${oraclePkg}/bin/oracle";
+              meta.description = "Run Oracle";
             };
             oracle-mcp = {
               type = "app";
               program = "${oraclePkg}/bin/oracle-mcp";
+              meta.description = "Run the Oracle MCP server";
             };
             pi = {
               type = "app";
               program = "${piPkg}/bin/pi";
+              meta.description = "Run the Pi compatibility alias";
             };
             secrets-lint = {
               type = "app";
               program = "${secretsLint}/bin/secrets-lint";
+              meta.description = "Scan the repository for secrets";
             };
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             voxtype = {
               type = "app";
               program = "${voxtypePkg}/bin/voxtype";
+              meta.description = "Run Voxtype";
             };
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = {
               type = "app";
               program = "${codexDesktopPkg}/Applications/Codex.app/Contents/MacOS/ChatGPT";
+              meta.description = "Run Codex desktop";
             };
           };
         }
