@@ -12,13 +12,13 @@ in
   launchd.agents.raycast = {
     enable = true;
     config = {
-      # Launch through LaunchServices so Raycast registers as a GUI app. `-W`
-      # keeps the launchd job alive while `-g -j` avoids showing the launcher
-      # at login.
+      # Launch through LaunchServices and keep the job alive with `-W`.
+      # Use background launch, not `-j` (hidden): Raycast can receive its
+      # hotkey while leaving the launcher off-screen after a hidden launch.
       ProgramArguments = [
         "/usr/bin/open"
         "-W"
-        "-gj"
+        "-g"
         raycastApp
       ];
       ProcessType = "Interactive";
