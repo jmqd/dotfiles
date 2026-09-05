@@ -1,15 +1,6 @@
 {
   description = "dotfiles tooling";
 
-  nixConfig = {
-    extra-substituters = [
-      "https://nix-community.cachix.org"
-    ];
-    extra-trusted-public-keys = [
-      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-    ];
-  };
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
@@ -288,6 +279,7 @@
             "bin/link-private-data.sh"
             "bin/lint-secrets.sh"
             "bin/setup-git-hooks.sh"
+            "bin/setup-nix-cache.sh"
             "tests/bootstrap-rust-mapfile.sh"
             "tests/flow-search-smoke.sh"
             "tests/hm-switch-failure.sh"

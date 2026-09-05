@@ -52,6 +52,19 @@ git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
 bash ~/src/dotfiles/bin/hm-switch.sh
 ```
 
+The macOS bootstrap configures the [Nix community binary cache](https://nix-community.org/cache/)
+in the daemon, where cache URLs and signing keys must be trusted. On an existing
+Determinate Nix macOS installation, run this once:
+
+```bash
+sudo /bin/bash ~/src/dotfiles/bin/setup-nix-cache.sh
+```
+
+This preserves installer-managed `nix.conf` and existing custom settings, adds
+`nix/cache.conf` through `nix.custom.conf`, and restarts the daemon when changed.
+It retains default caches and signature verification without expanding
+`trusted-users`. NixOS already declares this cache in its host configuration.
+
 Raycast is the Option-Space launcher on macOS. If that shortcut was changed,
 open **Raycast Settings → General** and set **Raycast Hotkey** to Option-Space;
 Raycast does not provide a supported noninteractive hotkey setter. Home Manager
