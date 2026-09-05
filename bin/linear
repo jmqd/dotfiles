@@ -32,13 +32,10 @@ cmd_search() {
   [ $# -ge 1 ] || die "usage: linear search [--status todo,done] <text>"
   local text="$1"
   local escaped
-  escaped=$(printf '%s' "$text" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  escaped=$(jq -cn --arg value "$text" '$value')
 
   local query
-  query=$(cat <<EOF
-{"query":"{ searchIssues(term: \\"${escaped}\\", first: 50) { nodes { identifier title state { name } assignee { name } priority url } } }"}
-EOF
-  )
+  query=$(jq -cn --arg query "{ searchIssues(term: ${escaped}, first: 50) { nodes { identifier title state { name } assignee { name } priority url } } }" '{query: $query}')
 
   local result
   result=$(gql "$query")
@@ -66,13 +63,10 @@ cmd_view() {
   [ $# -ge 1 ] || die "usage: linear view <issue-id>"
   local issue_id="$1"
   local escaped
-  escaped=$(printf '%s' "$issue_id" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  escaped=$(jq -cn --arg value "$issue_id" '$value')
 
   local query
-  query=$(cat <<EOF
-{"query":"{ issue(id: \\"${escaped}\\") { identifier title description state { name } assignee { name } priority labels { nodes { name } } url createdAt updatedAt } }"}
-EOF
-  )
+  query=$(jq -cn --arg query "{ issue(id: ${escaped}) { identifier title description state { name } assignee { name } priority labels { nodes { name } } url createdAt updatedAt } }" '{query: $query}')
 
   local result
   result=$(gql "$query")
