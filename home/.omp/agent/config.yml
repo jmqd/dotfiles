@@ -2,25 +2,24 @@ symbolPreset: nerd
 theme:
   light: light
 setupVersion: 2
-# The generated -pro selectors send OpenAI's reasoning.mode: pro.
-# In OMP, :xhigh maps to the GPT-5.6 maximum reasoning effort.
+# GPT-6 Astra is the default across every OMP role.
 modelRoles:
-  # Highest-capability interactive and architecture work.
-  default: openai-codex/gpt-5.6-sol-pro:xhigh
-  slow: openai-codex/gpt-5.6-sol-pro:xhigh
-  advisor: openai-codex/gpt-5.6-luna:max
-  plan: openai-codex/gpt-5.6-sol-pro:xhigh
+  # Primary, planning, and full-agent work use high reasoning.
+  default: openai-codex/gpt-6-astra:high
+  slow: openai-codex/gpt-6-astra:high
+  advisor: openai-codex/gpt-6-astra:high
+  plan: openai-codex/gpt-6-astra:high
+  task: openai-codex/gpt-6-astra:high
 
-  # Full subagents favor the balanced tier; fan-out stays responsive.
-  task: openai-codex/gpt-5.6-terra-pro:xhigh
-  smol: openai-codex/gpt-5.6-luna:medium
+  # The lightweight role uses the requested lower reasoning mode.
+  smol: openai-codex/gpt-6-astra:medium
 advisor:
   enabled: true
   syncBacklog: "1"
 plan:
   defaultOnStartup: false
-# Any ad-hoc model selection without an explicit role also gets maximum effort.
-defaultThinkingLevel: xhigh
+# Ad-hoc model selections also default to high reasoning.
+defaultThinkingLevel: high
 textVerbosity: low
 codexResets:
   autoRedeem: "yes"
