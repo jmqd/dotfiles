@@ -9,6 +9,68 @@ find ~ -name ".*" -maxdepth 1
 User-facing documentation for the shipped `flow search` feature lives in
 [`docs/flow-search.md`](docs/flow-search.md).
 
+## OMP phone
+
+[`projects/omp-phone`](projects/omp-phone) contains a shareable OMP extension,
+Rust companion, and dependency-free browser UI. It controls existing terminal
+sessions through OMP's public extension API; it never launches a second agent
+against a session. Requires OMP 18.1.11 or newer.
+
+Home Manager installs the companion, registers the extension alongside existing
+extensions, and starts a user service on macOS/Linux when custom CLI packages
+are enabled. Set the **machine-specific** HTTPS origin in your host module:
+
+```nix
+services.omp-phone.publicUrl = "https://your-machine.your-tailnet.ts.net";
+```
+
+Then apply Home Manager, open a new shell, and restart the OMP sessions you want
+to expose. Without `publicUrl`, the service accepts localhost browser access only.
+With a current, connected Tailscale client, configure Serve (not public Funnel):
+
+```sh
+tailscale serve --bg http://127.0.0.1:8787
+omp-phone pair
+```
+
+Open the pairing link on your phone with Tailscale connected. Treat the link as a
+password; its token is exchanged for an HttpOnly cookie and removed from the URL.
+On iPhone, add the page to the Home Screen before enabling notifications. Tailscale
+Serve manages TLS; allow access only from your own devices in tailnet policy.
+This module does not change Tailscale settings or enable HTTPS certificates.
+
+Idle sessions appear first, newest state change first. A working→idle transition
+sends one Web Push notification; connecting/reconnecting an idle session does not.
+Push goes through Apple/Google/Mozilla infrastructure, with machine/session titles
+but no conversation text. Replies while busy are queued as follow-ups. Stop
+interrupts the existing agent. Questions and approvals remain terminal-only.
+The browser shows recent user/assistant text and tool output, not full history or
+image previews. Disconnected sessions disappear; stale replies are rejected.
+
+`/phone` reports the current terminal's connection status. Set
+`OMP_PHONE_DISABLED=1` before starting OMP to exclude a session. Runtime secrets
+and subscriptions live under `~/.local/state/omp-phone`, never in the Nix store.
+Restarting the companion requires pairing the browser again; push subscriptions
+persist. Disable notifications in the browser before signing out to stop them.
+
+For development without activating Home Manager:
+
+```sh
+cargo run --manifest-path projects/omp-phone/Cargo.toml -- serve
+# In another terminal:
+omp -e ./projects/omp-phone
+# In another terminal; open the printed localhost link:
+cargo run --manifest-path projects/omp-phone/Cargo.toml -- pair
+```
+
+Run `cargo test --manifest-path projects/omp-phone/Cargo.toml` for the focused
+auth, session-ownership, state-transition and push-endpoint checks.
+`nix build .#omp-phone` builds the package; new files must be tracked for Git-flake
+evaluation. To use the extension outside this repository, copy this project,
+build/install its Rust companion, and run `omp plugin install /absolute/path/to/omp-phone`.
+Alternatively, import its `home-module.nix` and enable `services.omp-phone.enable`.
+Do not register it through both mechanisms.
+
 ## PostgreSQL
 
 Home Manager runs a personal PostgreSQL 17 server after login on macOS and
