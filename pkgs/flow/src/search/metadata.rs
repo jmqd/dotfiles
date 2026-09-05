@@ -61,8 +61,7 @@ pub fn reindex(
             config.metadata_dir.display()
         )
     })?;
-    let temporary_path = temporary_file.path().to_path_buf();
-    drop(temporary_file);
+    let temporary_path = temporary_file.into_temp_path();
 
     let connection = Connection::open(&temporary_path)
         .with_context(|| format!("failed to open {}", temporary_path.display()))?;
@@ -79,10 +78,6 @@ pub fn reindex(
         .context("failed to optimize metadata database")?;
     drop(connection);
 
-    if config.metadata_db_path.exists() {
-        fs::remove_file(&config.metadata_db_path)
-            .with_context(|| format!("failed to remove {}", config.metadata_db_path.display()))?;
-    }
     fs::rename(&temporary_path, &config.metadata_db_path).with_context(|| {
         format!(
             "failed to move {} to {}",

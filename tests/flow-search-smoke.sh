@@ -27,7 +27,16 @@ git commit -q -m 'initial commit' -m 'adds hello world function'
 printf 'dirty needle\n' >>"$repo_dir/src/main.rs"
 
 cd "$repo_root"
-flow search reindex >"$tmp_dir/reindex.txt"
+# Initial and replacement metadata databases must remain private even when
+# the caller would ordinarily create world-readable files.
+umask 022
+for generation in 1 2; do
+	flow search reindex >"$tmp_dir/reindex-$generation.txt"
+	if [ -n "$(find "$state_dir/metadata/commits.sqlite" ! -perm 600 -print)" ]; then
+		echo "metadata database is not mode 0600" >&2
+		exit 1
+	fi
+done
 
 [ -s "$state_dir/metadata/commits.sqlite" ]
 [ -s "$state_dir/metadata/repos.json" ]
