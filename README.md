@@ -89,6 +89,10 @@ file exists, remove it and rotate any personal access tokens it contained.
 bash ~/src/dotfiles/bin/setup-git-hooks.sh
 ```
 
+The pre-push hook scans both the worktree and history across all local Git
+refs. Removing a secret in a later commit does not make it safe to push;
+rotate the credential and remove it from the outgoing history first.
+
 ## nix tooling
 
 ```bash

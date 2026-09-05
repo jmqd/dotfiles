@@ -10,8 +10,8 @@ usage() {
 	cat <<EOF
 usage: $(basename "$0") [--history]
 
-Run the default worktree secret scan, or use --history for a full Git history
-scan with the repository gitleaks config.
+Run the default worktree secret scan, or use --history to scan all local Git
+refs with the repository gitleaks config.
 EOF
 }
 
@@ -32,14 +32,14 @@ while [ $# -gt 0 ]; do
 	esac
 done
 
-run_gitleaks() {
-	local -a args=("$scan_mode" --config "$repo_root/.gitleaks.toml" --redact --exit-code 1 --no-banner .)
-	gitleaks "${args[@]}"
-}
+args=("$scan_mode" --config "$repo_root/.gitleaks.toml" --redact --exit-code 1 --no-banner .)
+if [ "$scan_mode" = "git" ]; then
+	args+=(--log-opts=--all)
+fi
 
 if command -v gitleaks >/dev/null 2>&1; then
 	echo "secrets-lint: using gitleaks from PATH"
-	run_gitleaks
+	gitleaks "${args[@]}"
 	exit 0
 fi
 
@@ -48,7 +48,7 @@ if command -v nix >/dev/null 2>&1 && [ -f "$repo_root/flake.nix" ]; then
 	tmp_cache_dir="$(mktemp -d)"
 	trap 'rm -rf "$tmp_cache_dir"' EXIT
 
-	if XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command gitleaks "$scan_mode" --config "$repo_root/.gitleaks.toml" --redact --exit-code 1 --no-banner .; then
+	if XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command gitleaks "${args[@]}"; then
 		exit 0
 	fi
 
