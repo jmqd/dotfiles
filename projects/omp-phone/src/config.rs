@@ -43,8 +43,8 @@ impl Config {
         if port == 0 {
             return Err("OMP_PHONE_PORT must not be zero".into());
         }
-        let raw =
-            env::var("OMP_PHONE_PUBLIC_URL").unwrap_or_else(|_| format!("http://localhost:{port}"));
+        let raw = env::var("OMP_PHONE_PUBLIC_URL")
+            .unwrap_or_else(|_| format!("http://localhost:{port}/omp/"));
         let url = Url::parse(&raw)?;
         if !matches!(url.scheme(), "http" | "https")
             || url.host_str().is_none()
@@ -52,10 +52,10 @@ impl Config {
             || url.password().is_some()
             || url.query().is_some()
             || url.fragment().is_some()
-            || url.path() != "/"
+            || !matches!(url.path(), "/omp" | "/omp/")
         {
             return Err(
-                "OMP_PHONE_PUBLIC_URL must be an exact http(s) origin without a path".into(),
+                "OMP_PHONE_PUBLIC_URL must be an http(s) URL at /omp/ without credentials, query or fragment".into(),
             );
         }
         if url.scheme() == "http" && !matches!(url.host_str(), Some("localhost" | "127.0.0.1")) {

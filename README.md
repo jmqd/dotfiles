@@ -18,22 +18,22 @@ against a session. Requires OMP 18.1.11 or newer.
 
 Home Manager installs the companion, registers the extension alongside existing
 extensions, and starts a user service on macOS/Linux when custom CLI packages
-are enabled. Set the **machine-specific** HTTPS origin and authorization in your host module:
+are enabled. Set the **machine-specific** HTTPS URL and authorization in your host module:
 
 ```nix
 services.omp-phone = {
-  publicUrl = "https://your-machine.your-tailnet.ts.net";
+  publicUrl = "https://your-machine.your-tailnet.ts.net/omp/";
   allowedTailnetUsers = [ "you@example.com" ];
   tailnetCapability = "example.com/cap/omp-phone";
 };
 ```
 
 The `macos-aarch64` profile in [`home/hosts/jmq-macos.nix`](home/hosts/jmq-macos.nix)
-uses the private origin `https://jordans-macbook-pro.taild6d9b.ts.net`, login
+uses the private URL `https://jordans-macbook-pro.taild6d9b.ts.net/omp/`, login
 `j@jm.dev`, and capability `jm.dev/cap/omp-phone`. Its policy destination is
 `100.94.227.118`. Use those values in the grant and Serve command below.
-Other machines need their own origin and destination. The `publicUrl` option
-names the browser-facing origin; it does not make the service public.
+Other machines need their own hostname and destination. The `publicUrl` option
+names the browser-facing URL, including `/omp/`; it does not make the service public.
 
 HTTPS mode requires Tailscale 1.92+ and a member-only application capability.
 Merge a grant like this into the **existing** tailnet policy, replacing the
@@ -63,15 +63,28 @@ outsiders access to this machine's TCP 443. Adding the grant above does not revo
 access granted elsewhere. Keep the node unshared until that policy audit is complete.
 
 Apply Home Manager, open a new shell, and restart the OMP sessions you want to
-expose. Without `publicUrl`, only direct localhost development access is accepted;
+expose. Without `publicUrl`, only direct localhost access at `/omp/` is accepted;
 forwarded requests are rejected. Connect Tailscale deliberately: a stopped client
 may retain an exit-node preference. Configure **Serve, never public Funnel**:
 
 ```sh
-tailscale serve --bg --https=443 --accept-app-caps=example.com/cap/omp-phone http://127.0.0.1:8787
+tailscale serve --bg --https=443 --set-path=/omp --accept-app-caps=example.com/cap/omp-phone http://127.0.0.1:8787/omp
 tailscale serve status --json
 omp-phone pair
 ```
+
+Keep `/omp` in **both** the Serve mount and proxy target: Serve strips the mount
+prefix before adding the target path. This leaves `/` and other paths available
+for sibling services. The companion redirects `/omp` to `/omp/`, and does not
+serve its UI or API at the hostname root.
+
+The pairing cookie, installed-app identity and service worker are scoped to
+`/omp/`; notification clicks only reuse OMP tabs. Paths still share a browser
+origin, so only put trusted apps on the same HTTPS hostname and port.
+
+When upgrading a root-mounted installation, disable its notifications first,
+remove only its old OMP root mapping from Serve, then re-pair and reinstall the
+OMP Home Screen app using the new URL. Do not reset unrelated Serve mappings.
 
 Open the pairing link on your phone with Tailscale connected. Treat the link as a
 password; its token is exchanged for an HttpOnly cookie and removed from the URL.
@@ -118,7 +131,7 @@ For development without activating Home Manager:
 cargo run --manifest-path projects/omp-phone/Cargo.toml -- serve
 # In another terminal:
 omp -e ./projects/omp-phone
-# In another terminal; open the printed localhost link:
+# In another terminal; open the printed localhost /omp/ link:
 cargo run --manifest-path projects/omp-phone/Cargo.toml -- pair
 ```
 

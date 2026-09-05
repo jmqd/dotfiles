@@ -104,7 +104,7 @@ impl Push {
             let payload = json!({
                 "title": format!("{} · Your turn", turn.hostname),
                 "body": turn.title,
-                "url": format!("/#session={}", turn.id),
+                "url": format!("/omp/#session={}", turn.id),
             })
             .to_string();
             let subscriptions = self.subscriptions.lock().await.clone();

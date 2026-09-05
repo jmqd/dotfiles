@@ -8,11 +8,11 @@ function sessionUrl(value) {
   try {
     const url = new URL(value, self.location.origin);
     const id = new URLSearchParams(url.hash.slice(1)).get("session");
-    if (url.origin === self.location.origin && url.pathname === "/" && id && /^[A-Za-z0-9_-]+$/.test(id)) {
-      return `${self.location.origin}/#session=${encodeURIComponent(id)}`;
+    if (url.origin === self.location.origin && url.pathname === "/omp/" && id && /^[A-Za-z0-9_-]+$/.test(id)) {
+      return `${self.location.origin}/omp/#session=${encodeURIComponent(id)}`;
     }
   } catch { /* Malformed payloads open the safe session list. */ }
-  return `${self.location.origin}/`;
+  return `${self.location.origin}/omp/`;
 }
 
 self.addEventListener("push", event => {
@@ -23,8 +23,8 @@ self.addEventListener("push", event => {
     typeof payload.title === "string" ? payload.title : "OMP · Your turn",
     {
       body: typeof payload.body === "string" ? payload.body : "A session is ready for you.",
-      icon: "/icon.svg",
-      badge: "/icon.svg",
+      icon: "/omp/icon.svg",
+      badge: "/omp/icon.svg",
       tag: url,
       data: { url },
     },
@@ -36,8 +36,11 @@ self.addEventListener("notificationclick", event => {
   const url = sessionUrl(event.notification.data?.url);
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-    const sameOrigin = windows.filter(client => new URL(client.url).origin === self.location.origin);
-    const target = sameOrigin.find(client => client.url === url) || sameOrigin[0];
+    const appWindows = windows.filter(client => {
+      const candidate = new URL(client.url);
+      return candidate.origin === self.location.origin && candidate.pathname === "/omp/";
+    });
+    const target = appWindows.find(client => client.url === url) || appWindows[0];
     if (target) {
       try {
         const navigated = target.url === url ? target : await target.navigate(url);

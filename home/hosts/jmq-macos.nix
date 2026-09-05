@@ -6,7 +6,7 @@
   home.homeDirectory = "/Users/jmq";
 
   services.omp-phone = lib.mkIf pkgs.stdenv.hostPlatform.isAarch64 {
-    publicUrl = "https://jordans-macbook-pro.taild6d9b.ts.net";
+    publicUrl = "https://jordans-macbook-pro.taild6d9b.ts.net/omp/";
     allowedTailnetUsers = [ "j@jm.dev" ];
     tailnetCapability = "jm.dev/cap/omp-phone";
   };
