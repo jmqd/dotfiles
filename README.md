@@ -216,6 +216,12 @@ nix run .#secrets-lint
 bin/lint-secrets.sh --history
 ```
 
+Validation sources are filtered in `flake.nix`: formatting checks include their
+listed scripts or all discovered Nix files; targeted tests include their helpers
+and fixtures. Unrelated edits can reuse those check results. When a test gains a
+helper or fixture, add it to that check's `checkSource` list. Secret scanning
+intentionally covers the entire tracked repository and is not narrowed.
+
 ## Nix storage maintenance
 
 Keep the current generation and four rollback generations for each user profile:
