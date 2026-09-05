@@ -239,6 +239,14 @@
             "tests/pre-push-secrets.sh"
           ];
 
+          checkSource =
+            files:
+            pkgs.lib.fileset.toSource {
+              root = ./.;
+              fileset = pkgs.lib.fileset.unions (map (file: ./. + "/${file}") files);
+            };
+          shellCheckSource = checkSource shellScriptFiles;
+
           nixFiles = map (path: pkgs.lib.removePrefix "${toString ./.}/" (toString path)) (
             builtins.filter (path: pkgs.lib.hasSuffix ".nix" (toString path)) (
               pkgs.lib.filesystem.listFilesRecursive ./.
@@ -251,7 +259,7 @@
                 nativeBuildInputs = [ pkgs.nixfmt ];
               }
               ''
-                cd ${./.}
+                cd ${checkSource nixFiles}
                 nixfmt --check ${pkgs.lib.escapeShellArgs nixFiles}
                 touch $out
               '';
@@ -274,7 +282,7 @@
                 nativeBuildInputs = [ pkgs.shellcheck ];
               }
               ''
-                cd ${./.}
+                cd ${shellCheckSource}
                 shellcheck ${pkgs.lib.escapeShellArgs shellScriptFiles}
                 touch $out
               '';
@@ -285,7 +293,7 @@
                 nativeBuildInputs = [ pkgs.shfmt ];
               }
               ''
-                cd ${./.}
+                cd ${shellCheckSource}
                 shfmt -d ${pkgs.lib.escapeShellArgs shellScriptFiles}
                 touch $out
               '';
@@ -296,7 +304,12 @@
                 nativeBuildInputs = [ pkgs.nodejs ];
               }
               ''
-                cd ${./.}
+                cd ${
+                  checkSource [
+                    "home/.pi/agent/extensions/review-orchestrator/core.ts"
+                    "home/.pi/agent/extensions/review-orchestrator/core.test.ts"
+                  ]
+                }
                 node --test home/.pi/agent/extensions/review-orchestrator/core.test.ts
                 touch $out
               '';
@@ -310,7 +323,12 @@
                 ];
               }
               ''
-                cd ${./.}
+                cd ${
+                  checkSource [
+                    "bin/bootstrap-rust.sh"
+                    "tests/bootstrap-rust-mapfile.sh"
+                  ]
+                }
                 bash tests/bootstrap-rust-mapfile.sh
                 touch $out
               '';
@@ -326,7 +344,7 @@
                 ];
               }
               ''
-                cd ${./.}
+                cd ${checkSource [ "tests/flow-search-smoke.sh" ]}
                 bash tests/flow-search-smoke.sh
                 touch $out
               '';
@@ -341,7 +359,12 @@
                 ];
               }
               ''
-                cd ${./.}
+                cd ${
+                  checkSource [
+                    "bin/hm-switch.sh"
+                    "tests/hm-switch-failure.sh"
+                  ]
+                }
                 bash tests/hm-switch-failure.sh
                 touch $out
               '';
@@ -359,7 +382,13 @@
               ''
                 export HOME="$TMPDIR/home"
                 mkdir -p "$HOME"
-                cd ${./.}
+                cd ${
+                  checkSource [
+                    ".githooks/pre-push"
+                    "bin/lint-secrets.sh"
+                    "tests/pre-push-secrets.sh"
+                  ]
+                }
                 bash tests/pre-push-secrets.sh
                 touch $out
               '';
