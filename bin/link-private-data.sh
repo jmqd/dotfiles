@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Keep newly downloaded private files and their directories private.
+umask 077
+
 private_cloud_root="${PRIVATE_CLOUD_ROOT:-$HOME/cloud/mcqueen.jordan}"
 private_s3_bucket="${PRIVATE_S3_BUCKET:-s3://mcqueen.jordan}"
 sync_private_data=1
