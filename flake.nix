@@ -9,11 +9,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    googleworkspace-cli = {
-      url = "github:googleworkspace/cli/v0.22.5";
-      inputs.flake-utils.follows = "flake-utils";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
     notion-cli = {
       url = "github:lox/notion-cli/v0.6.0";
       flake = false;
@@ -55,7 +50,6 @@
       nixpkgs,
       nixpkgs-darwin-x86,
       flake-utils,
-      googleworkspace-cli,
       notion-cli,
       trueflow,
       trueflow-darwin-x86,
@@ -70,45 +64,6 @@
       trueflowFor = system: if system == "x86_64-darwin" then trueflow-darwin-x86 else trueflow;
       homeManagerFor =
         system: if system == "x86_64-darwin" then home-manager-darwin-x86 else home-manager;
-
-      mkGoogleworkspaceCliPkg =
-        system:
-        let
-          pkgs = import (nixpkgsFor system) { inherit system; };
-        in
-        pkgs.rustPlatform.buildRustPackage {
-          pname = "gws";
-          version = "0.22.5";
-          src = googleworkspace-cli;
-          cargoLock.lockFile = "${googleworkspace-cli}/Cargo.lock";
-          checkFlags = [ "--test-threads=1" ];
-          # Upstream's encrypted-credentials test mutates process-global state; guard
-          # its temporary config directory and serialize the Rust test harness so
-          # credential tests cannot race on the shared encryption key.
-          postPatch = ''
-            substituteInPlace crates/google-workspace-cli/src/auth.rs \
-              --replace-fail \
-                'std::env::set_var("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", dir.path());' \
-                'let _config_guard = EnvVarGuard::set("GOOGLE_WORKSPACE_CLI_CONFIG_DIR", dir.path());'
-          '';
-
-          nativeBuildInputs = with pkgs; [
-            pkg-config
-          ];
-
-          preCheck = ''
-            export GOOGLE_WORKSPACE_CLI_CONFIG_DIR="$TMPDIR/gws"
-            mkdir -p "$GOOGLE_WORKSPACE_CLI_CONFIG_DIR"
-          '';
-
-          meta = with pkgs.lib; {
-            description = "Google Workspace CLI";
-            homepage = "https://github.com/googleworkspace/cli";
-            license = licenses.asl20;
-            mainProgram = "gws";
-            platforms = platforms.unix;
-          };
-        };
 
       mkNotionCliPkg =
         system:
@@ -205,7 +160,6 @@
       mkHomePackagesModule =
         system:
         let
-          googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
@@ -238,7 +192,7 @@
               claudeCodePkg
               codexPkg
               flowPkg
-              googleworkspaceCliPkg
+              pkgs.gws
               notionCliPkg
               oraclePkg
               piPkg
@@ -259,7 +213,6 @@
         system:
         let
           pkgs = import (nixpkgsFor system) { inherit system; };
-          googleworkspaceCliPkg = mkGoogleworkspaceCliPkg system;
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
@@ -442,6 +395,7 @@
                   curl
                   git
                   gitleaks
+                  gws
                   just
                   jq
                   python3
@@ -449,7 +403,6 @@
                   shfmt
                 ])
                 ++ [
-                  googleworkspaceCliPkg
                   piPkg
                   trueflowPkg
                 ];
@@ -461,7 +414,7 @@
             claude-code = claudeCodePkg;
             codex = codexPkg;
             flow = flowPkg;
-            googleworkspace-cli = googleworkspaceCliPkg;
+            googleworkspace-cli = pkgs.gws;
             home-manager = (homeManagerFor system).packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             omp = piPkg;
@@ -482,7 +435,7 @@
             codex = codexPkg;
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
-            googleworkspace-cli = googleworkspaceCliPkg;
+            googleworkspace-cli = pkgs.gws;
             hm-switch-tests = hmSwitchTests;
             nixfmt = nixfmtCheck;
             notion-cli = notionCliPkg;
