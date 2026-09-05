@@ -28,6 +28,13 @@ services.omp-phone = {
 };
 ```
 
+The `macos-aarch64` profile in [`home/hosts/jmq-macos.nix`](home/hosts/jmq-macos.nix)
+uses the private origin `https://jordans-macbook-pro.taild6d9b.ts.net`, login
+`j@jm.dev`, and capability `jm.dev/cap/omp-phone`. Its policy destination is
+`100.94.227.118`. Use those values in the grant and Serve command below.
+Other machines need their own origin and destination. The `publicUrl` option
+names the browser-facing origin; it does not make the service public.
+
 HTTPS mode requires Tailscale 1.92+ and a member-only application capability.
 Merge a grant like this into the **existing** tailnet policy, replacing the
 destination with this machine's Tailscale IP and the capability with your configured
