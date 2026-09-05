@@ -127,6 +127,20 @@ This preserves installer-managed `nix.conf` and existing custom settings, adds
 It retains default caches and signature verification without expanding
 `trusted-users`. NixOS already declares this cache in its host configuration.
 
+Verify daemon access and effective cache settings after setup:
+
+```bash
+nix store info --json
+nix config show substituters
+nix config show trusted-public-keys
+nix config show require-sigs
+```
+
+The cache URL and `nix-community.cachix.org-1` signing key should appear, and
+`require-sigs` should remain `true`. `"trusted": 0` in the daemon response is
+expected for an ordinary client: using the configured cache does not require
+granting that client administrative Nix privileges.
+
 Raycast is the Option-Space launcher on macOS. If that shortcut was changed,
 open **Raycast Settings → General** and set **Raycast Hotkey** to Option-Space;
 Raycast does not provide a supported noninteractive hotkey setter. Home Manager
