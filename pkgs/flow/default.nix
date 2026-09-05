@@ -5,20 +5,18 @@
   gitMinimal,
   zoekt,
 }:
-let
-  zoektForFlow = zoekt.overrideAttrs (_: {
-    pname = "zoekt-flow";
-    subPackages = [
-      "cmd/zoekt"
-      "cmd/zoekt-git-index"
-    ];
-  });
-in
 rustPlatform.buildRustPackage rec {
   pname = "flow";
   version = "0.1.0";
 
-  src = ./.;
+  src = lib.fileset.toSource {
+    root = ./.;
+    fileset = lib.fileset.unions [
+      ./Cargo.toml
+      ./Cargo.lock
+      ./src
+    ];
+  };
   cargoLock.lockFile = ./Cargo.lock;
 
   nativeBuildInputs = [ makeWrapper ];
@@ -29,7 +27,7 @@ rustPlatform.buildRustPackage rec {
       --prefix PATH : ${
         lib.makeBinPath [
           gitMinimal
-          zoektForFlow
+          zoekt
         ]
       }
   '';
