@@ -62,6 +62,7 @@ in
     ./flow-search.nix
     ./gpg.nix
     ./git.nix
+    ./omp-phone.nix
     ./postgresql.nix
     ./nas.nix
     ./ssh.nix

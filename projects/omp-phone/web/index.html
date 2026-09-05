@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#16191e">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="OMP Phone">
+  <meta name="referrer" content="no-referrer">
+  <title>OMP Phone</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <a class="brand" href="#" aria-label="OMP Phone, all sessions"><img src="/icon.svg" width="30" height="30" alt=""><span>OMP Phone<small id="machine">Your local companion</small></span></a>
+      <button id="logout" class="quiet" type="button" hidden>Sign out</button>
+    </header>
+    <div id="connection" class="connection" role="status" aria-live="polite">Connecting…</div>
+    <main id="login-view" class="login" hidden>
+      <h1>Your sessions, nearby.</h1>
+      <p>Use the pairing link from your computer, or enter its machine token. Your sessions stay on that computer.</p>
+      <form id="login-form">
+        <label for="token">Machine token</label>
+        <input id="token" name="token" type="password" required autocomplete="off" autocapitalize="none" spellcheck="false">
+        <button id="login-button" type="submit">Connect</button>
+      </form>
+      <p id="login-error" class="error" role="alert"></p>
+    </main>
+    <main id="sessions-view" class="sessions scroll-area" hidden>
+      <div class="section-heading"><h1>Sessions</h1><span id="session-count" class="muted"></span></div>
+      <p class="muted intro">Live on your computer. Questions and approvals stay in the terminal.</p>
+      <section aria-labelledby="idle-heading"><h2 id="idle-heading"><span class="dot idle"></span>Your turn</h2><div id="idle-sessions" class="session-list"></div></section>
+      <section aria-labelledby="working-heading"><h2 id="working-heading"><span class="dot working"></span>Working</h2><div id="working-sessions" class="session-list"></div></section>
+      <section class="push-settings" aria-labelledby="push-heading">
+        <h2 id="push-heading">A nudge when it’s your turn</h2>
+        <p class="muted">Get a notification when a working session becomes idle. Notifications contain the machine and session title, never the conversation.</p>
+        <button id="push-button" type="button" class="secondary" disabled>Enable notifications</button>
+        <p id="push-status" class="muted" role="status"></p>
+        <p class="muted">On iPhone or iPad, open this page in Safari, choose Share → Add to Home Screen, then enable notifications from the installed app. Notifications require HTTPS and your permission.</p>
+      </section>
+    </main>
+    <main id="session-view" class="session-view" hidden>
+      <div class="detail-header">
+        <a href="#" class="back">← Sessions</a>
+        <div class="detail-title"><h1 id="session-title"></h1><span id="session-state" class="badge"></span></div>
+        <p id="session-cwd" class="cwd"></p>
+        <p class="muted">Recent text and tool output; long messages are shortened.</p>
+      </div>
+      <div id="transcript" class="transcript scroll-area" tabindex="0" aria-label="Session transcript">
+        <p id="transcript-empty" class="empty">No messages yet.</p>
+        <div id="messages"></div>
+        <article id="partial-message" class="message assistant" hidden><h2>Assistant · live</h2><div id="partial-text" class="message-text"></div></article>
+        <p id="session-missing" class="empty" hidden>This session is no longer connected. Return to Sessions to see what’s live.</p>
+      </div>
+      <form id="composer" class="composer">
+        <label for="prompt">Reply to this session</label>
+        <textarea id="prompt" name="prompt" rows="3" placeholder="Write a prompt…" disabled></textarea>
+        <div class="composer-actions"><p id="composer-hint" class="muted">Questions and approvals stay in the terminal.</p><button id="stop" type="button" class="secondary" disabled>Stop</button><button id="send" type="submit" disabled>Send</button></div>
+        <p id="command-status" class="command-status" role="status" aria-live="polite"></p>
+      </form>
+    </main>
+    <noscript><p class="empty">JavaScript is required to connect to your sessions.</p></noscript>
+  </div>
+</body>
+</html>

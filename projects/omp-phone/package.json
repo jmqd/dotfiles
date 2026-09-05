@@ -1,0 +1,14 @@
+{
+  "name": "omp-phone",
+  "version": "0.1.0",
+  "license": "MIT",
+  "type": "module",
+  "description": "A private phone interface for live Oh My Pi terminal sessions",
+  "omp": {
+    "extensions": ["./extension/index.ts"]
+  },
+  "files": ["extension", "web", "src", "Cargo.toml", "Cargo.lock", "default.nix", "home-module.nix"],
+  "engines": {
+    "bun": ">=1.3.14"
+  }
+}

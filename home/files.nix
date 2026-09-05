@@ -17,6 +17,7 @@
     ".codex/prompts/oracle.md".source = ./codex/prompts/oracle.md;
     ".omp/agent/config.yml".source = ./.omp/agent/config.yml;
     ".omp/agent/extensions".source = ./.pi/agent/extensions;
+    ".omp/agent/extensions".recursive = true;
     ".pi/agent/AGENTS.md".source = ./.pi/agent/AGENTS.md;
     ".pi/agent/keybindings.json".source = ./.pi/agent/keybindings.json;
     ".pi/agent/models.json".source = ./.pi/agent/models.json;

@@ -1,0 +1,32 @@
+[package]
+name = "omp-phone"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Local phone companion for OMP public-API extensions"
+
+[dependencies]
+axum = { version = "0.8", features = ["ws"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time", "fs"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures-util = "0.3"
+async-stream = "0.3"
+base64 = "0.22"
+rand = "0.8"
+p256 = "0.13"
+subtle = "2"
+parking_lot = "0.12"
+fs2 = "0.4"
+hostname = "0.4"
+url = "2"
+web-push = { version = "0.11", default-features = false }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = true

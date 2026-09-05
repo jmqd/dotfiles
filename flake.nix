@@ -418,6 +418,7 @@
             home-manager = (homeManagerFor system).packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             omp = piPkg;
+            omp-phone = pkgs.callPackage ./projects/omp-phone { };
             oracle = oraclePkg;
             pi = piPkg;
             secrets-lint = secretsLint;
