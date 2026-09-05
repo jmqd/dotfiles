@@ -34,30 +34,6 @@
         "type": "github"
       }
     },
-    "googleworkspace-cli": {
-      "inputs": {
-        "flake-utils": [
-          "flake-utils"
-        ],
-        "nixpkgs": [
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1774981938,
-        "narHash": "sha256-Bj4gPklufU6p2JpvN6j7QViv7ghSn52jemeXPVXkhlk=",
-        "owner": "googleworkspace",
-        "repo": "cli",
-        "rev": "705fb0ecac6f4249679958f6325b809b63fdde17",
-        "type": "github"
-      },
-      "original": {
-        "owner": "googleworkspace",
-        "ref": "v0.22.5",
-        "repo": "cli",
-        "type": "github"
-      }
-    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -152,7 +128,6 @@
       "inputs": {
         "emacs-sops": "emacs-sops",
         "flake-utils": "flake-utils",
-        "googleworkspace-cli": "googleworkspace-cli",
         "home-manager": "home-manager",
         "home-manager-darwin-x86": "home-manager-darwin-x86",
         "nixpkgs": "nixpkgs",
