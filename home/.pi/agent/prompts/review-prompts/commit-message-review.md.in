@@ -11,6 +11,10 @@ If this is not a single-commit review, reply with: No commit-message review appl
 
 When applicable, evaluate only the commit message present in the review target's commit metadata, not the diff prose around it.
 
+Use this writing standard when assessing the message:
+
+@writingStyle@
+
 Focus on whether the commit message is:
 - technically objective rather than promotional, theatrical, or grandiose
 - concrete about what changed

@@ -12,6 +12,10 @@ Only evaluate prose that is actually present, such as:
 - help text
 - user-facing explanatory strings
 
+Use this writing standard when assessing prose:
+
+@writingStyle@
+
 Focus on:
 - clarity over cleverness
 - simple, direct wording suited to readers who may not be native speakers

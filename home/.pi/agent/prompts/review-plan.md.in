@@ -16,7 +16,9 @@ Aggregated review report:
 
 {{AGGREGATED_REVIEW}}
 
-Produce a terse Markdown plan with these sections:
+@writingStyle@
+
+Produce a Markdown plan with these sections:
 1. Recommended change strategy
 2. Conflict reconciliation
 3. Dependency edges / prerequisites

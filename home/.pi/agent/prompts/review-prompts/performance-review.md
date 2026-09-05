@@ -13,7 +13,7 @@ Focus on:
 - blocking or serialization bottlenecks
 - I/O patterns that are likely inefficient
 
-Be terse. Prefer concrete performance risks over speculative micro-optimizations.
+Prefer concrete performance risks over speculative micro-optimizations.
 
 For each finding, include:
 - impact

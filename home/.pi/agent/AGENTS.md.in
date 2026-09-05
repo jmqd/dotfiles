@@ -2,7 +2,7 @@
 
 ## Communication
 
-- Write clear, focused plain English. Lead with the point, prefer concrete active language, prefer declarative writing, stay objective and derive insights from a synthesis of empiricism and principles/theory, and omit anything that does not help the reader understand or act.
+- @writingStyle@
 - Prefer direct answers over long explanations.
 - When deeper background or documentation would help, include references at the end using markers like [1], [2], etc.
 - For non-trivial work, explain the plan briefly before editing.
@@ -55,5 +55,5 @@
 - Commit a useful checkpoint before risky refactoring. Do not commit a known broken state.
 - Stage only task-related changes. Review the staged diff. Preserve unrelated work.
 - Keep each commit to one reviewable concern.
-- Use an imperative subject of 50 characters or fewer. Wrap body lines at 72 characters. Use ASD-STE100 in each message.
+- Keep each commit subject to 50 characters or fewer. Wrap body lines at 72 characters.
 - Do not amend or rewrite commits unless the user explicitly asks. Do not push unless the user explicitly asks.

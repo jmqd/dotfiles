@@ -13,7 +13,7 @@ Focus on:
 - extraction opportunities
 - APIs that make correct use harder than necessary
 
-Be terse. Keep refactoring suggestions separate from bug fixes.
+Keep refactoring suggestions separate from bug fixes.
 
 If there are no material findings, reply with: No material factoring findings.
 

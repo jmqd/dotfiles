@@ -8,7 +8,7 @@ Use `~/.gitmessage` as the starting point for commit structure. Follow these con
 - Create an appropriate number of commits, with a strong preference for one commit when the change is coherent.
 - Keep each commit subject at 50 characters or less.
 - Wrap body text at 72 columns.
-- Write in a declarative, concise, objective style.
+- @writingStyle@
 - Avoid fluff, hype, broad claims, invented references, and LLM attribution.
 - Use Markdown-compatible plain text when a body is useful.
 

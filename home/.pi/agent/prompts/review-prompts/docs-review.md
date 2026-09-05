@@ -13,7 +13,7 @@ Focus on:
 - places where tests or names imply intent that the docs do not explain
 - places where future maintainers are likely to misunderstand behavior
 
-Be terse. Prefer documentation gaps that affect safe or correct use.
+Prefer documentation gaps that affect safe or correct use.
 
 If there are no material findings, reply with: No material documentation findings.
 

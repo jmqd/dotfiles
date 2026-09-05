@@ -13,7 +13,7 @@ Focus on:
 - APIs that make invalid states or incorrect use too easy
 - missing abstractions or overly leaky abstractions
 
-Be terse. Prefer issues that affect correctness, usability, or long-term evolution.
+Prefer issues that affect correctness, usability, or long-term evolution.
 
 For each finding, include:
 - severity

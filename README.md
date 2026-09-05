@@ -294,6 +294,14 @@ and fixtures. Unrelated edits can reuse those check results. When a test gains a
 helper or fixture, add it to that check's `checkSource` list. Secret scanning
 intentionally covers the entire tracked repository and is not narrowed.
 
+Agent writing guidance is defined once in [`home/writing-style.nix`](home/writing-style.nix).
+Home Manager substitutes it verbatim for `@writingStyle@` in `.in` templates,
+then installs the normal filenames without `.in`. This covers global instructions
+for OMP, Pi, Claude, and Codex; commit and review prompts; and Git's commit
+template. OMP's `PERSONALITY.md` uses the same string without replacing its tool
+or workflow instructions. Edit the Nix string to change the shared wording, then
+apply it with `bin/hm-switch.sh`. Caveman mode requires an explicit request.
+
 ## Nix storage maintenance
 
 Keep the current generation and four rollback generations for each user profile:

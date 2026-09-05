@@ -41,8 +41,8 @@ const REVIEW_CATEGORIES: ReviewCategory[] = [
 	{ id: "simple-names", title: "Simple Names", file: "simple-names-review.md" },
 ];
 
-const SUB_REVIEW_SYSTEM_PROMPT = `You are a specialized code reviewer running one focused review pass. Follow the provided review template exactly. Be terse. Prefer concrete findings to speculation. Output Markdown only.`;
-const AGGREGATOR_SYSTEM_PROMPT = `You are a staff-level code review aggregator. Combine specialized review passes into one terse, high-signal Markdown report. Deduplicate aggressively. Keep refactoring suggestions separate from functional or safety issues.`;
+const SUB_REVIEW_SYSTEM_PROMPT = `You are a specialized code reviewer running one focused review pass. Follow the provided review template exactly. Prefer concrete findings to speculation. Output Markdown only.`;
+const AGGREGATOR_SYSTEM_PROMPT = `You are a staff-level code review aggregator. Combine specialized review passes into one Markdown report. Follow the provided review template exactly. Deduplicate aggressively. Keep refactoring suggestions separate from functional or safety issues.`;
 const PLANNER_SYSTEM_PROMPT = `You are a staff-level implementation planner. Given an aggregated review, create a coherent, dependency-aware change plan that resolves conflicts, minimizes churn, and suggests an execution order.`;
 
 export default function reviewOrchestrator(pi: ExtensionAPI) {

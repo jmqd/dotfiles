@@ -6,7 +6,7 @@ Review {{TARGET_NAME}} for security issues.
 Review scope: {{REVIEW_SCOPE}}
 Scope details: {{SCOPE_DESCRIPTION}}
 
-Be terse. Report only concrete findings or notable security-relevant absences.
+Report only concrete findings or notable security-relevant absences.
 
 For each finding, include:
 - severity

@@ -14,7 +14,7 @@ Focus on:
 - embarrassingly parallel subproblems that are currently done sequentially
 - concurrency changes that would need guardrails such as limits, backpressure, or rate-limit awareness
 
-Be terse. Prefer concrete concurrency bugs or well-supported parallelization opportunities over speculative changes.
+Prefer concrete concurrency bugs or well-supported parallelization opportunities over speculative changes.
 
 For each finding, include:
 - impact

@@ -24,7 +24,7 @@ Heuristics:
 - Do not flag standard, widely understood abbreviations.
 - Test names are allowed to be long and descriptive when that improves clarity and coverage-report usefulness. Do not flag test names for length or number of subwords alone.
 
-Be terse. Prefer only material simplification opportunities, not churn.
+Prefer only material simplification opportunities, not churn.
 - For test-name findings, only report them when they are actually misleading, inconsistent, or hard to understand.
 
 For each finding, include:
