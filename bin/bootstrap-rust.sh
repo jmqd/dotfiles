@@ -2,6 +2,11 @@
 set -euo pipefail
 
 rustup_bin="${RUSTUP_BIN:-rustup}"
+update=0
+if [[ "${1:-}" == "--update" ]]; then
+	update=1
+	shift
+fi
 toolchain="${1:-stable}"
 shift || true
 
@@ -40,8 +45,12 @@ missing_components() {
 }
 
 target_toolchain="$toolchain"
-echo "Installing or updating rustup toolchain: $target_toolchain (profile: $profile)"
-"$rustup_bin" toolchain install "$target_toolchain" --profile "$profile"
+# `rustup run` never installs or updates a toolchain implicitly.
+# Keep ordinary activation local when the requested compiler is usable.
+if [[ "$update" -eq 1 ]] || ! "$rustup_bin" run "$target_toolchain" rustc --version >/dev/null 2>&1; then
+	echo "Installing or updating rustup toolchain: $target_toolchain (profile: $profile)"
+	"$rustup_bin" toolchain install "$target_toolchain" --profile "$profile"
+fi
 "$rustup_bin" default "$target_toolchain"
 
 if [[ ${#components[@]} -gt 0 ]]; then

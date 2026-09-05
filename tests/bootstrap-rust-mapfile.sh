@@ -8,6 +8,9 @@ toolchain_install_seen=0
 
 rustup() {
 	case "$*" in
+	'run stable rustc --version')
+		[[ "${RUSTUP_TEST_EXISTING:-0}" == 1 ]]
+		;;
 	'toolchain install stable --profile minimal')
 		toolchain_install_seen=1
 		;;
@@ -17,6 +20,10 @@ rustup() {
 	'component list --toolchain stable --installed')
 		if [[ "${FAIL_COMPONENT_LIST:-0}" == 1 ]]; then
 			return 42
+		fi
+		if [[ "${RUSTUP_TEST_EXISTING:-0}" == 1 ]]; then
+			printf '%s\n' rustfmt clippy rust-analyzer rust-src
+			return
 		fi
 		printf '%s\n' \
 			'cargo-x86_64-apple-darwin' \
@@ -47,6 +54,25 @@ fi
 
 if [[ $component_add_seen -ne 1 ]]; then
 	printf '%s\n' 'bootstrap did not request all missing default components' >&2
+	exit 1
+fi
+
+# A usable installation must not be updated or downloaded on activation.
+export RUSTUP_TEST_EXISTING=1
+toolchain_install_seen=0
+component_add_seen=0
+# shellcheck source=/dev/null
+source "$repo_root/bin/bootstrap-rust.sh" stable
+if [[ $toolchain_install_seen -ne 0 || $component_add_seen -ne 0 ]]; then
+	echo "existing toolchain unexpectedly requested an install or update" >&2
+	exit 1
+fi
+
+# Updates remain available through an explicit user command.
+# shellcheck source=/dev/null
+source "$repo_root/bin/bootstrap-rust.sh" --update stable
+if [[ $toolchain_install_seen -ne 1 ]]; then
+	echo "explicit toolchain update was skipped" >&2
 	exit 1
 fi
 

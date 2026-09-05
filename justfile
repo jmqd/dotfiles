@@ -20,3 +20,6 @@ lint-secrets-history:
 
 update:
     nix flake update
+
+rust-update:
+    bin/bootstrap-rust.sh --update stable

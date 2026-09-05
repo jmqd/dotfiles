@@ -148,6 +148,11 @@ Inspect project `rust-toolchain` files and `rustup override list` before using
 `rustup toolchain uninstall VERSION`; different selectors such as `1.93` and
 `1.93.0` are not interchangeable.
 
+Home Manager installs Rust only when the requested compiler is missing and adds
+missing components. An existing installation is not updated during a switch.
+Run `just rust-update` (or `bin/bootstrap-rust.sh --update stable`) to update it
+explicitly.
+
 ## direnv
 
 ```bash
