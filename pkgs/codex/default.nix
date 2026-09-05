@@ -11,23 +11,23 @@
   installShellCompletions ? stdenv.buildPlatform.canExecute stdenv.hostPlatform,
 }:
 let
-  version = "0.153.0";
+  version = "0.153.4";
   assets = {
     "aarch64-darwin" = {
       binary = "codex-aarch64-apple-darwin";
-      hash = "sha256-jN7NC46+I/IOs3MBD9kelReXfoQLaJQe9qZGtAnLMuE=";
+      hash = "sha256-jPkR6mdlI7+yEh7FYYSNKrpWSJCtU2202KM1PyuYULE=";
     };
     "x86_64-darwin" = {
       binary = "codex-x86_64-apple-darwin";
-      hash = "sha256-ZoMJx9fMHr7l+bRIVzn5L9VVawgFvZ9Jo0eTArX2itw=";
+      hash = "sha256-1pIA8L+EGx0aB/gLgM90Ki5Pwrq5GuikSxBC+OjKn6Q=";
     };
     "aarch64-linux" = {
       binary = "codex-aarch64-unknown-linux-musl";
-      hash = "sha256-zCwMNl1NUcGBY7upPM5bkig2kAyoZ/W8+JsOcUqVKlM=";
+      hash = "sha256-XNphgr2Uw6MPLrY6SVSJ6/f2kf3bFNcPSMbBpQcbbN4=";
     };
     "x86_64-linux" = {
       binary = "codex-x86_64-unknown-linux-musl";
-      hash = "sha256-NagsFT2DlZ3gnCy4SscLpp0FeIrusI1Klcpo45+GaA4=";
+      hash = "sha256-9HlCTsoJJITcQNh64oxE9MxAI0pgBF1hMeSTgA2BSjA=";
     };
   };
   system = stdenv.hostPlatform.system;
