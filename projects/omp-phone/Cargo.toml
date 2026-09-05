@@ -6,11 +6,12 @@ license = "MIT"
 description = "Local phone companion for OMP public-API extensions"
 
 [dependencies]
-axum = { version = "0.8", features = ["ws"] }
+axum = "0.8"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time", "fs"] }
+tokio-util = { version = "0.7", features = ["codec"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-futures-util = "0.3"
+futures-util = { version = "0.3", features = ["sink"] }
 async-stream = "0.3"
 base64 = "0.22"
 rand = "0.8"

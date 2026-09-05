@@ -4,7 +4,7 @@ use std::{
     env,
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
-    os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{DirBuilderExt, FileTypeExt, MetadataExt, OpenOptionsExt, PermissionsExt},
     path::{Path, PathBuf},
 };
 use url::Url;
@@ -18,6 +18,8 @@ pub struct Config {
     pub origin: String,
     pub origins: Vec<String>,
     pub hosts: Vec<String>,
+    pub allowed_tailnet_users: Vec<String>,
+    pub tailnet_capability: String,
     pub secure: bool,
     pub hostname: String,
 }
@@ -59,6 +61,26 @@ impl Config {
         if url.scheme() == "http" && !matches!(url.host_str(), Some("localhost" | "127.0.0.1")) {
             return Err("external OMP_PHONE_PUBLIC_URL requires HTTPS".into());
         }
+        if url.scheme() == "https" && !url.host_str().is_some_and(|host| host.ends_with(".ts.net"))
+        {
+            return Err("HTTPS mode requires a Tailscale .ts.net hostname".into());
+        }
+        let allowed_tailnet_users: Vec<String> = env::var("OMP_PHONE_TAILNET_USERS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|user| !user.is_empty())
+            .map(str::to_owned)
+            .collect();
+        let tailnet_capability = env::var("OMP_PHONE_TAILNET_CAPABILITY").unwrap_or_default();
+        if url.scheme() == "https"
+            && (allowed_tailnet_users.is_empty() || tailnet_capability.is_empty())
+        {
+            return Err(
+                "HTTPS mode requires OMP_PHONE_TAILNET_USERS and OMP_PHONE_TAILNET_CAPABILITY"
+                    .into(),
+            );
+        }
         let origin = url.origin().ascii_serialization();
         let mut origins = vec![origin.clone()];
         if url.scheme() == "http" && matches!(url.host_str(), Some("localhost" | "127.0.0.1")) {
@@ -95,9 +117,40 @@ impl Config {
             secure: url.scheme() == "https",
             origin,
             origins,
+            allowed_tailnet_users,
+            tailnet_capability,
             hosts,
             hostname,
         })
+    }
+}
+
+/// Only the same OS user can reach extension control. This socket is never
+/// mounted on the HTTP router, so neither Serve nor Funnel can forward to it.
+pub struct ExtensionListener {
+    pub listener: tokio::net::UnixListener,
+    path: PathBuf,
+}
+
+impl ExtensionListener {
+    pub fn bind(dir: &Path) -> Result<Self> {
+        let path = dir.join("extension.sock");
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_socket() => fs::remove_file(&path)?,
+            Ok(_) => return Err("extension.sock exists and is not a Unix socket".into()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        let listener = tokio::net::UnixListener::bind(&path)?;
+        let bound = Self { listener, path };
+        fs::set_permissions(&bound.path, fs::Permissions::from_mode(0o600))?;
+        Ok(bound)
+    }
+}
+
+impl Drop for ExtensionListener {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
     }
 }
 

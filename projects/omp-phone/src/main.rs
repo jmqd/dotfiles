@@ -3,10 +3,7 @@ mod push;
 mod sessions;
 
 use axum::{
-    extract::{
-        ws::{Message as WsMessage, WebSocket},
-        ConnectInfo, DefaultBodyLimit, Path, State, WebSocketUpgrade,
-    },
+    extract::{DefaultBodyLimit, Path, State},
     http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     middleware::{self, Next},
     response::{
@@ -17,7 +14,7 @@ use axum::{
     Json, Router,
 };
 use config::{Config, Result};
-use futures_util::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::json;
@@ -25,7 +22,7 @@ use sessions::{CommandResult, Pending, Registry, Session};
 use std::{
     collections::HashMap,
     convert::Infallible,
-    net::{Ipv4Addr, SocketAddr},
+    net::Ipv4Addr,
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -34,6 +31,7 @@ use std::{
 };
 use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, mpsc, oneshot, watch, Semaphore};
+use tokio_util::codec::{Framed, LinesCodec};
 
 const COOKIE: &str = "omp_phone";
 const COOKIE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
@@ -76,7 +74,29 @@ async fn main() {
 async fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("omp-phone [serve|pair]\n\nserve (default): bind the local companion to 127.0.0.1; use Tailscale Serve for HTTPS.\npair: print the configured URL with a secret pairing fragment. Treat it as a password.\n\nEnvironment:\n  OMP_PHONE_PORT         Local port (default 8787)\n  OMP_PHONE_PUBLIC_URL   Exact external HTTPS origin (default http://localhost:8787)\n  OMP_PHONE_HOSTNAME     Display name for this machine\n  OMP_PHONE_STATE_DIR    Private runtime state directory\n                        (default $XDG_STATE_HOME/omp-phone or ~/.local/state/omp-phone)\n\nStart serve before pairing. Token, VAPID key and push subscriptions remain in private\nruntime files, never in a Nix store. Ordinary startup does not print the token.\nBrowser cookies expire after 30 days and are invalidated by server restart.\nQuestions and permission approvals remain in the terminal.\nWeb Push supports Google, Mozilla and Apple push services.");
+        println!(
+            r#"omp-phone [serve|pair]
+
+serve (default): bind HTTP to 127.0.0.1 and extension control to a private Unix socket.
+pair: print the configured URL with a secret pairing fragment. Treat it as a password.
+
+Environment:
+  OMP_PHONE_PORT                Local port (default 8787)
+  OMP_PHONE_PUBLIC_URL          Exact Tailscale HTTPS origin; unset for localhost development
+  OMP_PHONE_TAILNET_USERS       Comma-separated exact logins; required for HTTPS
+  OMP_PHONE_TAILNET_CAPABILITY  Member-only app capability with access=true; required for HTTPS
+  OMP_PHONE_HOSTNAME            Display name for this machine
+  OMP_PHONE_STATE_DIR           Private runtime directory
+                               (default $XDG_STATE_HOME/omp-phone or ~/.local/state/omp-phone)
+
+HTTPS requires Tailscale Serve 1.92+ forwarding the configured app capability.
+Grant that capability only to direct tailnet members. Never use public Funnel.
+Missing identity or capability denies every HTTP route, even with a pairing cookie.
+Start serve before pairing. Runtime secrets never enter the Nix store or startup log.
+Browser cookies expire after 30 days and are invalidated by server restart.
+Questions and permission approvals remain in the terminal.
+Web Push uses outbound HTTPS to Google, Mozilla or Apple push services."#
+        );
         return Ok(());
     }
     if args.len() > 1
@@ -105,6 +125,7 @@ async fn run() -> Result<()> {
     let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, config.port)).await?;
     config::private_directory(&config.dir)?;
     let _state_lock = config::lock_state(&config.dir)?;
+    let extension_listener = config::ExtensionListener::bind(&config.dir)?;
     let token = config::token(&config.dir)?;
     let push = push::Push::load(&config.dir, &config.origin)?;
     let (turns, turns_rx) = mpsc::channel(32);
@@ -123,20 +144,23 @@ async fn run() -> Result<()> {
         push,
         turns,
     });
+    let mut stopping = app.shutdown.subscribe();
+    let extension_worker = tokio::spawn(extensions(app.clone(), extension_listener));
     eprintln!(
         "omp-phone: listening on http://127.0.0.1:{}; run `omp-phone pair` to pair a browser",
         app.config.port
     );
     let stop = app.clone();
-    let server = axum::serve(
-        listener,
-        router(app).into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(async move {
-        shutdown_signal().await;
+    let server = axum::serve(listener, router(app.clone())).with_graceful_shutdown(async move {
+        tokio::select! {
+            _ = shutdown_signal() => {},
+            _ = stopping.changed() => {},
+        }
         stop.shutdown.send_replace(true);
     });
     let result = server.await;
+    app.shutdown.send_replace(true);
+    extension_worker.await??;
     push_worker.abort();
     result?;
     Ok(())
@@ -206,7 +230,6 @@ fn router(app: Arc<App>) -> Router {
             "/api/push/subscriptions",
             post(subscribe).delete(unsubscribe),
         )
-        .route("/extension", get(extension))
         .layer(DefaultBodyLimit::max(64 * 1024))
         .layer(middleware::from_fn_with_state(app.clone(), protect))
         .with_state(app)
@@ -245,6 +268,51 @@ fn valid_origin(app: &App, headers: &HeaderMap, required: bool) -> bool {
     }
 }
 
+fn single_header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    let mut values = headers.get_all(name).iter();
+    let value = values.next()?.to_str().ok()?;
+    values.next().is_none().then_some(value)
+}
+
+fn tailnet_authorized(config: &Config, headers: &HeaderMap) -> bool {
+    if headers.contains_key("tailscale-funnel-request") {
+        return false;
+    }
+    if !config.secure {
+        // A forgotten publicUrl must not silently expose the development UI via Serve.
+        return !headers.keys().any(|name| {
+            name.as_str().starts_with("tailscale-")
+                || name.as_str().starts_with("x-forwarded-")
+                || name.as_str() == "forwarded"
+        });
+    }
+    let Some(login) = single_header(headers, "tailscale-user-login") else {
+        return false;
+    };
+    if !config
+        .allowed_tailnet_users
+        .iter()
+        .any(|allowed| allowed == login)
+    {
+        return false;
+    }
+    let Some(capabilities) = single_header(headers, "tailscale-app-capabilities")
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+    else {
+        return false;
+    };
+    // This capability must be granted only to direct members in the tailnet
+    // policy. A login header alone also admits users of shared devices.
+    capabilities
+        .get(&config.tailnet_capability)
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|grants| {
+            grants
+                .iter()
+                .any(|grant| grant.get("access").and_then(serde_json::Value::as_bool) == Some(true))
+        })
+}
+
 async fn protect(
     State(app): State<Arc<App>>,
     request: axum::extract::Request,
@@ -256,7 +324,9 @@ async fn protect(
         .get(header::HOST)
         .and_then(|host| host.to_str().ok());
     let host_ok = host.is_some_and(|host| app.config.hosts.iter().any(|allowed| allowed == host));
-    let mut response = if !host_ok {
+    let mut response = if !tailnet_authorized(&app.config, headers) {
+        ApiError::new(StatusCode::FORBIDDEN, "private tailnet access required").into_response()
+    } else if !host_ok {
         ApiError::new(StatusCode::FORBIDDEN, "unrecognized host").into_response()
     } else if path.starts_with("/api/") {
         let write = request.method() != Method::GET && request.method() != Method::HEAD;
@@ -297,6 +367,12 @@ async fn protect(
     );
     headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     headers.insert("content-security-policy", HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"));
+    if app.config.secure {
+        headers.insert(
+            "strict-transport-security",
+            HeaderValue::from_static("max-age=31536000"),
+        );
+    }
     response
 }
 
@@ -497,46 +573,38 @@ async fn unsubscribe(
     Ok(Json(json!({"ok": true})))
 }
 
-async fn extension(
-    State(app): State<Arc<App>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
-    headers: HeaderMap,
-    ws: WebSocketUpgrade,
-) -> ApiResult<Response> {
-    if !peer.ip().is_loopback() || headers.contains_key(header::ORIGIN) {
-        return Err(ApiError::new(
-            StatusCode::FORBIDDEN,
-            "extension channel is loopback-only and unavailable to browsers",
-        ));
+async fn extensions(app: Arc<App>, listener: config::ExtensionListener) -> Result<()> {
+    let mut shutdown = app.shutdown.subscribe();
+    loop {
+        if *shutdown.borrow() {
+            return Ok(());
+        }
+        tokio::select! {
+            _ = shutdown.changed() => return Ok(()),
+            accepted = listener.listener.accept() => {
+                let (socket, _) = match accepted {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        app.shutdown.send_replace(true);
+                        return Err(error.into());
+                    }
+                };
+                let Ok(permit) = app.sockets.clone().try_acquire_owned() else { continue; };
+                let owner = app.next_connection.fetch_add(1, Ordering::Relaxed);
+                let app = app.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    extension_socket(app, Framed::new(socket, LinesCodec::new_with_max_length(1024 * 1024)), owner).await;
+                });
+            }
+        }
     }
-    let token = headers
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "));
-    if !token.is_some_and(|token| equal_secret(token, &app.token)) {
-        return Err(ApiError::new(
-            StatusCode::UNAUTHORIZED,
-            "invalid extension credentials",
-        ));
-    }
-    let permit = app
-        .sockets
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| ApiError::new(StatusCode::TOO_MANY_REQUESTS, "too many extensions"))?;
-    let owner = app.next_connection.fetch_add(1, Ordering::Relaxed);
-    Ok(ws
-        .max_message_size(1024 * 1024)
-        .max_frame_size(1024 * 1024)
-        .on_upgrade(move |socket| async move {
-            let _permit = permit;
-            extension_socket(app, socket, owner).await;
-        }))
 }
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Incoming {
+    Pong {},
     Snapshot {
         session: Session,
     },
@@ -548,7 +616,9 @@ enum Incoming {
     },
 }
 
-async fn extension_socket(app: Arc<App>, mut socket: WebSocket, owner: u64) {
+type LocalSocket = Framed<tokio::net::UnixStream, LinesCodec>;
+
+async fn extension_socket(app: Arc<App>, mut socket: LocalSocket, owner: u64) {
     let (commands, mut receive) = mpsc::channel::<String>(32);
     let mut shutdown = app.shutdown.subscribe();
     let mut ping = tokio::time::interval(Duration::from_secs(20));
@@ -561,17 +631,18 @@ async fn extension_socket(app: Arc<App>, mut socket: WebSocket, owner: u64) {
             _ = shutdown.changed() => break,
             _ = ping.tick() => {
                 if last_seen.elapsed() > Duration::from_secs(60) { break; }
-                if !send_ws(&mut socket, WsMessage::Ping(Vec::new().into())).await { break; }
+                if !send_local(&mut socket, r#"{"type":"ping"}"#).await { break; }
             }
             message = receive.recv() => {
                 let Some(message) = message else { break; };
-                if !send_ws(&mut socket, WsMessage::Text(message.into())).await { break; }
+                if !send_local(&mut socket, &message).await { break; }
             }
-            message = socket.recv() => {
+            message = socket.next() => {
                 last_seen = Instant::now();
                 match message {
-                    Some(Ok(WsMessage::Text(text))) => {
+                    Some(Ok(text)) => {
                         match serde_json::from_str::<Incoming>(&text) {
+                            Ok(Incoming::Pong {}) => {},
                             Ok(Incoming::Snapshot { session }) => {
                                 let notification = push::Turn { hostname: app.config.hostname.clone(), title: session.title.clone(), id: session.id.clone() };
                                 let result = app.registry.lock().update(owner, session, commands.clone());
@@ -590,8 +661,6 @@ async fn extension_socket(app: Arc<App>, mut socket: WebSocket, owner: u64) {
                             Err(_) => break,
                         }
                     }
-                    Some(Ok(WsMessage::Ping(data))) => { if !send_ws(&mut socket, WsMessage::Pong(data)).await { break; } }
-                    Some(Ok(WsMessage::Pong(_))) => {},
                     _ => break,
                 }
             }
@@ -600,10 +669,14 @@ async fn extension_socket(app: Arc<App>, mut socket: WebSocket, owner: u64) {
     if app.registry.lock().remove_owner(owner) {
         let _ = app.events.send(());
     }
-    let _ = tokio::time::timeout(Duration::from_secs(1), socket.close()).await;
+    let _ = tokio::time::timeout(
+        Duration::from_secs(1),
+        <LocalSocket as SinkExt<String>>::close(&mut socket),
+    )
+    .await;
 }
 
-async fn send_ws(socket: &mut WebSocket, message: WsMessage) -> bool {
+async fn send_local(socket: &mut LocalSocket, message: &str) -> bool {
     matches!(
         tokio::time::timeout(Duration::from_secs(5), socket.send(message)).await,
         Ok(Ok(()))
@@ -623,7 +696,13 @@ mod tests {
             port: 8787,
             origin: "https://phone.example".into(),
             origins: vec!["https://phone.example".into()],
-            hosts: vec!["phone.example".into()],
+            hosts: vec![
+                "phone.example".into(),
+                "127.0.0.1:8787".into(),
+                "localhost:8787".into(),
+            ],
+            allowed_tailnet_users: vec!["owner@example.com".into()],
+            tailnet_capability: "example.com/cap/omp-phone".into(),
             secure: true,
             hostname: "test".into(),
         };
@@ -659,6 +738,11 @@ mod tests {
             .method(method)
             .uri(path)
             .header(header::HOST, "phone.example")
+            .header("tailscale-user-login", "owner@example.com")
+            .header(
+                "tailscale-app-capabilities",
+                r#"{"example.com/cap/omp-phone":[{"access":true}]}"#,
+            )
             .header(header::CONTENT_TYPE, "application/json");
         if let Some(origin) = origin {
             request = request.header(header::ORIGIN, origin);
@@ -779,6 +863,134 @@ mod tests {
                 .unwrap()
                 .status(),
             StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[tokio::test]
+    async fn pairing_never_bypasses_tailnet_authorization() {
+        let (app, _dir) = test_app();
+        let routes = router(app.clone());
+        let paired = routes
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/api/login",
+                Some("https://phone.example"),
+                None,
+                json!({"token": app.token}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(paired.status(), StatusCode::OK);
+        let cookie = paired.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+
+        // Previously-public assets, login and streaming must share the same gate.
+        for (method, path, host) in [
+            (Method::GET, "/", "phone.example"),
+            (Method::GET, "/app.js", "phone.example"),
+            (Method::GET, "/health", "localhost:8787"),
+            (Method::POST, "/api/login", "127.0.0.1:8787"),
+            (Method::GET, "/api/events", "phone.example"),
+        ] {
+            let mut input = request(
+                method,
+                path,
+                Some("https://phone.example"),
+                Some(cookie),
+                json!({"token": app.token}),
+            );
+            input
+                .headers_mut()
+                .insert(header::HOST, HeaderValue::from_str(host).unwrap());
+            input.headers_mut().remove("tailscale-user-login");
+            assert_eq!(
+                routes.clone().oneshot(input).await.unwrap().status(),
+                StatusCode::FORBIDDEN,
+                "{path}"
+            );
+        }
+
+        let allowed = || request(Method::GET, "/api/sessions", None, Some(cookie), json!({}));
+        assert_eq!(
+            routes.clone().oneshot(allowed()).await.unwrap().status(),
+            StatusCode::OK
+        );
+        for (name, value) in [
+            ("tailscale-user-login", "shared-outsider@example.com"),
+            (
+                "tailscale-user-login",
+                "owner@example.com,shared-outsider@example.com",
+            ),
+            ("tailscale-app-capabilities", "{}"),
+            (
+                "tailscale-app-capabilities",
+                r#"{"example.com/cap/omp-phone":[{"access":false}]}"#,
+            ),
+            ("tailscale-app-capabilities", "invalid JSON"),
+            ("tailscale-funnel-request", "?1"),
+        ] {
+            let mut input = allowed();
+            input
+                .headers_mut()
+                .insert(name, HeaderValue::from_str(value).unwrap());
+            assert_eq!(
+                routes.clone().oneshot(input).await.unwrap().status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+        let mut no_capability = allowed();
+        no_capability
+            .headers_mut()
+            .remove("tailscale-app-capabilities");
+        assert_eq!(
+            routes
+                .clone()
+                .oneshot(no_capability)
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::FORBIDDEN
+        );
+        for name in ["tailscale-user-login", "tailscale-app-capabilities"] {
+            let mut input = allowed();
+            let duplicate = input.headers()[name].clone();
+            input.headers_mut().append(name, duplicate);
+            assert_eq!(
+                routes.clone().oneshot(input).await.unwrap().status(),
+                StatusCode::FORBIDDEN
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn http_cannot_open_extension_control_even_with_every_credential() {
+        let (app, _dir) = test_app();
+        let mut input = request(Method::GET, "/extension", None, None, json!({}));
+        input.headers_mut().insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", app.token)).unwrap(),
+        );
+        input
+            .headers_mut()
+            .insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
+        input
+            .headers_mut()
+            .insert(header::UPGRADE, HeaderValue::from_static("websocket"));
+        input
+            .headers_mut()
+            .insert("sec-websocket-version", HeaderValue::from_static("13"));
+        input.headers_mut().insert(
+            "sec-websocket-key",
+            HeaderValue::from_static("dGhlIHNhbXBsZSBub25jZQ=="),
+        );
+        assert_eq!(
+            router(app).oneshot(input).await.unwrap().status(),
+            StatusCode::NOT_FOUND
         );
     }
 }
