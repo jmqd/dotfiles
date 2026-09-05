@@ -450,6 +450,7 @@ main() {
 	check_codex_desktop_latest "$codex_desktop_version"
 
 	npm_audit "oracle" "pkgs/oracle"
+	npm_audit "pi-coding-agent" "pkgs/pi"
 
 	local gws_src trueflow_src notion_src voxtype_src
 	gws_src="$(input_path googleworkspace-cli)"
