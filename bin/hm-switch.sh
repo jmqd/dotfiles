@@ -53,6 +53,7 @@ linux_profile_suffix() {
 }
 
 detect_flake_ref() {
+	local profile_suffix
 	case "${os_name}:$(uname -m)" in
 	Darwin:arm64)
 		printf '%s\n' "${repo_root}#macos-aarch64"
@@ -61,10 +62,12 @@ detect_flake_ref() {
 		printf '%s\n' "${repo_root}#macos-x86_64"
 		;;
 	Linux:aarch64)
-		printf '%s\n' "${repo_root}#linux-aarch64$(linux_profile_suffix)"
+		profile_suffix="$(linux_profile_suffix)" || return
+		printf '%s\n' "${repo_root}#linux-aarch64${profile_suffix}"
 		;;
 	Linux:x86_64)
-		printf '%s\n' "${repo_root}#linux-x86_64$(linux_profile_suffix)"
+		profile_suffix="$(linux_profile_suffix)" || return
+		printf '%s\n' "${repo_root}#linux-x86_64${profile_suffix}"
 		;;
 	*)
 		cat >&2 <<'EOF'
