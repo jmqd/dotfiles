@@ -100,7 +100,7 @@ pub fn search(
 
     let index_dir = config.zoekt_index_dir.display().to_string();
     let output = Command::new(zoekt_bin)
-        .args(["-jsonl", "-index_dir", &index_dir, query])
+        .args(["-jsonl", "-index_dir", &index_dir, "--", query])
         .output()
         .with_context(|| format!("failed to run {}", zoekt_bin))?;
     if !output.status.success() {
