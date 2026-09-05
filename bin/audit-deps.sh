@@ -49,7 +49,7 @@ run_required() {
 }
 
 flake_expr() {
-	nix eval --impure --raw --expr "let flake = builtins.getFlake (toString ${repo_root}); in $*"
+	DOTFILES_AUDIT_ROOT="$repo_root" nix eval --impure --raw --expr "let flake = builtins.getFlake (builtins.getEnv \"DOTFILES_AUDIT_ROOT\"); in $*"
 }
 
 package_version() {
