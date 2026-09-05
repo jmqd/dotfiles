@@ -82,7 +82,7 @@ pair: print the configured URL with a secret pairing fragment. Treat it as a pas
 
 Environment:
   OMP_PHONE_PORT                Local port (default 8787)
-  OMP_PHONE_PUBLIC_URL          Exact Tailscale HTTPS origin; unset for localhost development
+  OMP_PHONE_PUBLIC_URL          Tailscale HTTPS URL ending in /omp/; unset for localhost development
   OMP_PHONE_TAILNET_USERS       Comma-separated exact logins; required for HTTPS
   OMP_PHONE_TAILNET_CAPABILITY  Member-only app capability with access=true; required for HTTPS
   OMP_PHONE_HOSTNAME            Display name for this machine
@@ -118,7 +118,7 @@ Web Push uses outbound HTTPS to Google, Mozilla or Apple push services."#
         {
             return Err("invalid token file".into());
         }
-        println!("{}/#token={token}", config.origin);
+        println!("{}/omp/#token={token}", config.origin);
         return Ok(());
     }
     // Refuse a second listener before generating secrets.
@@ -173,7 +173,7 @@ async fn shutdown_signal() {
 }
 
 fn router(app: Arc<App>) -> Router {
-    Router::new()
+    let routes = Router::new()
         .route("/health", get(|| async { Json(json!({"ok": true})) }))
         .route(
             "/",
@@ -230,7 +230,13 @@ fn router(app: Arc<App>) -> Router {
             "/api/push/subscriptions",
             post(subscribe).delete(unsubscribe),
         )
-        .layer(DefaultBodyLimit::max(64 * 1024))
+        .layer(DefaultBodyLimit::max(64 * 1024));
+    Router::new()
+        .route(
+            "/omp",
+            get(|| async { axum::response::Redirect::permanent("/omp/") }),
+        )
+        .nest("/omp/", routes)
         .layer(middleware::from_fn_with_state(app.clone(), protect))
         .with_state(app)
 }
@@ -318,7 +324,7 @@ async fn protect(
     request: axum::extract::Request,
     next: Next,
 ) -> Response {
-    let path = request.uri().path();
+    let path = request.uri().path().strip_prefix("/omp").unwrap_or("");
     let headers = request.headers();
     let host = headers
         .get(header::HOST)
@@ -378,7 +384,7 @@ async fn protect(
 
 fn set_cookie(app: &App, token: &str, age: u64) -> HeaderValue {
     HeaderValue::from_str(&format!(
-        "{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={age}{}",
+        "{COOKIE}={token}; Path=/omp/; HttpOnly; SameSite=Strict; Max-Age={age}{}",
         if app.config.secure { "; Secure" } else { "" }
     ))
     .unwrap()
@@ -736,7 +742,7 @@ mod tests {
     ) -> Request<Body> {
         let mut request = Request::builder()
             .method(method)
-            .uri(path)
+            .uri(format!("/omp{path}"))
             .header(header::HOST, "phone.example")
             .header("tailscale-user-login", "owner@example.com")
             .header(
@@ -801,8 +807,12 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         let set_cookie = response.headers()[header::SET_COOKIE].to_str().unwrap();
-        assert!(set_cookie.contains("; HttpOnly; SameSite=Strict;"));
-        assert!(set_cookie.ends_with("; Secure"));
+        for attribute in ["Path=/omp/", "HttpOnly", "SameSite=Strict", "Secure"] {
+            assert!(set_cookie
+                .split(';')
+                .map(str::trim)
+                .any(|value| value == attribute));
+        }
         let cookie = set_cookie.split(';').next().unwrap();
         assert_eq!(
             routes

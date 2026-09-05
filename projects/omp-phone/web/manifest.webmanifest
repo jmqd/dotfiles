@@ -1,14 +1,14 @@
 {
-  "id": "/",
+  "id": "/omp/",
   "name": "OMP Phone",
   "short_name": "OMP Phone",
   "description": "Your local OMP sessions, on your phone.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "/omp/",
+  "scope": "/omp/",
   "display": "standalone",
   "background_color": "#111419",
   "theme_color": "#16191e",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "/omp/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }

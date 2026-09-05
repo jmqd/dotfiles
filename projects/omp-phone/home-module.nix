@@ -32,8 +32,8 @@ in
     publicUrl = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      example = "https://workstation.example.ts.net";
-      description = "Exact Tailscale HTTPS origin. Null enables localhost development only.";
+      example = "https://workstation.example.ts.net/omp/";
+      description = "Tailscale HTTPS URL ending in /omp/. Null enables localhost development at /omp/ only.";
     };
     allowedTailnetUsers = lib.mkOption {
       type = lib.types.listOf (lib.types.strMatching "[^,[:space:]]+");

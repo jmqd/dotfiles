@@ -36,7 +36,7 @@ async function api(path, method = "GET", body) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20000);
   try {
-    const response = await fetch(path, {
+    const response = await fetch(`/omp${path}`, {
       method,
       credentials: "same-origin",
       cache: "no-store",
@@ -259,7 +259,7 @@ function openEvents() {
   closeEvents();
   const ownGeneration = generation;
   let checkingLogin = false;
-  const source = new EventSource("/api/events", { withCredentials: true });
+  const source = new EventSource("/omp/api/events", { withCredentials: true });
   events = source;
   source.addEventListener("open", async () => {
     const version = snapshotVersion;
@@ -367,7 +367,7 @@ function pushSupport() {
 }
 
 async function registration() {
-  if (!registrationPromise) registrationPromise = navigator.serviceWorker.register("/sw.js", { scope: "/" }).then(() => navigator.serviceWorker.ready).catch(error => { registrationPromise = null; throw error; });
+  if (!registrationPromise) registrationPromise = navigator.serviceWorker.register("/omp/sw.js", { scope: "/omp/" }).then(() => navigator.serviceWorker.ready).catch(error => { registrationPromise = null; throw error; });
   return registrationPromise;
 }
 
