@@ -8,7 +8,14 @@ let
   homeDir = config.home.homeDirectory;
   cfg = config.jmq.linux.desktop;
   x11vncTailscale = pkgs.writeShellScript "x11vnc-tailscale" ''
+    set -eu
+
     tailscale_ip="$(${pkgs.tailscale}/bin/tailscale ip -4)"
+    if [ -z "$tailscale_ip" ]; then
+      echo "No Tailscale IPv4 address available; refusing to start x11vnc." >&2
+      exit 1
+    fi
+
     exec ${pkgs.x11vnc}/bin/x11vnc \
       -display :0 \
       -auth ${homeDir}/.Xauthority \
