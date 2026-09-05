@@ -71,6 +71,7 @@ while [ $# -gt 0 ]; do
 done
 
 mkdir -p "$HOME/cloud" "$private_cloud_root" "$HOME/.aws"
+private_cloud_root="$(cd "$private_cloud_root" && pwd)"
 
 if [ "$sync_private_data" -eq 1 ]; then
 	require_command aws
