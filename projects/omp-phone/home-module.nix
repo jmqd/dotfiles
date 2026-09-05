@@ -12,6 +12,8 @@ let
   }
   // lib.optionalAttrs (cfg.publicUrl != null) {
     OMP_PHONE_PUBLIC_URL = cfg.publicUrl;
+    OMP_PHONE_TAILNET_USERS = lib.concatStringsSep "," cfg.allowedTailnetUsers;
+    OMP_PHONE_TAILNET_CAPABILITY = cfg.tailnetCapability;
   };
 in
 {
@@ -33,6 +35,18 @@ in
       example = "https://workstation.example.ts.net";
       description = "Exact Tailscale HTTPS origin. Null enables localhost development only.";
     };
+    allowedTailnetUsers = lib.mkOption {
+      type = lib.types.listOf (lib.types.strMatching "[^,[:space:]]+");
+      default = [ ];
+      example = [ "you@example.com" ];
+      description = "Exact Tailscale login allowlist required in HTTPS mode, in addition to browser pairing.";
+    };
+    tailnetCapability = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      example = "example.com/cap/omp-phone";
+      description = "Serve app capability with access=true, granted only to direct tailnet members. Required in HTTPS mode.";
+    };
     stateDirectory = lib.mkOption {
       type = lib.types.str;
       default = "${config.xdg.stateHome}/omp-phone";
@@ -41,6 +55,15 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion =
+          cfg.publicUrl == null
+          || !lib.hasPrefix "https://" cfg.publicUrl
+          || (cfg.allowedTailnetUsers != [ ] && cfg.tailnetCapability != "");
+        message = "omp-phone HTTPS requires allowedTailnetUsers and a member-only tailnetCapability.";
+      }
+    ];
     home.packages = [ cfg.package ];
     home.sessionVariables = environment;
     home.file.".omp/agent/extensions/omp-phone".source = "${cfg.package}/share/omp-phone/extension";
@@ -57,6 +80,7 @@ in
         KeepAlive = true;
         ThrottleInterval = 10;
         ProcessType = "Background";
+        Umask = 63; # 0077
         StandardOutPath = "${config.home.homeDirectory}/Library/Logs/omp-phone.log";
         StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/omp-phone.log";
       };

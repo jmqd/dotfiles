@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
-import { readFile } from "node:fs/promises";
+import { createConnection, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -67,10 +67,8 @@ export default function phone(pi: ExtensionAPI): void {
   const stateDir = process.env.OMP_PHONE_STATE_DIR ?? join(
     process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "omp-phone",
   );
-  const port = Number(process.env.OMP_PHONE_PORT ?? "8787");
   let ctx: ExtensionContext | undefined;
-  let socket: WebSocket | undefined;
-  let connecting = false;
+  let socket: Socket | undefined;
   let stopped = true;
   let generation = 0;
   let connectStarted = 0;
@@ -128,15 +126,15 @@ export default function phone(pi: ExtensionAPI): void {
   }
 
   function flush(): void {
-    if (!dirty || !ctx || socket?.readyState !== WebSocket.OPEN) return;
-    if (socket.bufferedAmount > 1_000_000) {
-      socket.close(1013, "phone companion is not keeping up");
+    if (!dirty || !ctx || socket?.readyState !== "open") return;
+    if (socket.writableLength > 1_000_000) {
+      socket.destroy();
       return;
     }
-    socket.send(JSON.stringify({
+    socket.write(JSON.stringify({
       type: "snapshot",
       session: { id: sessionId, title, cwd: ctx.cwd, state, messages, partial },
-    }));
+    }) + "\n");
     dirty = false;
   }
 
@@ -146,7 +144,7 @@ export default function phone(pi: ExtensionAPI): void {
     // OMP's event-handler isolation and must not throw into the host process.
   }
 
-  async function command(raw: unknown, source: WebSocket): Promise<void> {
+  async function command(raw: unknown, source: Socket): Promise<void> {
     const message = record(raw);
     if (!message || message.type !== "command" || typeof message.requestId !== "string") return;
     const requestId = message.requestId;
@@ -164,60 +162,62 @@ export default function phone(pi: ExtensionAPI): void {
       } else {
         throw new Error("Unknown phone command");
       }
-      if (source.readyState === WebSocket.OPEN) source.send(JSON.stringify({ type: "result", requestId, ok: true }));
+      if (source.readyState === "open") source.write(JSON.stringify({ type: "result", requestId, ok: true }) + "\n");
     } catch (error) {
-      if (source.readyState === WebSocket.OPEN) {
-        source.send(JSON.stringify({ type: "result", requestId, ok: false, error: error instanceof Error ? error.message : "Command failed" }));
+      if (source.readyState === "open") {
+        source.write(JSON.stringify({ type: "result", requestId, ok: false, error: error instanceof Error ? error.message : "Command failed" }) + "\n");
       }
     }
   }
 
-  async function connect(): Promise<void> {
-    if (stopped || connecting || socket || Date.now() < nextConnect) return;
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      lastError = "OMP_PHONE_PORT must be between 1 and 65535";
-      return;
-    }
+  function connect(): void {
+    if (stopped || socket || Date.now() < nextConnect) return;
     const epoch = generation;
-    connecting = true;
     nextConnect = Date.now() + 5000;
     try {
-      const token = (await readFile(join(stateDir, "token"), "utf8")).trim();
-      if (stopped || epoch !== generation) return;
-      if (!/^[A-Za-z0-9_-]{32,128}$/.test(token)) throw new Error("Invalid companion token file");
-      // Bun supports headers on its native WebSocket client; no extra runtime
-      // dependency is needed in an installed OMP extension.
-      const client = new WebSocket(`ws://127.0.0.1:${port}/extension`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // The companion's 0600 Unix socket lives in its 0700 state directory.
+      // Extension control has no HTTP endpoint and cannot be proxied by Serve.
+      const client = createConnection(join(stateDir, "extension.sock"));
+      client.setEncoding("utf8");
       socket = client;
       connectStarted = Date.now();
-      client.addEventListener("open", () => {
+      let incoming = "";
+      client.on("connect", () => {
         try {
-          if (stopped || socket !== client || epoch !== generation) { client.close(); return; }
+          if (stopped || socket !== client || epoch !== generation) { client.destroy(); return; }
           lastError = "";
           dirty = true;
           flush();
-        } catch (error) { report(error); client.close(); }
+        } catch (error) { report(error); client.destroy(); }
       });
-      client.addEventListener("message", event => {
+      client.on("data", (chunk: string) => {
         try {
-          if (typeof event.data !== "string" || event.data.length > 256_000) return;
-          void command(JSON.parse(event.data), client).catch(report);
-        } catch (error) { report(error); }
+          if (stopped || socket !== client || epoch !== generation) return;
+          incoming += chunk;
+          if (incoming.length > 256_000) { client.destroy(); return; }
+          let end: number;
+          while ((end = incoming.indexOf("\n")) !== -1) {
+            const message = JSON.parse(incoming.slice(0, end));
+            incoming = incoming.slice(end + 1);
+            if (record(message)?.type === "ping") {
+              client.write('{"type":"pong"}\n');
+            } else {
+              void command(message, client).catch(report);
+            }
+          }
+        } catch (error) { report(error); client.destroy(); }
       });
-      client.addEventListener("error", () => {
-        lastError = "Cannot connect to omp-phone; start the companion service";
-        client.close();
+      client.on("error", error => {
+        if (socket === client) report(error);
+        client.destroy();
       });
-      client.addEventListener("close", () => {
+      client.on("close", () => {
         if (socket !== client) return;
         socket = undefined;
         nextConnect = Date.now() + 5000;
         if (!lastError) lastError = "Companion disconnected; reconnecting";
       });
     } catch (error) { report(error); }
-    finally { connecting = false; }
   }
 
   pi.on("session_start", (_event, context) => {
@@ -226,16 +226,16 @@ export default function phone(pi: ExtensionAPI): void {
     stopped = false;
     generation++;
     updateContext(context);
-    context.setInterval(async () => {
+    context.setInterval(() => {
       if (stopped || !ctx) return;
       if (currentId(ctx) !== sessionId) updateContext(ctx);
       const nextTitle = pi.getSessionName() || basename(ctx.cwd) || "OMP session";
       if (title !== nextTitle) { title = nextTitle; dirty = true; }
-      if (socket?.readyState === WebSocket.CONNECTING && Date.now() - connectStarted > 10_000) socket.close();
-      await connect();
+      if (socket?.connecting && Date.now() - connectStarted > 10_000) socket.destroy();
+      connect();
       flush();
     }, 250);
-    void connect().catch(report);
+    connect();
   });
   const sessionChanged = (_event: unknown, context: ExtensionContext): void => {
     if (!stopped) updateContext(context);
@@ -274,16 +274,16 @@ export default function phone(pi: ExtensionAPI): void {
   pi.on("session_shutdown", () => {
     stopped = true;
     generation++;
-    socket?.close(1000, "OMP session closed");
+    socket?.destroy();
     socket = undefined;
     ctx = undefined;
   });
   pi.registerCommand("phone", {
     description: "Show this session's phone connection status",
     handler: async (_args, context) => {
-      context.ui.notify(stopped ? "Phone sharing is disabled for this session" : socket?.readyState === WebSocket.OPEN
+      context.ui.notify(stopped ? "Phone sharing is disabled for this session" : socket?.readyState === "open"
         ? "Phone connected. Run `omp-phone pair` in a shell to obtain your private pairing link."
-        : `Phone disconnected: ${lastError}`, socket?.readyState === WebSocket.OPEN ? "info" : "warning");
+        : `Phone disconnected: ${lastError}`, socket?.readyState === "open" ? "info" : "warning");
     },
   });
 }

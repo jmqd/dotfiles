@@ -18,31 +18,83 @@ against a session. Requires OMP 18.1.11 or newer.
 
 Home Manager installs the companion, registers the extension alongside existing
 extensions, and starts a user service on macOS/Linux when custom CLI packages
-are enabled. Set the **machine-specific** HTTPS origin in your host module:
+are enabled. Set the **machine-specific** HTTPS origin and authorization in your host module:
 
 ```nix
-services.omp-phone.publicUrl = "https://your-machine.your-tailnet.ts.net";
+services.omp-phone = {
+  publicUrl = "https://your-machine.your-tailnet.ts.net";
+  allowedTailnetUsers = [ "you@example.com" ];
+  tailnetCapability = "example.com/cap/omp-phone";
+};
 ```
 
-Then apply Home Manager, open a new shell, and restart the OMP sessions you want
-to expose. Without `publicUrl`, the service accepts localhost browser access only.
-With a current, connected Tailscale client, configure Serve (not public Funnel):
+HTTPS mode requires Tailscale 1.92+ and a member-only application capability.
+Merge a grant like this into the **existing** tailnet policy, replacing the
+destination with this machine's Tailscale IP and the capability with your configured
+name. Do not replace the whole policy:
+
+```json
+{
+  "grants": [
+    {
+      "src": ["autogroup:member"],
+      "dst": ["100.64.0.10"],
+      "ip": ["tcp:443"],
+      "app": {
+        "example.com/cap/omp-phone": [{"access": true}]
+      }
+    }
+  ]
+}
+```
+
+Never grant this capability to `*` or `autogroup:shared`. A login header alone
+does not prove private-tailnet membership: shared-device users also receive one.
+Both the capability and exact login must match; tagged nodes are intentionally
+denied. ACLs/grants are additive: audit and narrow any other rule granting shared
+outsiders access to this machine's TCP 443. Adding the grant above does not revoke
+access granted elsewhere. Keep the node unshared until that policy audit is complete.
+
+Apply Home Manager, open a new shell, and restart the OMP sessions you want to
+expose. Without `publicUrl`, only direct localhost development access is accepted;
+forwarded requests are rejected. Connect Tailscale deliberately: a stopped client
+may retain an exit-node preference. Configure **Serve, never public Funnel**:
 
 ```sh
-tailscale serve --bg http://127.0.0.1:8787
+tailscale serve --bg --https=443 --accept-app-caps=example.com/cap/omp-phone http://127.0.0.1:8787
+tailscale serve status --json
 omp-phone pair
 ```
 
 Open the pairing link on your phone with Tailscale connected. Treat the link as a
 password; its token is exchanged for an HttpOnly cookie and removed from the URL.
-On iPhone, add the page to the Home Screen before enabling notifications. Tailscale
-Serve manages TLS; allow access only from your own devices in tailnet policy.
-This module does not change Tailscale settings or enable HTTPS certificates.
+On iPhone, add the page to the Home Screen before enabling notifications.
+Serve manages TLS; enabling HTTPS certificates may require tailnet-admin approval.
+Confirm the proxy is tailnet-only, with no enabled `AllowFunnel` entry. Never add
+a WAN/LAN reverse proxy or port forward to the companion. This module does not
+change live Tailscale settings, grant capabilities, or enable certificates.
+
+The HTTP listener is fixed to `127.0.0.1`; extension control uses
+`extension.sock` (0600) inside the private state directory (0700), not HTTP or
+WebSocket. Every HTTPS route, including assets, health, login and SSE, requires
+the authoritative Serve login and membership capability. Missing authorization,
+duplicate identity headers and Funnel requests fail closed even with a valid
+pairing cookie. Local processes can impersonate the loopback proxy, so the host
+itself remains trusted; browser pairing is still required for API access.
+Only the same OS user/root can reach extension control or read the pairing token.
+
+On macOS the signed Tailscale VPN app remains **App Store managed**, not a Nix
+daemon or standalone-app replacement. Nix supplies a `tailscale` CLI wrapper for
+the installed app and, on Apple Silicon, `mas`. Update only that app with
+`sudo mas update 1475387142`, or use App Store → Updates. This preserves the
+installation variant; Home Manager activation never performs mutable App Store
+updates or changes VPN routing.
 
 Idle sessions appear first, newest state change first. A working→idle transition
 sends one Web Push notification; connecting/reconnecting an idle session does not.
-Push goes through Apple/Google/Mozilla infrastructure, with machine/session titles
-but no conversation text. Replies while busy are queued as follow-ups. Stop
+Push uses outbound HTTPS through Apple/Google/Mozilla infrastructure; encrypted
+payloads contain machine/session titles but no conversation text. Replies while
+busy are queued as follow-ups. Stop
 interrupts the existing agent. Questions and approvals remain terminal-only.
 The browser shows recent user/assistant text and tool output, not full history or
 image previews. Disconnected sessions disappear; stale replies are rejected.
@@ -64,7 +116,7 @@ cargo run --manifest-path projects/omp-phone/Cargo.toml -- pair
 ```
 
 Run `cargo test --manifest-path projects/omp-phone/Cargo.toml` for the focused
-auth, session-ownership, state-transition and push-endpoint checks.
+tailnet authorization, pairing, session-ownership, state-transition and push-endpoint checks.
 `nix build .#omp-phone` builds the package; new files must be tracked for Git-flake
 evaluation. To use the extension outside this repository, copy this project,
 build/install its Rust companion, and run `omp plugin install /absolute/path/to/omp-phone`.
