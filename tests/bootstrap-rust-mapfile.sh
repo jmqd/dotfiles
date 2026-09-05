@@ -15,6 +15,9 @@ rustup() {
 		default_seen=1
 		;;
 	'component list --toolchain stable --installed')
+		if [[ "${FAIL_COMPONENT_LIST:-0}" == 1 ]]; then
+			return 42
+		fi
 		printf '%s\n' \
 			'cargo-x86_64-apple-darwin' \
 			'rust-std-x86_64-apple-darwin' \
@@ -44,5 +47,15 @@ fi
 
 if [[ $component_add_seen -ne 1 ]]; then
 	printf '%s\n' 'bootstrap did not request all missing default components' >&2
+	exit 1
+fi
+
+# A failed installed-component query must not report successful bootstrap.
+set +e
+FAIL_COMPONENT_LIST=1 bash "$repo_root/bin/bootstrap-rust.sh" stable >/dev/null 2>&1
+status=$?
+set -e
+if [[ $status -ne 42 ]]; then
+	printf 'expected component-list failure status 42, got %d\n' "$status" >&2
 	exit 1
 fi
