@@ -291,6 +291,7 @@
             "tests/bootstrap-rust-mapfile.sh"
             "tests/flow-search-smoke.sh"
             "tests/hm-switch-failure.sh"
+            "tests/pre-push-secrets.sh"
           ];
 
           nixFiles = map (path: pkgs.lib.removePrefix "${toString ./.}/" (toString path)) (
@@ -400,6 +401,24 @@
                 touch $out
               '';
 
+          prePushSecretsTests =
+            pkgs.runCommand "pre-push-secrets-tests"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.coreutils
+                  pkgs.git
+                  pkgs.gitleaks
+                ];
+              }
+              ''
+                export HOME="$TMPDIR/home"
+                mkdir -p "$HOME"
+                cd ${./.}
+                bash tests/pre-push-secrets.sh
+                touch $out
+              '';
+
           secretsLint = pkgs.writeShellApplication {
             name = "secrets-lint";
             runtimeInputs = [ pkgs.gitleaks ];
@@ -477,6 +496,7 @@
             notion-cli = notionCliPkg;
             omp = piPkg;
             oracle = oraclePkg;
+            pre-push-secrets-tests = prePushSecretsTests;
             review-orchestrator-tests = reviewOrchestratorTests;
             secrets-lint = secretsLintCheck;
             shellcheck-bin-scripts = shellcheckCheck;
