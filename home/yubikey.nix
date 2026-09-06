@@ -10,7 +10,10 @@ let
 
   longPressOnlyTool = pkgs.writeShellApplication {
     name = "yubikey-long-press-only";
-    runtimeInputs = [ cfg.package ];
+    runtimeInputs = [
+      cfg.package
+      pkgs.gawk
+    ];
     text = ''
       configured_serial=${lib.escapeShellArg configuredSerial}
 
