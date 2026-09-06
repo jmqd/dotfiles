@@ -105,8 +105,8 @@ Only the same OS user/root can reach extension control or read the pairing token
 
 On macOS, Nix pins the official standalone Tailscale installer and supplies a CLI
 wrapper for its installed GUI. See [macOS migration](#tailscale-on-macos) before
-replacing an App Store installation. Home Manager switches only check installation
-state; the privileged installer runs separately, when explicitly requested.
+replacing an App Store installation. Home Manager switches install or update the
+app automatically; administrator authorization may be required.
 
 Idle sessions appear first, newest state change first. A working→idle transition
 sends one Web Push notification; connecting/reconnecting an idle session does not.
@@ -367,43 +367,46 @@ for Apple Silicon and Intel. The official installer places the GUI in
 `/Applications/Tailscale.app`; the Nix `tailscale` command runs that app's bundled
 CLI. There is no separate `tailscaled` service or Nix-store GUI installation.
 
-Home Manager installs `tailscale-install`, retains its pinned package in the Nix
-closure, and runs a **read-only** installation check during activation. Missing,
-conflicting, or mismatched installations produce a warning without failing the
-switch. Only an explicit `tailscale-install` invokes Apple's installer via sudo.
-It checks package signing/notarization and refuses the App Store variant,
-unexpected target bundles/symlinks, detected duplicate apps, and running
-CLI-only daemons. Installation can restart Tailscale and interrupt the VPN.
+Home Manager retains the pinned package in its activation closure and installs
+it automatically when the app is absent or its version differs from the pin.
+A matching standalone installation needs no installer run or sudo prompt.
+There is no separate installer command to run: use the normal `hm-switch`.
+When installation is needed, activation checks package signing/notarization and
+invokes Apple's installer via sudo. Run the switch from an interactive terminal
+so sudo can request your administrator password.
+
+The activation refuses the App Store variant, unexpected target bundles/symlinks,
+detected duplicate apps, and running CLI-only daemons. These conflicts and
+installation failures **fail the switch**, rather than silently leaving the
+wrong version installed. Home Manager dry runs do not execute the installer.
+Installation can restart Tailscale and interrupt the VPN; macOS extension
+approval and Tailscale sign-in cannot be bypassed by Nix.
 
 ### migrating from the App Store
 
-1. **Before uninstalling**, switch to this configuration to make both commands
-   and the pinned installer available:
-   ```bash
-   bash ~/src/dotfiles/bin/hm-switch.sh
-   tailscale-install --check
-   ```
-   The check exits 1 while the App Store app is present; no app or VPN changes
-   are made by this check.
-2. Follow [Tailscale's variant migration instructions](https://tailscale.com/docs/concepts/macos-variants):
+1. Follow [Tailscale's variant migration instructions](https://tailscale.com/docs/concepts/macos-variants):
    quit Tailscale, remove the App Store app, empty Trash, and **reboot before
    installing the standalone variant**. Do not manually delete settings or
-   Keychain entries. The helper never performs this removal or reboot.
-3. After reboot, run `tailscale-install`. Enter your administrator password for
-   the official package installer, approve macOS's system-extension prompts,
-   and sign in if requested.
-4. Run `tailscale-install --check`, `tailscale version`, and `tailscale status`.
+   Keychain entries. Home Manager never performs this removal or reboot.
+2. After reboot, run the normal switch:
+   ```bash
+   bash ~/src/dotfiles/bin/hm-switch.sh
+   ```
+   Enter your administrator password if requested. The switch installs the
+   pinned app and CLI. Approve macOS's system-extension prompts and sign in if
+   requested.
+3. Run `tailscale version` and `tailscale status`.
    Verify the node's DNS name/IP and your exit-node choice: identity and settings
    are not guaranteed to survive a variant change. Update the machine-specific
    OMP URL and tailnet grants if necessary, then follow the private Serve setup
    above. Installing the app does not configure OMP Serve or tailnet policy.
 
 For updates, change both `version` and `hash` in `home/darwin/tailscale.nix`,
-switch Home Manager, then run `tailscale-install`. The pin is independent of
-`flake.lock`; `nix flake update` alone does not advance it. The helper installs the
-exact pin, including replacing a newer installed version with an older pin.
-Disable automatic app updates in Tailscale's settings if Nix should be the sole
-version authority; otherwise the activation check reports any version drift.
+then switch Home Manager. No second installation command is needed. The pin is
+independent of `flake.lock`; `nix flake update` alone does not advance it.
+Activation restores the exact pin, including replacing a newer installed version
+with an older pin. Disable automatic app updates in Tailscale's settings to avoid
+competing with Nix; otherwise the next switch restores the pinned version.
 
 ## home manager backup mode
 
