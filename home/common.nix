@@ -119,6 +119,7 @@ in
       languagetool
       lldb
       nil
+      nix-diff
       noto-fonts-cjk-sans-static
       noto-fonts-cjk-serif-static
       pandoc
