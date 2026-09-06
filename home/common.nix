@@ -130,6 +130,7 @@ in
       protobuf
       ripgrep
       rustup
+      samply
       slackdump
       sops
       shellcheck
@@ -166,7 +167,6 @@ in
         gdb
         gperftools
         heaptrack
-        samply
         valgrind
 
         # Benchmarking and load generation.
