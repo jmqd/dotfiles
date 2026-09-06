@@ -103,12 +103,10 @@ pairing cookie. Local processes can impersonate the loopback proxy, so the host
 itself remains trusted; browser pairing is still required for API access.
 Only the same OS user/root can reach extension control or read the pairing token.
 
-On macOS the signed Tailscale VPN app remains **App Store managed**, not a Nix
-daemon or standalone-app replacement. Nix supplies a `tailscale` CLI wrapper for
-the installed app and, on Apple Silicon, `mas`. Update only that app with
-`sudo mas update 1475387142`, or use App Store → Updates. This preserves the
-installation variant; Home Manager activation never performs mutable App Store
-updates or changes VPN routing.
+On macOS, Nix pins the official standalone Tailscale installer and supplies a CLI
+wrapper for its installed GUI. See [macOS migration](#tailscale-on-macos) before
+replacing an App Store installation. Home Manager switches only check installation
+state; the privileged installer runs separately, when explicitly requested.
 
 Idle sessions appear first, newest state change first. A working→idle transition
 sends one Web Push notification; connecting/reconnecting an idle session does not.
@@ -361,6 +359,51 @@ The Home Manager activation hook will try to bootstrap a default Rust toolchain
 via `rustup`. By default that step is best-effort so first activation can still
 finish offline; set `HM_STRICT_RUST_BOOTSTRAP=1` if you want bootstrap failure
 to abort the switch.
+
+## tailscale on macOS
+
+`home/darwin/tailscale.nix` pins the official signed, notarized standalone `.pkg`
+for Apple Silicon and Intel. The official installer places the GUI in
+`/Applications/Tailscale.app`; the Nix `tailscale` command runs that app's bundled
+CLI. There is no separate `tailscaled` service or Nix-store GUI installation.
+
+Home Manager installs `tailscale-install`, retains its pinned package in the Nix
+closure, and runs a **read-only** installation check during activation. Missing,
+conflicting, or mismatched installations produce a warning without failing the
+switch. Only an explicit `tailscale-install` invokes Apple's installer via sudo.
+It checks package signing/notarization and refuses the App Store variant,
+unexpected target bundles/symlinks, detected duplicate apps, and running
+CLI-only daemons. Installation can restart Tailscale and interrupt the VPN.
+
+### migrating from the App Store
+
+1. **Before uninstalling**, switch to this configuration to make both commands
+   and the pinned installer available:
+   ```bash
+   bash ~/src/dotfiles/bin/hm-switch.sh
+   tailscale-install --check
+   ```
+   The check exits 1 while the App Store app is present; no app or VPN changes
+   are made by this check.
+2. Follow [Tailscale's variant migration instructions](https://tailscale.com/docs/concepts/macos-variants):
+   quit Tailscale, remove the App Store app, empty Trash, and **reboot before
+   installing the standalone variant**. Do not manually delete settings or
+   Keychain entries. The helper never performs this removal or reboot.
+3. After reboot, run `tailscale-install`. Enter your administrator password for
+   the official package installer, approve macOS's system-extension prompts,
+   and sign in if requested.
+4. Run `tailscale-install --check`, `tailscale version`, and `tailscale status`.
+   Verify the node's DNS name/IP and your exit-node choice: identity and settings
+   are not guaranteed to survive a variant change. Update the machine-specific
+   OMP URL and tailnet grants if necessary, then follow the private Serve setup
+   above. Installing the app does not configure OMP Serve or tailnet policy.
+
+For updates, change both `version` and `hash` in `home/darwin/tailscale.nix`,
+switch Home Manager, then run `tailscale-install`. The pin is independent of
+`flake.lock`; `nix flake update` alone does not advance it. The helper installs the
+exact pin, including replacing a newer installed version with an older pin.
+Disable automatic app updates in Tailscale's settings if Nix should be the sole
+version authority; otherwise the activation check reports any version drift.
 
 ## home manager backup mode
 

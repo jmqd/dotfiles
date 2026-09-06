@@ -1,6 +1,5 @@
 {
   config,
-  lib,
   pkgs,
   ...
 }:
@@ -8,11 +7,6 @@ let
   fakeBrew = pkgs.writeShellScriptBin "brew" ''
     echo "brew: this system is managed by Nix — install packages there instead." >&2
     exit 1
-  '';
-  # The App Store owns the signed VPN app and its node identity. Do not install
-  # a second daemon or the standalone GUI beside it.
-  tailscaleCli = pkgs.writeShellScriptBin "tailscale" ''
-    exec /Applications/Tailscale.app/Contents/MacOS/Tailscale "$@"
   '';
   orbstackPackage =
     if pkgs.stdenv.hostPlatform.system == "x86_64-darwin" then
@@ -46,6 +40,7 @@ in
   imports = [
     ../common.nix
     ./raycast.nix
+    ./tailscale.nix
   ];
 
   targets.darwin = {
@@ -59,10 +54,8 @@ in
   # First set of macOS user packages managed by Home Manager.
   home.packages = [
     fakeBrew
-    tailscaleCli
     pkgs.google-cloud-sdk
     orbstackPackage
     spotifyPackage
-  ]
-  ++ lib.optionals pkgs.stdenv.hostPlatform.isAarch64 [ pkgs.mas ];
+  ];
 }
