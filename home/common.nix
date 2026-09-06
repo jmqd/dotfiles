@@ -106,6 +106,7 @@ in
       difftastic
       fd
       flock
+      gawk
       gh
       git-lfs
       gopls
