@@ -22,6 +22,7 @@ pub struct Config {
     pub tailnet_capability: String,
     pub secure: bool,
     pub hostname: String,
+    pub credentials_file: Option<PathBuf>,
 }
 
 impl Config {
@@ -36,6 +37,13 @@ impl Config {
         };
         if !dir.is_absolute() {
             return Err("state directory must be absolute".into());
+        }
+        let credentials_file = env::var_os("OMP_PHONE_CREDENTIALS_FILE").map(PathBuf::from);
+        if credentials_file
+            .as_ref()
+            .is_some_and(|path| !path.is_absolute())
+        {
+            return Err("OMP_PHONE_CREDENTIALS_FILE must be absolute".into());
         }
         let port = env::var("OMP_PHONE_PORT")
             .unwrap_or_else(|_| "8787".into())
@@ -121,6 +129,7 @@ impl Config {
             tailnet_capability,
             hosts,
             hostname,
+            credentials_file,
         })
     }
 }
@@ -205,10 +214,16 @@ pub fn read_private(path: &Path) -> Result<Option<String>> {
     {
         return Err("state file must be a regular private (0600) file".into());
     }
+    if metadata.len() > 1024 * 1024 {
+        return Err("state file exceeds 1 MiB".into());
+    }
     let mut text = String::new();
     File::open(path)?
-        .take(1024 * 1024)
+        .take(1024 * 1024 + 1)
         .read_to_string(&mut text)?;
+    if text.len() > 1024 * 1024 {
+        return Err("state file exceeds 1 MiB".into());
+    }
     Ok(Some(text))
 }
 
@@ -235,23 +250,4 @@ pub fn save_private(path: &Path, value: &str) -> Result<()> {
         let _ = fs::remove_file(temp);
     }
     result
-}
-
-pub fn token(dir: &Path) -> Result<String> {
-    let path = dir.join("token");
-    let token = match read_private(&path)? {
-        Some(token) => token.trim().to_owned(),
-        None => {
-            let token = random_secret();
-            create_private(&path, &token)?;
-            token
-        }
-    };
-    if URL_SAFE_NO_PAD
-        .decode(&token)
-        .map_or(true, |bytes| bytes.len() != 32)
-    {
-        return Err("invalid token file; expected a base64url 32-byte secret".into());
-    }
-    Ok(token)
 }

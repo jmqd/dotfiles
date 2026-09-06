@@ -10,6 +10,9 @@ let
     OMP_PHONE_PORT = toString cfg.port;
     OMP_PHONE_STATE_DIR = cfg.stateDirectory;
   }
+  // lib.optionalAttrs (cfg.credentialsFile != null) {
+    OMP_PHONE_CREDENTIALS_FILE = toString cfg.credentialsFile;
+  }
   // lib.optionalAttrs (cfg.publicUrl != null) {
     OMP_PHONE_PUBLIC_URL = cfg.publicUrl;
     OMP_PHONE_TAILNET_USERS = lib.concatStringsSep "," cfg.allowedTailnetUsers;
@@ -39,7 +42,7 @@ in
       type = lib.types.listOf (lib.types.strMatching "[^,[:space:]]+");
       default = [ ];
       example = [ "you@example.com" ];
-      description = "Exact Tailscale login allowlist required in HTTPS mode, in addition to browser pairing.";
+      description = "Exact Tailscale login allowlist required in HTTPS mode, in addition to security-key authentication.";
     };
     tailnetCapability = lib.mkOption {
       type = lib.types.str;
@@ -47,10 +50,19 @@ in
       example = "example.com/cap/omp-phone";
       description = "Serve app capability with access=true, granted only to direct tailnet members. Required in HTTPS mode.";
     };
+    credentialsFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        JSON array of enrolled public WebAuthn credentials. Only records matching
+        publicUrl's origin are trusted. Null or an empty array denies login until
+        a locally authorized enrollment is included here and the service restarts.
+      '';
+    };
     stateDirectory = lib.mkOption {
       type = lib.types.str;
       default = "${config.xdg.stateHome}/omp-phone";
-      description = "Private runtime directory containing pairing credentials and push subscriptions.";
+      description = "Private runtime directory containing WebAuthn ceremony state, credential counters, and push subscriptions.";
     };
   };
 

@@ -1,10 +1,11 @@
 "use strict";
 
-// Erase pairing credentials before any application requests or service-worker work.
+// Erase the private enrollment authorization before requests or service-worker work.
 const initialHash = new URLSearchParams(location.hash.slice(1));
-let pairingToken = initialHash.get("token");
-if (initialHash.has("token")) history.replaceState(null, "", location.pathname + location.search);
-initialHash.delete("token");
+let enrollmentMode = initialHash.has("enroll");
+let enrollmentSecret = initialHash.get("enroll");
+if (enrollmentMode) history.replaceState(null, "", location.pathname + location.search);
+initialHash.delete("enroll");
 
 const $ = id => document.getElementById(id);
 const drafts = new Map();
@@ -16,6 +17,7 @@ let connected = false;
 let events = null;
 let generation = 0;
 let authGeneration = 0;
+let ceremonyController = null;
 let snapshotVersion = 0;
 let currentId = null;
 let renderedId = null;
@@ -91,6 +93,10 @@ function updateControls() {
       : "Questions and approvals stay in the terminal.";
   $("push-button").disabled = !authenticated || !connected || !pushReady || pushBusy;
   $("push-button").textContent = pushBusy ? "Updating…" : subscription ? "Disable notifications" : "Enable notifications";
+  $("login-button").disabled = Boolean(ceremonyController);
+  $("login-button").textContent = ceremonyController && !enrollmentMode ? "Waiting for security key…" : "Sign in with security key";
+  $("enrollment-button").disabled = Boolean(ceremonyController) || !enrollmentSecret;
+  $("enrollment-button").textContent = ceremonyController && enrollmentMode ? "Waiting for security key…" : "Register security key";
 }
 
 function dateLabel(timestamp) {
@@ -212,9 +218,10 @@ function renderRoute() {
     currentId = nextId;
     $("prompt").value = drafts.get(currentId) || "";
   }
-  $("login-view").hidden = authenticated;
-  $("sessions-view").hidden = !authenticated || Boolean(currentId);
-  $("session-view").hidden = !authenticated || !currentId;
+  $("login-view").hidden = authenticated || enrollmentMode;
+  $("enrollment-view").hidden = !enrollmentMode;
+  $("sessions-view").hidden = enrollmentMode || !authenticated || Boolean(currentId);
+  $("session-view").hidden = enrollmentMode || !authenticated || !currentId;
   $("logout").hidden = !authenticated;
   if (authenticated && currentId) renderTranscript();
   if (authenticated && !currentId) renderList();
@@ -236,7 +243,7 @@ function closeEvents() {
 }
 
 function showLogin(message = "") {
-  authGeneration++;
+  cancelCeremony();
   closeEvents();
   authenticated = false;
   sessions = [];
@@ -251,7 +258,9 @@ function showLogin(message = "") {
   renderedId = null;
   $("machine").textContent = "Your local companion";
   $("login-error").textContent = message;
-  setConnected(false, navigator.onLine ? "Pair with your computer to connect." : "Offline · connect to your network to pair.");
+  setConnected(false, navigator.onLine
+    ? enrollmentMode ? "Register a key for this computer." : "Sign in with your security key to connect."
+    : "Offline · reconnect to your network to use your security key.");
   renderRoute();
 }
 
@@ -271,7 +280,7 @@ function openEvents() {
       if (source.readyState === EventSource.OPEN) setConnected(true);
     } catch (error) {
       if (generation !== ownGeneration) return;
-      if (error.status === 401) showLogin("Please pair again.");
+      if (error.status === 401) showLogin("Please sign in again with your security key.");
       else setConnected(false);
     }
   });
@@ -293,7 +302,7 @@ function openEvents() {
     try {
       await api("/api/sessions");
     } catch (error) {
-      if (generation === ownGeneration && error.status === 401) showLogin("Please pair again.");
+      if (generation === ownGeneration && error.status === 401) showLogin("Please sign in again with your security key.");
     } finally {
       checkingLogin = false;
     }
@@ -315,19 +324,138 @@ async function loadSessions() {
   }
 }
 
-async function login(token) {
+function cancelCeremony() {
+  authGeneration++;
+  ceremonyController?.abort();
+  ceremonyController = null;
+  $("login-status").textContent = "";
+  updateControls();
+}
+
+function securityKeySupport(enrolling) {
+  if (!window.isSecureContext) return "Security keys require HTTPS. Open the configured secure OMP Phone URL.";
+  if (!window.PublicKeyCredential || !navigator.credentials || typeof navigator.credentials[enrolling ? "create" : "get"] !== "function") {
+    return "This browser does not support security keys. Open this URL in a current Safari, Chrome, Edge, or Firefox browser.";
+  }
+  if (!navigator.onLine) return "You are offline. Reconnect to your network before trying your security key.";
+  return "";
+}
+
+function credentialOptions(challenge, enrolling) {
+  const source = challenge?.publicKey;
+  if (!source) throw new Error("Your computer returned an invalid security-key challenge. Reload and try again.");
+  const publicKey = { ...source, challenge: decodeKey(source.challenge) };
+  for (const field of ["allowCredentials", "excludeCredentials"]) {
+    if (source[field]) publicKey[field] = source[field].map(item => ({ ...item, id: decodeKey(item.id) }));
+  }
+  if (enrolling) {
+    publicKey.user = { ...source.user, id: decodeKey(source.user.id) };
+    publicKey.authenticatorSelection = {
+      ...source.authenticatorSelection,
+      authenticatorAttachment: "cross-platform",
+      userVerification: "required",
+    };
+  } else publicKey.userVerification = "required";
+  return { ...challenge, publicKey };
+}
+
+function encodeBytes(value) {
+  const bytes = new Uint8Array(value);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function extensionJSON(value) {
+  if (value instanceof ArrayBuffer) return encodeBytes(value);
+  if (ArrayBuffer.isView(value)) return encodeBytes(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+  if (Array.isArray(value)) return value.map(extensionJSON);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, extensionJSON(item)]));
+  return value;
+}
+
+function credentialJSON(credential, enrolling) {
+  const response = { clientDataJSON: encodeBytes(credential.response.clientDataJSON) };
+  if (enrolling) {
+    response.attestationObject = encodeBytes(credential.response.attestationObject);
+    if (typeof credential.response.getTransports === "function") response.transports = credential.response.getTransports();
+  } else {
+    response.authenticatorData = encodeBytes(credential.response.authenticatorData);
+    response.signature = encodeBytes(credential.response.signature);
+    response.userHandle = credential.response.userHandle == null ? null : encodeBytes(credential.response.userHandle);
+  }
+  return {
+    id: credential.id,
+    rawId: encodeBytes(credential.rawId),
+    type: credential.type,
+    response,
+    extensions: extensionJSON(credential.getClientExtensionResults()),
+    ...(credential.authenticatorAttachment ? { authenticatorAttachment: credential.authenticatorAttachment } : {}),
+  };
+}
+
+function securityKeyError(error, enrolling) {
+  if (error instanceof RequestError) return error.message;
+  if (error.name === "NotAllowedError" || error.name === "AbortError") {
+    return "The security-key request was cancelled or timed out. Connect the key, follow the PIN prompt, and touch it when asked.";
+  }
+  if (error.name === "InvalidStateError" && enrolling) return "This key may already be registered for this service. Use the registered key to sign in.";
+  if (error.name === "SecurityError") return "The browser rejected this service’s security-key identity. Open the exact configured HTTPS OMP Phone URL.";
+  if (error.name === "NotSupportedError") return "This browser or key cannot complete the request. Use a current browser and a FIDO2 security key with PIN support.";
+  return error.message || "The security-key request failed. Check your browser and security key.";
+}
+
+async function securityKey(enrolling) {
+  if (ceremonyController || authenticated || enrolling !== enrollmentMode) return;
+  const prefix = enrolling ? "enrollment" : "login";
+  const errorElement = $(`${prefix}-error`);
+  const statusElement = $(`${prefix}-status`);
+  errorElement.textContent = "";
+  statusElement.textContent = "";
+  const unsupported = securityKeySupport(enrolling);
+  if (unsupported) { errorElement.textContent = unsupported; return; }
+  if (enrolling && !enrollmentSecret) {
+    errorElement.textContent = "This enrollment link is missing or already used. Create a new local authorization with omp-phone enroll NAME.";
+    return;
+  }
   const ownGeneration = ++authGeneration;
-  $("login-button").disabled = true;
-  $("login-error").textContent = "";
+  const controller = new AbortController();
+  ceremonyController = controller;
+  statusElement.textContent = "Preparing your security key…";
+  updateControls();
   try {
-    await api("/api/login", "POST", { token });
-    if (authGeneration !== ownGeneration) return;
-    $("token").value = "";
-    await loadSessions();
+    let start;
+    if (enrolling) {
+      // A lost response may still consume the authorization: never reuse it.
+      start = api("/api/register/start", "POST", { enrollment: enrollmentSecret });
+      enrollmentSecret = null;
+    } else start = api("/api/auth/start", "POST", {});
+    const challenge = await start;
+    if (controller.signal.aborted || authGeneration !== ownGeneration) return;
+    statusElement.textContent = "Follow your browser’s instructions. Enter your security-key PIN and touch the key when prompted.";
+    const options = { ...credentialOptions(challenge, enrolling), signal: controller.signal };
+    const credential = await navigator.credentials[enrolling ? "create" : "get"](options);
+    if (controller.signal.aborted || authGeneration !== ownGeneration) return;
+    if (!credential) throw new DOMException("No security key was selected.", "NotAllowedError");
+    statusElement.textContent = enrolling ? "Saving public registration…" : "Signing in…";
+    const result = await api(enrolling ? "/api/register/finish" : "/api/auth/finish", "POST", credentialJSON(credential, enrolling));
+    if (controller.signal.aborted || authGeneration !== ownGeneration) return;
+    if (result?.ok !== true) throw new RequestError("Your computer did not confirm the security-key request.", true);
+    if (enrolling) {
+      statusElement.textContent = `Registration complete for ${result.name}. You are not signed in. On your computer, add the public enrolled-${result.name}.json record to the repository credential inventory, apply the configured credentials file, and restart OMP Phone. Then return here to sign in.`;
+      $("enrollment-exit").textContent = "Continue to sign in";
+    } else await loadSessions();
   } catch (error) {
-    if (authGeneration === ownGeneration) showLogin(error.message);
+    if (controller.signal.aborted || authGeneration !== ownGeneration) return;
+    statusElement.textContent = "";
+    errorElement.textContent = securityKeyError(error, enrolling) + (enrolling
+      ? " This authorization cannot be retried. Create a new local authorization with omp-phone enroll NAME and open its new link."
+      : " You can try signing in again.");
   } finally {
-    $("login-button").disabled = false;
+    if (ceremonyController === controller) {
+      ceremonyController = null;
+      updateControls();
+    }
   }
 }
 
@@ -354,7 +482,7 @@ async function command(action) {
     commandMessages.set(id, error.uncertain
       ? `${error.message} Delivery uncertain: check the transcript or terminal before trying again. Nothing will be retried automatically.`
       : error.message);
-    if (error.status === 401) { showLogin("Please pair again."); return; }
+    if (error.status === 401) { showLogin("Please sign in again with your security key."); return; }
   } finally {
     if (authGeneration === ownGeneration) { pending.delete(id); renderRoute(); }
   }
@@ -428,33 +556,62 @@ async function togglePush() {
   }
 }
 
-$("login-form").addEventListener("submit", event => { event.preventDefault(); const token = $("token").value.trim(); if (token) void login(token); });
+$("login-form").addEventListener("submit", event => { event.preventDefault(); void securityKey(false); });
+$("enrollment-form").addEventListener("submit", event => { event.preventDefault(); void securityKey(true); });
+$("enrollment-exit").addEventListener("click", () => {
+  enrollmentSecret = null;
+  enrollmentMode = false;
+  showLogin();
+  $("login-button").focus();
+});
 $("composer").addEventListener("submit", event => { event.preventDefault(); void command("prompt"); });
 $("stop").addEventListener("click", () => { void command("abort"); });
 $("prompt").addEventListener("input", () => { if (currentId) drafts.set(currentId, $("prompt").value); updateControls(); });
 $("push-button").addEventListener("click", () => { void togglePush(); });
 $("logout").addEventListener("click", async () => {
+  ceremonyController?.abort();
   $("logout").disabled = true;
-  try { await api("/api/logout", "POST", {}); showLogin(); }
-  catch (error) { setConnected(false, `Sign out could not be confirmed. ${error.message}`); }
+  const ownGeneration = authGeneration;
+  try { await api("/api/logout", "POST", {}); if (authGeneration === ownGeneration) showLogin(); }
+  catch (error) { if (authGeneration === ownGeneration) setConnected(false, `Sign out could not be confirmed. ${error.message}`); }
   finally { $("logout").disabled = false; }
 });
 window.addEventListener("hashchange", () => {
   const hash = new URLSearchParams(location.hash.slice(1));
-  if (hash.has("token")) {
-    const token = hash.get("token");
+  if (hash.has("enroll")) {
+    enrollmentSecret = hash.get("enroll");
+    hash.delete("enroll");
     history.replaceState(null, "", location.pathname + location.search);
+    enrollmentMode = true;
+    $("enrollment-error").textContent = "";
+    $("enrollment-status").textContent = "";
+    $("enrollment-exit").textContent = "Back to sign in";
     showLogin();
-    if (token) void login(token);
-  } else renderRoute();
+  } else {
+    if (enrollmentMode || !authenticated) {
+      enrollmentSecret = null;
+      enrollmentMode = false;
+      showLogin();
+    }
+    renderRoute();
+  }
 });
 window.addEventListener("offline", () => setConnected(false, "Offline · replies and Stop are unavailable. Your draft stays here."));
-window.addEventListener("online", () => { if (authenticated) { setConnected(false); openEvents(); } else setConnected(false, "Pair with your computer to connect."); });
+window.addEventListener("online", () => { if (authenticated) { setConnected(false); openEvents(); } else setConnected(false, enrollmentMode ? "Register a key for this computer." : "Sign in with your security key to connect."); });
 window.addEventListener("pageshow", event => { if (event.persisted && authenticated) { setConnected(false); openEvents(); } });
+window.addEventListener("pagehide", () => {
+  cancelCeremony();
+  closeEvents();
+  if (enrollmentMode) {
+    enrollmentSecret = null;
+    $("enrollment-status").textContent = "";
+    $("enrollment-error").textContent = "This page was left during enrollment. Create a new local authorization with omp-phone enroll NAME and open its new link.";
+    updateControls();
+  }
+});
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && authenticated) { setConnected(false); openEvents(); }
 });
 showLogin();
-if (pairingToken) void login(pairingToken);
-else void loadSessions();
-pairingToken = null;
+if (enrollmentMode && !enrollmentSecret) $("enrollment-error").textContent = "This enrollment link is incomplete. Create a new local authorization with omp-phone enroll NAME and open its full private link.";
+if (!enrollmentMode) void loadSessions();

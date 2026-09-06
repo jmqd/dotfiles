@@ -22,6 +22,10 @@ rustPlatform.buildRustPackage {
 
   nativeBuildInputs = [ pkg-config ];
   buildInputs = [ openssl ];
+  preCheck = ''
+    # Enrollment checks state ownership against HOME; Nix's default HOME is absent.
+    export HOME="$(mktemp -d)"
+  '';
   postInstall = ''
     mkdir -p $out/share/omp-phone
     cp -R extension package.json LICENSE $out/share/omp-phone/

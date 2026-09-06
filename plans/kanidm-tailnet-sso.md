@@ -18,11 +18,13 @@ registration, tailnet changes, or removal of the current OMP authentication.
 ## Current State
 
 - `home/yubikeys.nix` records one verified device: `yubikey-36766394`, a YubiKey 5C
-  NFC. Its entry contains a model and serial only, not an authentication credential.
+  NFC. Service-specific WebAuthn records are now managed under its inventory entry.
 - The other two devices have not been inventoried or enrolled in this work.
 - `projects/omp-phone` contains the Rust companion, browser UI, and OMP extension.
-  The companion currently uses `omp-phone pair`, a persistent machine-token file,
-  and browser session cookies. Browser sessions are invalidated on server restart.
+  The interim implementation uses service-specific WebAuthn enrollment and login,
+  with browser sessions invalidated on restart. Machine-token pairing is removed.
+  Kanidm remains shelved; its different relying-party identity will require fresh
+  enrollment rather than reuse of the OMP credential.
 - `projects/omp-phone/home-module.nix` manages the companion's deployment.
   `home/hosts/jmq-macos.nix` sets its public URL to
   `https://jordans-macbook-pro-1.taild6d9b.ts.net/omp/`.
@@ -117,15 +119,15 @@ Secure, SameSite-protected session scoped to `/omp/`. Define session expiry,
 restart, logout, and revocation behavior explicitly, including existing SSE
 connections and the distinction between OMP logout and provider-wide logout.
 Preserve session controls, prompts, aborts, and push-notification behavior. Provider
-failure must deny new authentication rather than fall back to machine tokens.
+failure must deny new authentication rather than fall back to per-service login.
 
 ### 5. Perform a clean authentication cutover
 
-Only after the complete OIDC path works, remove the machine-token creation/read
-path, `omp-phone pair`, token login endpoint/form, pairing-link fragment handling,
-and obsolete helpers. Update extension messages, CLI help, configuration, tests,
-and README instructions together. Invalidate old pairing sessions and retire the
-old runtime token using a safe, explicit migration; do not retain a token fallback.
+Only after the complete OIDC path works, remove the interim per-service WebAuthn
+enrollment/login routes, CLI enrollment command, browser ceremony UI, and obsolete
+helpers. Update extension messages, configuration, tests, and README instructions
+together. Invalidate old browser sessions and retire per-service credentials and
+runtime state through an explicit migration; do not retain a parallel login path.
 
 The primary affected files are under `projects/omp-phone/src/`, `web/`, and
 `extension/`, plus its Home Manager module and the host-specific configuration.

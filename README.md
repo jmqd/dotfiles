@@ -29,9 +29,9 @@ services.omp-phone = {
 ```
 
 The `macos-aarch64` profile in [`home/hosts/jmq-macos.nix`](home/hosts/jmq-macos.nix)
-uses the private URL `https://jordans-macbook-pro.taild6d9b.ts.net/omp/`, login
+uses the private URL `https://jordans-macbook-pro-1.taild6d9b.ts.net/omp/`, login
 `j@jm.dev`, and capability `jm.dev/cap/omp-phone`. Its policy destination is
-`100.94.227.118`. Use those values in the grant and Serve command below.
+`100.125.227.125`. Confirm the current address with `tailscale status` before editing policy.
 Other machines need their own hostname and destination. The `publicUrl` option
 names the browser-facing URL, including `/omp/`; it does not make the service public.
 
@@ -70,7 +70,6 @@ may retain an exit-node preference. Configure **Serve, never public Funnel**:
 ```sh
 tailscale serve --bg --https=443 --set-path=/omp --accept-app-caps=example.com/cap/omp-phone http://127.0.0.1:8787/omp
 tailscale serve status --json
-omp-phone pair
 ```
 
 Keep `/omp` in **both** the Serve mount and proxy target: Serve strips the mount
@@ -78,16 +77,17 @@ prefix before adding the target path. This leaves `/` and other paths available
 for sibling services. The companion redirects `/omp` to `/omp/`, and does not
 serve its UI or API at the hostname root.
 
-The pairing cookie, installed-app identity and service worker are scoped to
+The session cookie, installed-app identity and service worker are scoped to
 `/omp/`; notification clicks only reuse OMP tabs. Paths still share a browser
 origin, so only put trusted apps on the same HTTPS hostname and port.
 
 When upgrading a root-mounted installation, disable its notifications first,
-remove only its old OMP root mapping from Serve, then re-pair and reinstall the
+remove only its old OMP root mapping from Serve, then sign in and reinstall the
 OMP Home Screen app using the new URL. Do not reset unrelated Serve mappings.
 
-Open the pairing link on your phone with Tailscale connected. Treat the link as a
-password; its token is exchanged for an HttpOnly cookie and removed from the URL.
+Open the OMP URL on your phone with Tailscale connected and choose **Sign in with
+security key**. Use your enrolled USB/NFC YubiKey and follow the browser's PIN and
+touch prompts. There is no machine token to copy or pairing URI to revisit.
 On iPhone, add the page to the Home Screen before enabling notifications.
 Serve manages TLS; enabling HTTPS certificates may require tailnet-admin approval.
 Confirm the proxy is tailnet-only, with no enabled `AllowFunnel` entry. Never add
@@ -99,14 +99,54 @@ The HTTP listener is fixed to `127.0.0.1`; extension control uses
 WebSocket. Every HTTPS route, including assets, health, login and SSE, requires
 the authoritative Serve login and membership capability. Missing authorization,
 duplicate identity headers and Funnel requests fail closed even with a valid
-pairing cookie. Local processes can impersonate the loopback proxy, so the host
-itself remains trusted; browser pairing is still required for API access.
-Only the same OS user/root can reach extension control or read the pairing token.
+session cookie. Local processes can impersonate the loopback proxy, so security-key
+authentication is still required for API access. The host itself remains trusted.
+Only the same OS user/root can reach extension control or authorize enrollment.
 
 On macOS, Nix pins the official standalone Tailscale installer and supplies a CLI
 wrapper for its installed GUI. See [macOS migration](#tailscale-on-macos) before
 replacing an App Store installation. Home Manager switches install or update the
 app automatically; administrator authorization may be required.
+
+### Enroll a security key
+
+From a shell with the companion's environment, authorize one registration:
+
+```sh
+omp-phone enroll yubikey-36766394
+```
+
+Open the printed private link and choose **Register security key**. The link is
+only a five-minute, one-use enrollment authorization; it cannot sign in. Its
+fragment is erased before application requests. Once registration starts, a
+cancelled or uncertain attempt needs a new local authorization. Do not share the
+link or enter your PIN anywhere except the browser/OS security-key prompt.
+
+Successful registration writes one public record to
+`~/.local/state/omp-phone/enrolled-yubikey-36766394.json`. It does not grant access.
+Copy that public record into `home/yubikeys/` and include it in the corresponding
+device's `webauthn` list in `home/yubikeys.nix`. Each record contains `name`,
+`origin`, and the library-serialized `passkey`; the private signing key is not
+exported. Never invent a credential from the hardware serial number.
+
+`home/omp-phone.nix` generates `services.omp-phone.credentialsFile` from those
+lists. The companion trusts only records matching its exact configured origin.
+Apply Home Manager and restart the companion before signing in with a newly added
+key. Removing a record and restarting revokes it and invalidates browser sessions.
+An absent or empty inventory denies login; runtime enrollment files and saved
+counters cannot independently add trust.
+
+The companion requires user verification and rejects backup-eligible/synced
+credentials. WebAuthn challenges are single-use, expire after five minutes, and
+are bound to the initiating browser and Tailscale login. Credential counters are
+persisted privately before issuing a session cookie. Session cookies expire after
+30 days or a companion restart; logout revokes the current browser session.
+
+Do not reset existing key applications during enrollment. This repo's existing
+Home Manager OTP hook can swap or delete touch-slot credentials: disconnect the
+key before switching if you do not intend that separate hardware configuration.
+
+### Using live sessions
 
 Idle sessions appear first, newest state change first. A working→idle transition
 sends one Web Push notification; connecting/reconnecting an idle session does not.
@@ -120,21 +160,28 @@ image previews. Disconnected sessions disappear; stale replies are rejected.
 `/phone` reports the current terminal's connection status. Set
 `OMP_PHONE_DISABLED=1` before starting OMP to exclude a session. Runtime secrets
 and subscriptions live under `~/.local/state/omp-phone`, never in the Nix store.
-Restarting the companion requires pairing the browser again; push subscriptions
-persist. Disable notifications in the browser before signing out to stop them.
+Restarting the companion requires signing in again with the security key; push
+subscriptions persist. Disable notifications before signing out to stop them.
 
 For development without activating Home Manager:
 
 ```sh
-cargo run --manifest-path projects/omp-phone/Cargo.toml -- serve
+nix develop .#omp-phone --command cargo run --manifest-path projects/omp-phone/Cargo.toml -- serve
 # In another terminal:
 omp -e ./projects/omp-phone
-# In another terminal; open the printed localhost /omp/ link:
-cargo run --manifest-path projects/omp-phone/Cargo.toml -- pair
+# In another terminal; open the printed localhost enrollment link:
+nix develop .#omp-phone --command cargo run --manifest-path projects/omp-phone/Cargo.toml -- enroll dev-key
 ```
 
-Run `cargo test --manifest-path projects/omp-phone/Cargo.toml` for the focused
-tailnet authorization, pairing, session-ownership, state-transition and push-endpoint checks.
+For standalone development, wrap the public enrollment record in a JSON array,
+set `OMP_PHONE_CREDENTIALS_FILE` to that file's absolute path, and restart the
+server. Use `http://localhost:8787/omp/`, not an IP-address RP identity. Localhost
+credentials and HTTPS tailnet credentials are separate. Keep test credentials out
+of the tracked hardware inventory.
+
+Run `nix develop .#omp-phone --command cargo test --manifest-path projects/omp-phone/Cargo.toml --locked`
+for signed WebAuthn, replay, origin, user-verification, tailnet authorization,
+enrollment, persistence, session-ownership, state-transition, and push-endpoint checks.
 `nix build .#omp-phone` builds the package; new files must be tracked for Git-flake
 evaluation. To use the extension outside this repository, copy this project,
 build/install its Rust companion, and run `omp plugin install /absolute/path/to/omp-phone`.
@@ -150,14 +197,14 @@ name. From another module in `home/`, select a device with:
 (import ./yubikeys.nix).yubikey-36766394
 ```
 
-The initial entry records the connected YubiKey's model and serial only.
-Inventory membership does not grant access or opt a device into automatic
+Hardware-only entries do not grant access or opt a device into automatic
 management. Serial numbers are management identifiers, not authentication keys.
-This inventory does not change the existing OTP-management configuration.
+OMP consumes the enrolled public records in each device's `webauthn` list, matching
+the exact service origin. This inventory does not change OTP-management settings.
 
 Add purpose-specific public credentials after explicit enrollment; a YubiKey has
 no universal public key. SSH, OpenPGP, PIV, and site-specific WebAuthn credentials
-are distinct. Consumers must explicitly select which credentials they trust.
+are distinct. Each consumer must define which credential purposes and origins it trusts.
 Never commit private keys, PINs, management keys, recovery codes, or browser
 sessions.
 

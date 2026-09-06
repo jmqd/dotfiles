@@ -1,0 +1,42 @@
+{
+  "name": "yubikey-36766394",
+  "origin": "https://jordans-macbook-pro-1.taild6d9b.ts.net",
+  "passkey": {
+    "cred": {
+      "cred_id": "YZLb_rlJT8ERPYIe86yJvmCRgPB3H-kkJ_vjXMLS9_oN3ztXlRhTfrRcBwDHFIg3iHw-V9KGo580ewRjQ5Fvaw",
+      "cred": {
+        "type_": "ES256",
+        "key": {
+          "EC_EC2": {
+            "curve": "SECP256R1",
+            "x": "oWqiog5DiC_Jb0TI6G2ro-pi3kZV0V577xg-wGsD7H4",
+            "y": "SoxBoGRTLTAlc2giTOMHs-NMRmE8D9QCadg9wzyNZO4"
+          }
+        }
+      },
+      "counter": 3,
+      "transports": null,
+      "user_verified": true,
+      "backup_eligible": false,
+      "backup_state": false,
+      "registration_policy": "required",
+      "extensions": {
+        "cred_protect": {
+          "Set": "userVerificationRequired"
+        },
+        "hmac_create_secret": "NotRequested",
+        "appid": "NotRequested",
+        "cred_props": {
+          "Unsigned": {
+            "rk": false
+          }
+        }
+      },
+      "attestation": {
+        "data": "None",
+        "metadata": "None"
+      },
+      "attestation_format": "none"
+    }
+  }
+}
