@@ -1,3 +1,4 @@
+mod auth;
 mod config;
 mod push;
 mod sessions;
@@ -29,7 +30,6 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use subtle::ConstantTimeEq;
 use tokio::sync::{broadcast, mpsc, oneshot, watch, Semaphore};
 use tokio_util::codec::{Framed, LinesCodec};
 
@@ -39,8 +39,8 @@ const ACK_TIMEOUT: Duration = Duration::from_secs(15);
 
 struct App {
     config: Config,
-    token: String,
-    logins: Mutex<HashMap<String, Instant>>,
+    auth: Mutex<auth::Auth>,
+    logins: Mutex<HashMap<String, BrowserSession>>,
     registry: Mutex<Registry>,
     events: broadcast::Sender<()>,
     shutdown: watch::Sender<bool>,
@@ -48,6 +48,11 @@ struct App {
     sockets: Arc<Semaphore>,
     push: Arc<push::Push>,
     turns: mpsc::Sender<push::Turn>,
+}
+
+struct BrowserSession {
+    deadline: Instant,
+    login: String,
 }
 
 struct ApiError(StatusCode, String);
@@ -75,10 +80,10 @@ async fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            r#"omp-phone [serve|pair]
+            r#"omp-phone [serve|enroll NAME]
 
 serve (default): bind HTTP to 127.0.0.1 and extension control to a private Unix socket.
-pair: print the configured URL with a secret pairing fragment. Treat it as a password.
+enroll NAME: authorize one security-key registration for five minutes and print its private URL.
 
 Environment:
   OMP_PHONE_PORT                Local port (default 8787)
@@ -86,47 +91,36 @@ Environment:
   OMP_PHONE_TAILNET_USERS       Comma-separated exact logins; required for HTTPS
   OMP_PHONE_TAILNET_CAPABILITY  Member-only app capability with access=true; required for HTTPS
   OMP_PHONE_HOSTNAME            Display name for this machine
+  OMP_PHONE_CREDENTIALS_FILE    Absolute path to public WebAuthn inventory JSON (unset: locked)
   OMP_PHONE_STATE_DIR           Private runtime directory
                                (default $XDG_STATE_HOME/omp-phone or ~/.local/state/omp-phone)
 
 HTTPS requires Tailscale Serve 1.92+ forwarding the configured app capability.
 Grant that capability only to direct tailnet members. Never use public Funnel.
-Missing identity or capability denies every HTTP route, even with a pairing cookie.
-Start serve before pairing. Runtime secrets never enter the Nix store or startup log.
+Missing identity or capability denies every HTTP route, even with a session cookie.
+Enrollment writes a public record; configure it in the inventory and restart to enable login.
 Browser cookies expire after 30 days and are invalidated by server restart.
 Questions and permission approvals remain in the terminal.
 Web Push uses outbound HTTPS to Google, Mozilla or Apple push services."#
         );
         return Ok(());
     }
-    if args.len() > 1
-        || args
-            .first()
-            .is_some_and(|arg| arg != "serve" && arg != "pair")
-    {
-        return Err("usage: omp-phone [serve|pair] (see --help)".into());
-    }
+    let enrollment = match args.as_slice() {
+        [] => None,
+        [command] if command == "serve" => None,
+        [command, name] if command == "enroll" => Some(name.as_str()),
+        _ => return Err("usage: omp-phone [serve|enroll NAME] (see --help)".into()),
+    };
     let config = Config::load()?;
-    if args.first().is_some_and(|arg| arg == "pair") {
-        let token = config::read_private(&config.dir.join("token"))?
-            .ok_or("start omp-phone serve before pairing")?;
-        let token = token.trim();
-        if token.len() != 43
-            || !token
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-        {
-            return Err("invalid token file".into());
-        }
-        println!("{}/omp/#token={token}", config.origin);
-        return Ok(());
+    if let Some(name) = enrollment {
+        return auth::enroll(&config, name);
     }
-    // Refuse a second listener before generating secrets.
-    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, config.port)).await?;
     config::private_directory(&config.dir)?;
     let _state_lock = config::lock_state(&config.dir)?;
+    // Parse all configured trust before listener, extension socket or push side effects.
+    let auth = auth::Auth::load(&config)?;
+    let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, config.port)).await?;
     let extension_listener = config::ExtensionListener::bind(&config.dir)?;
-    let token = config::token(&config.dir)?;
     let push = push::Push::load(&config.dir, &config.origin)?;
     let (turns, turns_rx) = mpsc::channel(32);
     let push_worker = tokio::spawn(push.clone().worker(turns_rx));
@@ -134,7 +128,7 @@ Web Push uses outbound HTTPS to Google, Mozilla or Apple push services."#
     let (shutdown, _) = watch::channel(false);
     let app = Arc::new(App {
         config,
-        token,
+        auth: Mutex::new(auth),
         logins: Mutex::new(HashMap::new()),
         registry: Mutex::new(Registry::default()),
         events,
@@ -147,7 +141,7 @@ Web Push uses outbound HTTPS to Google, Mozilla or Apple push services."#
     let mut stopping = app.shutdown.subscribe();
     let extension_worker = tokio::spawn(extensions(app.clone(), extension_listener));
     eprintln!(
-        "omp-phone: listening on http://127.0.0.1:{}; run `omp-phone pair` to pair a browser",
+        "omp-phone: listening on http://127.0.0.1:{}; security-key login enabled only for configured credentials",
         app.config.port
     );
     let stop = app.clone();
@@ -219,7 +213,10 @@ fn router(app: Arc<App>) -> Router {
             "/icon.svg",
             get(|| async { asset("image/svg+xml", include_str!("../web/icon.svg")) }),
         )
-        .route("/api/login", post(login))
+        .route("/api/auth/start", post(auth_start))
+        .route("/api/auth/finish", post(auth_finish))
+        .route("/api/register/start", post(register_start))
+        .route("/api/register/finish", post(register_finish))
         .route("/api/logout", post(logout))
         .route("/api/sessions", get(snapshot))
         .route("/api/events", get(events))
@@ -245,32 +242,48 @@ fn asset(content_type: &'static str, content: &'static str) -> impl IntoResponse
     ([(header::CONTENT_TYPE, content_type)], content)
 }
 
-fn equal_secret(left: &str, right: &str) -> bool {
-    left.as_bytes().ct_eq(right.as_bytes()).into()
+fn named_cookie<'a>(headers: &'a HeaderMap, expected: &str) -> Option<&'a str> {
+    let mut found = None;
+    for header in headers.get_all(header::COOKIE) {
+        for part in header.to_str().ok()?.split(';') {
+            let (name, value) = part.trim().split_once('=')?;
+            if name == expected {
+                if found.is_some() || value.is_empty() {
+                    return None;
+                }
+                found = Some(value);
+            }
+        }
+    }
+    found
 }
+
 fn cookie(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get(header::COOKIE)?
-        .to_str()
-        .ok()?
-        .split(';')
-        .filter_map(|part| part.trim().split_once('='))
-        .find_map(|(name, value)| (name == COOKIE).then_some(value))
+    named_cookie(headers, COOKIE)
 }
+
+fn tailnet_login<'a>(app: &App, headers: &'a HeaderMap) -> &'a str {
+    if app.config.secure {
+        single_header(headers, "tailscale-user-login").unwrap_or("")
+    } else {
+        "localhost"
+    }
+}
+
 fn authenticated(app: &App, headers: &HeaderMap) -> bool {
     let Some(token) = cookie(headers) else {
         return false;
     };
     let mut logins = app.logins.lock();
-    logins.retain(|_, deadline| *deadline > Instant::now());
-    logins.get(token).is_some()
+    logins.retain(|_, session| session.deadline > Instant::now());
+    logins
+        .get(token)
+        .is_some_and(|session| session.login == tailnet_login(app, headers))
 }
 fn valid_origin(app: &App, headers: &HeaderMap, required: bool) -> bool {
-    match headers.get(header::ORIGIN) {
-        Some(origin) => origin
-            .to_str()
-            .is_ok_and(|origin| app.config.origins.iter().any(|allowed| allowed == origin)),
-        None => !required,
+    match single_header(headers, "origin") {
+        Some(origin) => app.config.origins.iter().any(|allowed| allowed == origin),
+        None => !required && !headers.contains_key(header::ORIGIN),
     }
 }
 
@@ -326,9 +339,7 @@ async fn protect(
 ) -> Response {
     let path = request.uri().path().strip_prefix("/omp").unwrap_or("");
     let headers = request.headers();
-    let host = headers
-        .get(header::HOST)
-        .and_then(|host| host.to_str().ok());
+    let host = single_header(headers, "host");
     let host_ok = host.is_some_and(|host| app.config.hosts.iter().any(|allowed| allowed == host));
     let mut response = if !tailnet_authorized(&app.config, headers) {
         ApiError::new(StatusCode::FORBIDDEN, "private tailnet access required").into_response()
@@ -342,8 +353,13 @@ async fn protect(
                 .is_some_and(|value| value == "cross-site")
         {
             ApiError::new(StatusCode::FORBIDDEN, "unrecognized or missing origin").into_response()
-        } else if path != "/api/login" && !authenticated(&app, headers) {
-            ApiError::new(StatusCode::UNAUTHORIZED, "pair this browser to continue").into_response()
+        } else if !matches!(
+            path,
+            "/api/auth/start" | "/api/auth/finish" | "/api/register/start" | "/api/register/finish"
+        ) && !authenticated(&app, headers)
+        {
+            ApiError::new(StatusCode::UNAUTHORIZED, "sign in with your security key")
+                .into_response()
         } else {
             next.run(request).await
         }
@@ -382,40 +398,147 @@ async fn protect(
     response
 }
 
-fn set_cookie(app: &App, token: &str, age: u64) -> HeaderValue {
+fn named_set_cookie(app: &App, name: &str, value: &str, age: u64) -> HeaderValue {
     HeaderValue::from_str(&format!(
-        "{COOKIE}={token}; Path=/omp/; HttpOnly; SameSite=Strict; Max-Age={age}{}",
+        "{name}={value}; Path=/omp/; HttpOnly; SameSite=Strict; Max-Age={age}{}",
         if app.config.secure { "; Secure" } else { "" }
     ))
     .unwrap()
 }
-#[derive(Deserialize)]
-struct Login {
-    token: String,
+
+fn set_cookie(app: &App, token: &str, age: u64) -> HeaderValue {
+    named_set_cookie(app, COOKIE, token, age)
 }
-async fn login(State(app): State<Arc<App>>, Json(input): Json<Login>) -> ApiResult<Response> {
-    if !equal_secret(&input.token, &app.token) {
-        return Err(ApiError::new(
-            StatusCode::UNAUTHORIZED,
-            "invalid pairing token",
-        ));
-    }
-    let token = config::random_secret();
-    let mut logins = app.logins.lock();
-    logins.retain(|_, deadline| *deadline > Instant::now());
-    if logins.len() >= 32 {
-        return Err(ApiError::new(
-            StatusCode::TOO_MANY_REQUESTS,
-            "too many paired browsers; log out an existing browser or restart the server",
-        ));
-    }
-    logins.insert(token.clone(), Instant::now() + COOKIE_AGE);
+
+const AUTH_COOKIE: &str = "omp_phone_auth";
+const REGISTER_COOKIE: &str = "omp_phone_register";
+
+fn auth_error(error: config::Error) -> ApiError {
+    eprintln!("omp-phone: authentication rejected: {error}");
+    ApiError::new(
+        StatusCode::UNAUTHORIZED,
+        "security-key ceremony failed or expired",
+    )
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct AuthStart {}
+
+async fn auth_start(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Json(_): Json<AuthStart>,
+) -> ApiResult<Response> {
+    let (options, challenge) = app
+        .auth
+        .lock()
+        .start_authentication(tailnet_login(&app, &headers))
+        .map_err(auth_error)?;
     Ok((
         [(
             header::SET_COOKIE,
-            set_cookie(&app, &token, COOKIE_AGE.as_secs()),
+            named_set_cookie(&app, AUTH_COOKIE, &challenge, auth::CEREMONY_AGE.as_secs()),
         )],
+        Json(options),
+    )
+        .into_response())
+}
+
+async fn auth_finish(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Json(input): Json<webauthn_rs::prelude::PublicKeyCredential>,
+) -> ApiResult<Response> {
+    let challenge = named_cookie(&headers, AUTH_COOKIE).ok_or_else(|| {
+        ApiError::new(StatusCode::UNAUTHORIZED, "missing authentication challenge")
+    })?;
+    let mut logins = app.logins.lock();
+    logins.retain(|_, session| session.deadline > Instant::now());
+    if logins.len() >= 32 {
+        return Err(ApiError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "too many signed-in browsers; log out or restart the server",
+        ));
+    }
+    let login = tailnet_login(&app, &headers);
+    app.auth
+        .lock()
+        .finish_authentication(login, challenge, &input)
+        .map_err(auth_error)?;
+    let token = config::random_secret();
+    logins.insert(
+        token.clone(),
+        BrowserSession {
+            deadline: Instant::now() + COOKIE_AGE,
+            login: login.into(),
+        },
+    );
+    Ok((
+        axum::response::AppendHeaders([
+            (
+                header::SET_COOKIE,
+                set_cookie(&app, &token, COOKIE_AGE.as_secs()),
+            ),
+            (
+                header::SET_COOKIE,
+                named_set_cookie(&app, AUTH_COOKIE, "", 0),
+            ),
+        ]),
         Json(json!({"ok": true})),
+    )
+        .into_response())
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RegistrationStart {
+    enrollment: String,
+}
+
+async fn register_start(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Json(input): Json<RegistrationStart>,
+) -> ApiResult<Response> {
+    let (options, challenge) = app
+        .auth
+        .lock()
+        .start_registration(tailnet_login(&app, &headers), &input.enrollment)
+        .map_err(auth_error)?;
+    Ok((
+        [(
+            header::SET_COOKIE,
+            named_set_cookie(
+                &app,
+                REGISTER_COOKIE,
+                &challenge,
+                auth::CEREMONY_AGE.as_secs(),
+            ),
+        )],
+        Json(options),
+    )
+        .into_response())
+}
+
+async fn register_finish(
+    State(app): State<Arc<App>>,
+    headers: HeaderMap,
+    Json(input): Json<webauthn_rs::prelude::RegisterPublicKeyCredential>,
+) -> ApiResult<Response> {
+    let challenge = named_cookie(&headers, REGISTER_COOKIE)
+        .ok_or_else(|| ApiError::new(StatusCode::UNAUTHORIZED, "missing registration challenge"))?;
+    let name = app
+        .auth
+        .lock()
+        .finish_registration(tailnet_login(&app, &headers), challenge, &input)
+        .map_err(auth_error)?;
+    Ok((
+        [(
+            header::SET_COOKIE,
+            named_set_cookie(&app, REGISTER_COOKIE, "", 0),
+        )],
+        Json(json!({"ok": true, "name": name})),
     )
         .into_response())
 }
@@ -694,10 +817,83 @@ mod tests {
     use super::*;
     use axum::{body::Body, http::Request};
     use tower::ServiceExt;
+    use webauthn_authenticator_rs::{softpasskey::SoftPasskey, WebauthnAuthenticator};
+    use webauthn_rs::prelude::*;
 
-    fn test_app() -> (Arc<App>, tempfile::TempDir) {
+    type Key = WebauthnAuthenticator<SoftPasskey>;
+
+    fn enroll_test_key(config: &Config, name: &str) -> (Key, auth::Record) {
+        auth::enroll(config, name).unwrap();
+        let pending: serde_json::Value = serde_json::from_str(
+            &config::read_private(&config.dir.join("enrollment.json"))
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        let mut auth = auth::Auth::load(config).unwrap();
+        let (options, cookie) = auth
+            .start_registration("owner@example.com", pending["secret"].as_str().unwrap())
+            .unwrap();
+        let mut key = Key::new(SoftPasskey::new(true));
+        let response = key
+            .do_registration(Url::parse(&config.origin).unwrap(), options)
+            .unwrap();
+        auth.finish_registration("owner@example.com", &cookie, &response)
+            .unwrap();
+        // A successful enrollment is not authentication and cannot introduce trust.
+        assert!(auth.start_authentication("owner@example.com").is_err());
+        let record = serde_json::from_str(
+            &std::fs::read_to_string(config.dir.join(format!("enrolled-{name}.json"))).unwrap(),
+        )
+        .unwrap();
+        (key, record)
+    }
+
+    async fn signed_login(routes: &Router, key: &mut Key) -> Response {
+        let start = routes
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/api/auth/start",
+                Some("https://phone.example"),
+                None,
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(start.status(), StatusCode::OK);
+        let cookie = start.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let options = serde_json::from_slice(
+            &axum::body::to_bytes(start.into_body(), 65536)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let assertion = key
+            .do_authentication(Url::parse("https://phone.example").unwrap(), options)
+            .unwrap();
+        routes
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/api/auth/finish",
+                Some("https://phone.example"),
+                Some(&cookie),
+                serde_json::to_value(assertion).unwrap(),
+            ))
+            .await
+            .unwrap()
+    }
+
+    fn test_app() -> (Arc<App>, tempfile::TempDir, Key) {
         let dir = tempfile::tempdir().unwrap();
-        let config = Config {
+        let mut config = Config {
             dir: dir.path().to_owned(),
             port: 8787,
             origin: "https://phone.example".into(),
@@ -711,7 +907,13 @@ mod tests {
             tailnet_capability: "example.com/cap/omp-phone".into(),
             secure: true,
             hostname: "test".into(),
+            credentials_file: None,
         };
+        let (key, record) = enroll_test_key(&config, "test-key");
+        let inventory = config.dir.join("inventory.json");
+        std::fs::write(&inventory, serde_json::to_vec(&vec![record]).unwrap()).unwrap();
+        config.credentials_file = Some(inventory);
+        let auth = auth::Auth::load(&config).unwrap();
         let push = push::Push::load(&config.dir, &config.origin).unwrap();
         let (events, _) = broadcast::channel(2);
         let (shutdown, _) = watch::channel(false);
@@ -719,7 +921,7 @@ mod tests {
         (
             Arc::new(App {
                 config,
-                token: config::random_secret(),
+                auth: Mutex::new(auth),
                 logins: Mutex::new(HashMap::new()),
                 registry: Mutex::new(Registry::default()),
                 events,
@@ -730,6 +932,7 @@ mod tests {
                 turns,
             }),
             dir,
+            key,
         )
     }
 
@@ -760,8 +963,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pairing_requires_exact_origin_and_logout_revokes_cookie() {
-        let (app, _dir) = test_app();
+    async fn security_key_requires_exact_origin_and_logout_revokes_cookie() {
+        let (app, _dir, mut key) = test_app();
         let routes = router(app.clone());
         let read = || request(Method::GET, "/api/sessions", None, None, json!({}));
         assert_eq!(
@@ -773,38 +976,16 @@ mod tests {
                 .clone()
                 .oneshot(request(
                     Method::POST,
-                    "/api/login",
+                    "/api/auth/start",
                     origin,
                     None,
-                    json!({"token": app.token}),
+                    json!({}),
                 ))
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::FORBIDDEN);
         }
-        let response = routes
-            .clone()
-            .oneshot(request(
-                Method::POST,
-                "/api/login",
-                Some("https://phone.example"),
-                None,
-                json!({"token": "wrong"}),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        let response = routes
-            .clone()
-            .oneshot(request(
-                Method::POST,
-                "/api/login",
-                Some("https://phone.example"),
-                None,
-                json!({"token": app.token}),
-            ))
-            .await
-            .unwrap();
+        let response = signed_login(&routes, &mut key).await;
         assert_eq!(response.status(), StatusCode::OK);
         let set_cookie = response.headers()[header::SET_COOKIE].to_str().unwrap();
         for attribute in ["Path=/omp/", "HttpOnly", "SameSite=Strict", "Secure"] {
@@ -877,22 +1058,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pairing_never_bypasses_tailnet_authorization() {
-        let (app, _dir) = test_app();
+    async fn security_key_never_bypasses_tailnet_authorization() {
+        let (app, _dir, mut key) = test_app();
         let routes = router(app.clone());
-        let paired = routes
-            .clone()
-            .oneshot(request(
-                Method::POST,
-                "/api/login",
-                Some("https://phone.example"),
-                None,
-                json!({"token": app.token}),
-            ))
-            .await
-            .unwrap();
-        assert_eq!(paired.status(), StatusCode::OK);
-        let cookie = paired.headers()[header::SET_COOKIE]
+        let signed = signed_login(&routes, &mut key).await;
+        assert_eq!(signed.status(), StatusCode::OK);
+        let cookie = signed.headers()[header::SET_COOKIE]
             .to_str()
             .unwrap()
             .split(';')
@@ -904,7 +1075,7 @@ mod tests {
             (Method::GET, "/", "phone.example"),
             (Method::GET, "/app.js", "phone.example"),
             (Method::GET, "/health", "localhost:8787"),
-            (Method::POST, "/api/login", "127.0.0.1:8787"),
+            (Method::POST, "/api/auth/start", "127.0.0.1:8787"),
             (Method::GET, "/api/events", "phone.example"),
         ] {
             let mut input = request(
@@ -912,7 +1083,7 @@ mod tests {
                 path,
                 Some("https://phone.example"),
                 Some(cookie),
-                json!({"token": app.token}),
+                json!({}),
             );
             input
                 .headers_mut()
@@ -979,12 +1150,17 @@ mod tests {
 
     #[tokio::test]
     async fn http_cannot_open_extension_control_even_with_every_credential() {
-        let (app, _dir) = test_app();
-        let mut input = request(Method::GET, "/extension", None, None, json!({}));
-        input.headers_mut().insert(
-            header::AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", app.token)).unwrap(),
-        );
+        let (app, _dir, mut key) = test_app();
+        let routes = router(app);
+        let signed = signed_login(&routes, &mut key).await;
+        assert_eq!(signed.status(), StatusCode::OK);
+        let cookie = signed.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let mut input = request(Method::GET, "/extension", None, Some(cookie), json!({}));
         input
             .headers_mut()
             .insert(header::CONNECTION, HeaderValue::from_static("upgrade"));
@@ -999,8 +1175,224 @@ mod tests {
             HeaderValue::from_static("dGhlIHNhbXBsZSBub25jZQ=="),
         );
         assert_eq!(
-            router(app).oneshot(input).await.unwrap().status(),
+            routes.oneshot(input).await.unwrap().status(),
             StatusCode::NOT_FOUND
         );
+    }
+
+    #[tokio::test]
+    async fn challenges_are_cookie_bound_one_use_and_reject_ambiguity() {
+        let (app, _dir, mut key) = test_app();
+        let routes = router(app);
+        let start = routes
+            .clone()
+            .oneshot(request(
+                Method::POST,
+                "/api/auth/start",
+                Some("https://phone.example"),
+                None,
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        let challenge_cookie = start.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let options = serde_json::from_slice(
+            &axum::body::to_bytes(start.into_body(), 65536)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        let assertion = serde_json::to_value(
+            key.do_authentication(Url::parse("https://phone.example").unwrap(), options)
+                .unwrap(),
+        )
+        .unwrap();
+        let ambiguous = format!("{challenge_cookie}; {challenge_cookie}");
+        for cookie in [
+            None,
+            Some("omp_phone_auth=unrelated"),
+            Some(ambiguous.as_str()),
+        ] {
+            let response = routes
+                .clone()
+                .oneshot(request(
+                    Method::POST,
+                    "/api/auth/finish",
+                    Some("https://phone.example"),
+                    cookie,
+                    assertion.clone(),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+        let finish = || {
+            request(
+                Method::POST,
+                "/api/auth/finish",
+                Some("https://phone.example"),
+                Some(&challenge_cookie),
+                assertion.clone(),
+            )
+        };
+        let signed = routes.clone().oneshot(finish()).await.unwrap();
+        assert_eq!(signed.status(), StatusCode::OK);
+        assert_eq!(
+            routes.clone().oneshot(finish()).await.unwrap().status(),
+            StatusCode::UNAUTHORIZED
+        );
+        let session = signed.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let duplicate = format!("{session}; {session}");
+        assert_eq!(
+            routes
+                .oneshot(request(
+                    Method::GET,
+                    "/api/sessions",
+                    None,
+                    Some(&duplicate),
+                    json!({})
+                ))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[test]
+    fn signed_wrong_origin_missing_uv_unknown_key_and_changed_identity_fail() {
+        let (app, _dir, mut key) = test_app();
+        let login = "owner@example.com";
+        let origin = Url::parse("https://phone.example").unwrap();
+        let mut auth = app.auth.lock();
+        let (options, cookie) = auth.start_authentication(login).unwrap();
+        let assertion = key
+            .do_authentication(Url::parse("https://other.phone.example").unwrap(), options)
+            .unwrap();
+        assert!(auth
+            .finish_authentication(login, &cookie, &assertion)
+            .is_err());
+
+        let (options, cookie) = auth.start_authentication(login).unwrap();
+        let mut options = serde_json::to_value(options).unwrap();
+        options["publicKey"]["userVerification"] = json!("discouraged");
+        let assertion = key
+            .do_authentication(origin.clone(), serde_json::from_value(options).unwrap())
+            .unwrap();
+        assert!(auth
+            .finish_authentication(login, &cookie, &assertion)
+            .is_err());
+
+        let (other, _other_dir, mut other_key) = test_app();
+        let (mut options, cookie) = auth.start_authentication(login).unwrap();
+        let (other_options, _) = other.auth.lock().start_authentication(login).unwrap();
+        options.public_key.allow_credentials = other_options.public_key.allow_credentials;
+        let assertion = other_key
+            .do_authentication(origin.clone(), options)
+            .unwrap();
+        assert!(auth
+            .finish_authentication(login, &cookie, &assertion)
+            .is_err());
+
+        let (options, cookie) = auth.start_authentication(login).unwrap();
+        let assertion = key.do_authentication(origin, options).unwrap();
+        assert!(auth
+            .finish_authentication("another@example.com", &cookie, &assertion)
+            .is_err());
+        assert!(auth
+            .finish_authentication(login, &cookie, &assertion)
+            .is_err());
+    }
+
+    #[test]
+    fn live_and_persisted_counters_fail_closed_without_runtime_trust() {
+        let (app, _dir, mut key) = test_app();
+        let origin = Url::parse(&app.config.origin).unwrap();
+        let login = "owner@example.com";
+        let mut auth = app.auth.lock();
+        let (older, older_cookie) = auth.start_authentication(login).unwrap();
+        let (newer, newer_cookie) = auth.start_authentication(login).unwrap();
+        let older = key.do_authentication(origin.clone(), older).unwrap();
+        let newer = key.do_authentication(origin.clone(), newer).unwrap();
+        auth.finish_authentication(login, &newer_cookie, &newer)
+            .unwrap();
+        assert!(auth
+            .finish_authentication(login, &older_cookie, &older)
+            .is_err());
+        drop(auth);
+
+        // A restart must honor persisted counter state, not merely the inventory baseline.
+        let state_path = app.config.dir.join("credential-state.json");
+        let mut state: serde_json::Value =
+            serde_json::from_str(&config::read_private(&state_path).unwrap().unwrap()).unwrap();
+        state[0]["counter"] = json!(u32::MAX);
+        config::save_private(&state_path, &state.to_string()).unwrap();
+        let mut restarted = auth::Auth::load(&app.config).unwrap();
+        let (options, cookie) = restarted.start_authentication(login).unwrap();
+        let assertion = key.do_authentication(origin.clone(), options).unwrap();
+        assert!(restarted
+            .finish_authentication(login, &cookie, &assertion)
+            .is_err());
+
+        // Removing configured authority leaves the server locked, despite runtime state.
+        std::fs::write(app.config.credentials_file.as_ref().unwrap(), "[]").unwrap();
+        let mut removed = auth::Auth::load(&app.config).unwrap();
+        assert!(removed.start_authentication(login).is_err());
+    }
+
+    #[tokio::test]
+    async fn persistence_failure_never_issues_session() {
+        let (app, _dir, mut key) = test_app();
+        std::fs::create_dir(app.config.dir.join("credential-state.json")).unwrap();
+        let routes = router(app);
+        let response = signed_login(&routes, &mut key).await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert!(!response.headers().contains_key(header::SET_COOKIE));
+    }
+
+    #[test]
+    fn enrollment_authorization_is_one_use_and_output_never_overwritten() {
+        let (app, _dir, _) = test_app();
+        let login = "owner@example.com";
+        auth::enroll(&app.config, "second-key").unwrap();
+        let pending_path = app.config.dir.join("enrollment.json");
+        let pending: serde_json::Value =
+            serde_json::from_str(&config::read_private(&pending_path).unwrap().unwrap()).unwrap();
+        let secret = pending["secret"].as_str().unwrap();
+        let mut auth = app.auth.lock();
+        assert!(auth.start_registration(login, "incorrect").is_err());
+        let (options, cookie) = auth.start_registration(login, secret).unwrap();
+        assert!(auth.start_registration(login, secret).is_err());
+        let mut second = Key::new(SoftPasskey::new(true));
+        let response = second
+            .do_registration(Url::parse(&app.config.origin).unwrap(), options)
+            .unwrap();
+        assert_eq!(
+            auth.finish_registration(login, &cookie, &response).unwrap(),
+            "second-key"
+        );
+        assert!(auth.finish_registration(login, &cookie, &response).is_err());
+        assert!(auth::enroll(&app.config, "second-key").is_err());
+        assert!(auth::enroll(&app.config, "../escape").is_err());
+        // Expired authorizations cannot begin a physical registration.
+        auth::enroll(&app.config, "expired").unwrap();
+        let mut pending: serde_json::Value =
+            serde_json::from_str(&config::read_private(&pending_path).unwrap().unwrap()).unwrap();
+        pending["expires"] = json!(0);
+        config::save_private(&pending_path, &pending.to_string()).unwrap();
+        assert!(auth
+            .start_registration(login, pending["secret"].as_str().unwrap())
+            .is_err());
     }
 }

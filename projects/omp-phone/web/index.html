@@ -23,13 +23,23 @@
     <div id="connection" class="connection" role="status" aria-live="polite">Connecting…</div>
     <main id="login-view" class="login" hidden>
       <h1>Your sessions, nearby.</h1>
-      <p>Use the pairing link from your computer, or enter its machine token. Your sessions stay on that computer.</p>
+      <p id="login-guidance">Sign in with your registered security key. Connect it by USB or hold it near your device for NFC, then follow your browser’s instructions to enter its PIN and touch the key. Your sessions stay on your computer.</p>
       <form id="login-form">
-        <label for="token">Machine token</label>
-        <input id="token" name="token" type="password" required autocomplete="off" autocapitalize="none" spellcheck="false">
-        <button id="login-button" type="submit">Connect</button>
+        <button id="login-button" type="submit" aria-describedby="login-guidance">Sign in with security key</button>
       </form>
       <p id="login-error" class="error" role="alert"></p>
+      <p id="login-status" role="status" aria-live="polite"></p>
+    </main>
+    <main id="enrollment-view" class="login" hidden>
+      <h1>Register your security key.</h1>
+      <p id="enrollment-guidance">This private, short-lived link authorizes one registration, not sign-in. Connect your security key by USB or NFC. Choose the external security key if asked, enter its PIN, and touch it when prompted.</p>
+      <form id="enrollment-form">
+        <button id="enrollment-button" type="submit" aria-describedby="enrollment-guidance enrollment-retry">Register security key</button>
+      </form>
+      <p id="enrollment-retry">Once registration starts, this link cannot be reused, even if you cancel. To try again, create a new local authorization with <code>omp-phone enroll NAME</code> on your computer and open its new private link.</p>
+      <p id="enrollment-error" class="error" role="alert"></p>
+      <p id="enrollment-status" role="status" aria-live="polite"></p>
+      <button id="enrollment-exit" class="secondary" type="button">Back to sign in</button>
     </main>
     <main id="sessions-view" class="sessions scroll-area" hidden>
       <div class="section-heading"><h1>Sessions</h1><span id="session-count" class="muted"></span></div>

@@ -282,7 +282,7 @@ export default function phone(pi: ExtensionAPI): void {
     description: "Show this session's phone connection status",
     handler: async (_args, context) => {
       context.ui.notify(stopped ? "Phone sharing is disabled for this session" : socket?.readyState === "open"
-        ? "Phone connected. Run `omp-phone pair` in a shell to obtain your private pairing link."
+        ? "Phone connected. Open your configured OMP Phone URL and sign in with your security key."
         : `Phone disconnected: ${lastError}`, socket?.readyState === "open" ? "info" : "warning");
     },
   });
