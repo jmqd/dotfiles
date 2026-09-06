@@ -141,6 +141,26 @@ build/install its Rust companion, and run `omp plugin install /absolute/path/to/
 Alternatively, import its `home-module.nix` and enable `services.omp-phone.enable`.
 Do not register it through both mechanisms.
 
+## YubiKey inventory
+
+[`home/yubikeys.nix`](home/yubikeys.nix) is the shared inventory, keyed by device
+name. From another module in `home/`, select a device with:
+
+```nix
+(import ./yubikeys.nix).yubikey-36766394
+```
+
+The initial entry records the connected YubiKey's model and serial only.
+Inventory membership does not grant access or opt a device into automatic
+management. Serial numbers are management identifiers, not authentication keys.
+This inventory does not change the existing OTP-management configuration.
+
+Add purpose-specific public credentials after explicit enrollment; a YubiKey has
+no universal public key. SSH, OpenPGP, PIV, and site-specific WebAuthn credentials
+are distinct. Consumers must explicitly select which credentials they trust.
+Never commit private keys, PINs, management keys, recovery codes, or browser
+sessions.
+
 ## PostgreSQL
 
 Home Manager runs a personal PostgreSQL 17 server after login on macOS and
