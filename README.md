@@ -151,8 +151,11 @@ key before switching if you do not intend that separate hardware configuration.
 Idle sessions appear first, newest state change first. A working→idle transition
 sends one Web Push notification; connecting/reconnecting an idle session does not.
 Push uses outbound HTTPS through Apple/Google/Mozilla infrastructure; encrypted
-payloads contain machine/session titles but no conversation text. Replies while
-busy are queued as follow-ups. Stop
+payloads contain machine/session titles and up to 160 characters of the latest
+assistant response, with whitespace collapsed. If the transcript ends with a user
+message or tool result, or the response is empty, only the session title is shown.
+Response previews may appear on your phone's lock screen. Replies while busy are
+queued as follow-ups. Stop
 interrupts the existing agent. Questions and approvals remain terminal-only.
 The browser shows recent user/assistant text and tool output, not full history or
 image previews. Disconnected sessions disappear; stale replies are rejected.
