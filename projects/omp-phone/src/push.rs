@@ -1,4 +1,7 @@
-use crate::config::{self, Result};
+use crate::{
+    config::{self, Result},
+    sessions::{Role, Session},
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use futures_util::{stream, StreamExt};
 use p256::SecretKey;
@@ -22,9 +25,46 @@ pub struct Push {
 }
 
 pub struct Turn {
-    pub hostname: String,
-    pub title: String,
-    pub id: String,
+    payload: String,
+}
+
+impl Turn {
+    pub fn new(hostname: &str, session: &Session) -> Self {
+        let mut body = session.title.clone();
+        // Do not search past a newer user message or tool result for an old answer.
+        if let Some(message) = session
+            .messages
+            .last()
+            .filter(|m| matches!(m.role, Role::Assistant))
+        {
+            let preview = response_preview(&message.text);
+            if !preview.is_empty() {
+                body.push('\n');
+                body.push_str(&preview);
+            }
+        }
+        Self {
+            payload: json!({
+                "title": format!("{hostname} · Your turn"),
+                "body": body,
+                "url": format!("/omp/#session={}", session.id),
+            })
+            .to_string(),
+        }
+    }
+}
+
+fn response_preview(text: &str) -> String {
+    let mut characters = text
+        .split_whitespace()
+        .enumerate()
+        .flat_map(|(index, word)| (index != 0).then_some(' ').into_iter().chain(word.chars()));
+    let mut preview: String = characters.by_ref().take(160).collect();
+    if characters.next().is_some() {
+        preview.pop();
+        preview.push('…');
+    }
+    preview
 }
 
 enum Delivery {
@@ -101,12 +141,7 @@ impl Push {
 
     pub async fn worker(self: Arc<Self>, mut turns: mpsc::Receiver<Turn>) {
         while let Some(turn) = turns.recv().await {
-            let payload = json!({
-                "title": format!("{} · Your turn", turn.hostname),
-                "body": turn.title,
-                "url": format!("/omp/#session={}", turn.id),
-            })
-            .to_string();
+            let payload = turn.payload;
             let subscriptions = self.subscriptions.lock().await.clone();
             let service = self.as_ref();
             let expired: Vec<_> = stream::iter(subscriptions.into_iter().map(|sub| {
@@ -223,6 +258,49 @@ pub fn validate(sub: &SubscriptionInfo) -> Result<()> {
 mod tests {
     use super::*;
     use p256::elliptic_curve::sec1::ToEncodedPoint;
+
+    #[test]
+    fn preview_does_not_reuse_answers_before_user_or_tool_messages() {
+        let mut session: Session = serde_json::from_value(json!({
+            "id": "session-1", "title": "Deployment", "cwd": "/tmp", "state": "idle",
+            "messages": [
+                {"role": "user", "text": "Deploy the fix"},
+                {"role": "assistant", "text": "  Deployed.\n\n All\tchecks passed.  "}
+            ],
+            "partial": "Unfinished streaming text"
+        }))
+        .unwrap();
+        let payload = |session: &Session| -> serde_json::Value {
+            serde_json::from_str(&Turn::new("Mac", session).payload).unwrap()
+        };
+        assert_eq!(
+            payload(&session)["body"],
+            "Deployment\nDeployed. All checks passed."
+        );
+        for role in [Role::User, Role::Tool] {
+            session.messages.push(crate::sessions::Message {
+                role,
+                text: "Not an answer".into(),
+            });
+            assert_eq!(payload(&session)["body"], "Deployment");
+            session.messages.pop();
+        }
+        session.messages.last_mut().unwrap().text = " \n\t".into();
+        assert_eq!(payload(&session)["body"], "Deployment");
+        session.messages.clear();
+        assert_eq!(payload(&session)["body"], "Deployment");
+    }
+
+    #[test]
+    fn preview_limits_unicode_text_without_truncating_exact_fit() {
+        let text = "界".repeat(160);
+        assert_eq!(response_preview(&text), text);
+        assert_eq!(
+            response_preview(&(text + "x")),
+            format!("{}…", "界".repeat(159))
+        );
+    }
+
     #[test]
     fn endpoints_cannot_target_local_services_or_lookalike_hosts() {
         let public = SecretKey::random(&mut OsRng).public_key();

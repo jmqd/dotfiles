@@ -773,12 +773,19 @@ async fn extension_socket(app: Arc<App>, mut socket: LocalSocket, owner: u64) {
                         match serde_json::from_str::<Incoming>(&text) {
                             Ok(Incoming::Pong {}) => {},
                             Ok(Incoming::Snapshot { session }) => {
-                                let notification = push::Turn { hostname: app.config.hostname.clone(), title: session.title.clone(), id: session.id.clone() };
-                                let result = app.registry.lock().update(owner, session, commands.clone());
+                                let id = session.id.clone();
+                                let result = {
+                                    let mut registry = app.registry.lock();
+                                    registry.update(owner, session, commands.clone()).map(|turn| {
+                                        turn.then(|| push::Turn::new(&app.config.hostname, &registry.sessions[&id].session))
+                                    })
+                                };
                                 match result {
-                                    Ok(turn) => {
+                                    Ok(notification) => {
                                         let _ = app.events.send(());
-                                        if turn && app.turns.try_send(notification).is_err() { eprintln!("omp-phone: notification queue full; turn notification not delivered"); }
+                                        if let Some(notification) = notification {
+                                            if app.turns.try_send(notification).is_err() { eprintln!("omp-phone: notification queue full; turn notification not delivered"); }
+                                        }
                                     }
                                     Err(()) => break,
                                 }
