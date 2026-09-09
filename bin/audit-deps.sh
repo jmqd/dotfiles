@@ -74,7 +74,7 @@ note_upgrade() {
 
 npm_latest_version() {
 	local package="$1"
-	nix shell --quiet nixpkgs#nodejs -c npm view "$package" version
+	nix shell --quiet --inputs-from "$repo_root" nixpkgs#nodejs -c npm view "$package" version
 }
 
 check_npm_latest() {
@@ -186,7 +186,7 @@ npm_audit() {
 	tmp_paths+=("$output_file" "$found_file" "$allowed_file" "$unexpected_file" "$stale_file")
 
 	set +e
-	nix shell --quiet nixpkgs#nodejs -c npm audit --json --prefix "$prefix" --omit dev >"$output_file" 2>&1
+	nix shell --quiet --inputs-from "$repo_root" nixpkgs#nodejs -c npm audit --json --prefix "$prefix" --omit dev >"$output_file" 2>&1
 	status=$?
 	set -e
 
@@ -256,7 +256,7 @@ cargo_audit_lock() {
 	tmp_paths+=("$json_file" "$json_stderr" "$actual_file" "$allowed_file" "$unexpected_file" "$stale_file")
 
 	set +e
-	nix run nixpkgs#cargo-audit -- audit --file "$lock_file" --json >"$json_file" 2>"$json_stderr"
+	nix run --inputs-from "$repo_root" nixpkgs#cargo-audit -- audit --file "$lock_file" --json >"$json_file" 2>"$json_stderr"
 	set -e
 
 	if ! jq -r '[.vulnerabilities.list[]?.advisory.id] | sort | .[]' "$json_file" | sort -u >"$actual_file"; then
@@ -300,7 +300,7 @@ cargo_audit_lock() {
 	tmp_paths+=("$output_file")
 
 	set +e
-	nix run nixpkgs#cargo-audit -- "${args[@]}" >"$output_file" 2>&1
+	nix run --inputs-from "$repo_root" nixpkgs#cargo-audit -- "${args[@]}" >"$output_file" 2>&1
 	status=$?
 	set -e
 
@@ -382,7 +382,7 @@ govulncheck_notion_cli() {
 			GOMODCACHE="${GOMODCACHE:-$go_mod_cache}" \
 			GOCACHE="${GOCACHE:-$go_build_cache}" \
 			GOFLAGS="${GOFLAGS:-} -modcacherw" \
-			nix shell nixpkgs#govulncheck nixpkgs#go -c govulncheck -scan=module
+			nix shell --inputs-from "$repo_root" nixpkgs#govulncheck nixpkgs#go -c govulncheck -scan=module
 	) >"$output_file" 2>&1
 	status=$?
 	set -e
@@ -404,13 +404,7 @@ govulncheck_notion_cli() {
 			GO-2026-5030 \
 			GO-2026-5320 \
 			GO-2026-5942 \
-			GO-2026-5970 \
-			GO-2026-5972 \
-			GO-2026-6088 \
-			GO-2026-6089 \
-			GO-2026-6090 \
-			GO-2026-6091 \
-			GO-2026-6218
+			GO-2026-5970
 	fi
 }
 
@@ -453,12 +447,13 @@ main() {
 	npm_audit "pi-coding-agent" "pkgs/pi"
 
 	local gws_src trueflow_src notion_src voxtype_src
-	gws_src="$(input_path googleworkspace-cli)"
+	gws_src="$(flake_expr "flake.packages.\"${system}\".googleworkspace-cli.src.outPath")"
 	trueflow_src="$(input_path trueflow)"
 	notion_src="$(input_path notion-cli)"
 	voxtype_src="$(input_path voxtype)"
 
 	cargo_audit_lock "pkgs/flow" "pkgs/flow/Cargo.lock"
+	cargo_audit_lock "projects/omp-phone" "projects/omp-phone/Cargo.lock"
 	cargo_audit_lock \
 		"googleworkspace/cli" \
 		"$gws_src/Cargo.lock" \
