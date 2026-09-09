@@ -22,16 +22,20 @@ let
   spotifyPackage =
     if pkgs.stdenv.hostPlatform.system == "aarch64-darwin" then
       pkgs.spotify.overrideAttrs {
-        # Nixpkgs pins this exact release through the Wayback Machine. The
-        # official CDN currently serves the same fixed-output artifact, so use
-        # it as a fallback when the archive responds with HTTP 429.
+        version = "1.2.99.317";
+        # The CDN URL moves; verify the bundle version before refreshing the hash.
         src = pkgs.fetchurl {
-          urls = [
-            "https://web.archive.org/web/20260829115632/https://download.scdn.co/SpotifyARM64.dmg"
-            "https://download.scdn.co/SpotifyARM64.dmg"
-          ];
-          hash = "sha256-iFLqFQXKPkeCHfzB6hshbZDWjumKN2u4Bj7lvl8waUY=";
+          url = "https://download.scdn.co/SpotifyARM64.dmg";
+          hash = "sha256-xF6OoHAMNvvDCdY1G4A+n2zuHb+GWjCqb6PYy50HILE=";
         };
+        # Generic fixup invalidates the vendor's Apple signature.
+        dontFixup = true;
+        doInstallCheck = true;
+        installCheckPhase = ''
+          runHook preInstallCheck
+          /usr/bin/codesign --verify --deep --strict "$out/Applications/Spotify.app"
+          runHook postInstallCheck
+        '';
       }
     else
       pkgs.spotify;
