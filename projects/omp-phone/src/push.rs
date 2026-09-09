@@ -4,8 +4,8 @@ use crate::{
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use futures_util::{stream, StreamExt};
-use p256::SecretKey;
-use rand::rngs::OsRng;
+use p256::{elliptic_curve::Generate, SecretKey};
+use rand::rngs::SysRng;
 use serde_json::json;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::{mpsc, Mutex};
@@ -79,7 +79,8 @@ impl Push {
         let encoded = match config::read_private(&key_path)? {
             Some(key) => key,
             None => {
-                let key = URL_SAFE_NO_PAD.encode(SecretKey::random(&mut OsRng).to_bytes());
+                let key = URL_SAFE_NO_PAD
+                    .encode(SecretKey::try_generate_from_rng(&mut SysRng)?.to_bytes());
                 config::create_private(&key_path, &key)?;
                 key
             }
@@ -257,7 +258,7 @@ pub fn validate(sub: &SubscriptionInfo) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use p256::elliptic_curve::sec1::ToEncodedPoint;
+    use p256::elliptic_curve::sec1::ToSec1Point;
 
     #[test]
     fn preview_does_not_reuse_answers_before_user_or_tool_messages() {
@@ -303,10 +304,12 @@ mod tests {
 
     #[test]
     fn endpoints_cannot_target_local_services_or_lookalike_hosts() {
-        let public = SecretKey::random(&mut OsRng).public_key();
+        let public = SecretKey::try_generate_from_rng(&mut SysRng)
+            .unwrap()
+            .public_key();
         let mut sub = SubscriptionInfo::new(
             "https://fcm.googleapis.com/send/test".to_owned(),
-            URL_SAFE_NO_PAD.encode(public.to_encoded_point(false).as_bytes()),
+            URL_SAFE_NO_PAD.encode(public.to_sec1_point(false).as_bytes()),
             URL_SAFE_NO_PAD.encode([1; 16]),
         );
         assert!(validate(&sub).is_ok());

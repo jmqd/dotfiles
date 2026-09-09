@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use rand::{rngs::OsRng, RngCore};
+use rand::{rngs::SysRng, TryRng};
 use std::{
     env,
     fs::{self, File, OpenOptions},
@@ -165,7 +165,9 @@ impl Drop for ExtensionListener {
 
 pub fn random_secret() -> String {
     let mut bytes = [0; 32];
-    OsRng.fill_bytes(&mut bytes);
+    SysRng
+        .try_fill_bytes(&mut bytes)
+        .expect("system random source unavailable");
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
