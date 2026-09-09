@@ -362,6 +362,12 @@ and fixtures. Unrelated edits can reuse those check results. When a test gains a
 helper or fixture, add it to that check's `checkSource` list. Secret scanning
 intentionally covers the entire tracked repository and is not narrowed.
 
+Dependency auditing uses tools from `flake.lock` and checks both local Cargo
+lockfiles. New advisories fail the audit rather than being automatically
+allowlisted. The phone companion currently reports
+[`RUSTSEC-2023-0071`](https://rustsec.org/advisories/RUSTSEC-2023-0071)
+in its upstream `rsa` dependency; no fixed upgrade is available.
+
 Agent writing guidance is defined once in [`home/writing-style.nix`](home/writing-style.nix).
 Home Manager substitutes it verbatim for `@writingStyle@` in `.in` templates,
 then installs the normal filenames without `.in`. This covers global instructions
