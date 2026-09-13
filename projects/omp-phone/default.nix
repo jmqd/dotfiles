@@ -3,6 +3,7 @@
   rustPlatform,
   pkg-config,
   openssl,
+  cacert,
 }:
 rustPlatform.buildRustPackage {
   pname = "omp-phone";
@@ -25,6 +26,8 @@ rustPlatform.buildRustPackage {
   preCheck = ''
     # Enrollment checks state ownership against HOME; Nix's default HOME is absent.
     export HOME="$(mktemp -d)"
+    # The push client's native TLS roots are absent from the Linux build sandbox.
+    export SSL_CERT_FILE="${cacert}/etc/ssl/certs/ca-bundle.crt"
   '';
   postInstall = ''
     mkdir -p $out/share/omp-phone
