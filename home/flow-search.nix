@@ -5,11 +5,12 @@
   ...
 }:
 let
+  zoekt = pkgs.callPackage ../pkgs/zoekt { };
   flowSearchStateDir = "${config.home.homeDirectory}/.local/share/flow-search";
   flowSearchIndexDir = "${flowSearchStateDir}/zoekt/index";
 in
 {
-  home.packages = [ pkgs.zoekt ];
+  home.packages = [ zoekt ];
 
   home.activation.createFlowSearchDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p ${lib.escapeShellArg flowSearchIndexDir}
@@ -22,7 +23,7 @@ in
       After = [ "default.target" ];
     };
     Service = {
-      ExecStart = "${pkgs.zoekt}/bin/zoekt-webserver -index ${lib.escapeShellArg flowSearchIndexDir} -listen 127.0.0.1:6070";
+      ExecStart = "${zoekt}/bin/zoekt-webserver -index ${lib.escapeShellArg flowSearchIndexDir} -listen 127.0.0.1:6070";
       Restart = "on-failure";
       WorkingDirectory = flowSearchStateDir;
     };
@@ -35,7 +36,7 @@ in
     enable = true;
     config = {
       ProgramArguments = [
-        "${pkgs.zoekt}/bin/zoekt-webserver"
+        "${zoekt}/bin/zoekt-webserver"
         "-index"
         flowSearchIndexDir
         "-listen"

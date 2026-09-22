@@ -146,6 +146,10 @@ State layout today:
 
 This repo ships Home Manager management for a long-running `zoekt-webserver` process.
 
+Flow and the managed service share a restricted Zoekt package containing only
+`zoekt`, `zoekt-git-index`, and `zoekt-webserver`. Upstream mirroring, remote
+index-server, and maintenance executables are not installed.
+
 ### Linux
 
 On Linux, Home Manager declares a user `systemd` service:
