@@ -12,7 +12,9 @@
   stdenv,
   fetchurl,
   patchelf,
+  perl,
   versionCheckHook,
+  darwin,
 }:
 let
   version = "18.2.8";
@@ -39,6 +41,18 @@ let
   source =
     sources.${stdenv.hostPlatform.system}
       or (throw "omp: unsupported platform ${stdenv.hostPlatform.system}");
+
+  # Stopgap for 18.2.8 only. That release hardcodes the Claude Code version it
+  # reports to Anthropic as 2.1.257, and newer models (Opus 5.5) reject anything
+  # below 2.1.280 with `claude_code_version_too_old`. Upstream fixed this in
+  # v18.2.9 (commit 2282226, dynamic versioning + PI_AI_CLAUDE_CODE_VERSION),
+  # so the patch is gated on the exact version and drops out on the next bump.
+  claudeCodeVersionPatch = {
+    appliesTo = "18.2.8";
+    from = "2.1.257";
+    to = "2.1.280";
+    expectedOccurrences = 2;
+  };
 in
 stdenv.mkDerivation (finalAttrs: {
   pname = "omp";
@@ -54,7 +68,11 @@ stdenv.mkDerivation (finalAttrs: {
   dontBuild = true;
   dontStrip = true;
 
-  nativeBuildInputs = lib.optionals stdenv.hostPlatform.isLinux [ patchelf ];
+  nativeBuildInputs = [
+    perl
+  ]
+  ++ lib.optionals stdenv.hostPlatform.isLinux [ patchelf ]
+  ++ lib.optionals stdenv.hostPlatform.isDarwin [ darwin.autoSignDarwinBinariesHook ];
 
   installPhase = ''
     runHook preInstall
@@ -66,6 +84,24 @@ stdenv.mkDerivation (finalAttrs: {
     ln -s omp $out/bin/pi
 
     runHook postInstall
+  '';
+
+  postInstall = lib.optionalString (finalAttrs.version == claudeCodeVersionPatch.appliesTo) ''
+    export from='${claudeCodeVersionPatch.from}'
+    export to='${claudeCodeVersionPatch.to}'
+    count="$(grep -a -o -F "$from" "$out/bin/omp" | wc -l | tr -d ' ')"
+    if [ "$count" != "${toString claudeCodeVersionPatch.expectedOccurrences}" ]; then
+      echo "omp: expected ${toString claudeCodeVersionPatch.expectedOccurrences} occurrences of $from, found $count" >&2
+      exit 1
+    fi
+    if [ "''${#from}" != "''${#to}" ]; then
+      echo "omp: replacement must be the same length as the original" >&2
+      exit 1
+    fi
+    chmod u+w "$out/bin/omp"
+    perl -pi -e 'BEGIN { binmode STDIN; binmode STDOUT } s/\Q$ENV{from}\E/$ENV{to}/g' "$out/bin/omp"
+    chmod u-w "$out/bin/omp"
+    echo "omp: patched reported Claude Code version $from -> $to"
   '';
 
   doInstallCheck = stdenv.buildPlatform.canExecute stdenv.hostPlatform;
