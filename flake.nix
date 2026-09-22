@@ -143,7 +143,9 @@
         let
           pkgs = import (nixpkgsFor system) { inherit system; };
         in
-        pkgs.callPackage ./pkgs/flow { };
+        pkgs.callPackage ./pkgs/flow {
+          zoekt = pkgs.callPackage ./pkgs/zoekt { };
+        };
 
       mkVoxtypePkg =
         system:
