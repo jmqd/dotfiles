@@ -3,11 +3,11 @@
     "emacs-sops": {
       "flake": false,
       "locked": {
-        "lastModified": 1779076259,
-        "narHash": "sha256-Q7WEfZfEpyVh7jk6Xkd10Nbt4BLJx13TjeWPTx8+jQc=",
+        "lastModified": 1789939306,
+        "narHash": "sha256-YPhnDkXfkTEuzQ6wTXX+pxFNLtXL1j+M5m/SMclCM54=",
         "owner": "djgoku",
         "repo": "sops",
-        "rev": "95b2178a71dcbf3e69729c52cba2bc23171e059d",
+        "rev": "07fd550969fe164f71aab89c93338f8993fbd9e6",
         "type": "github"
       },
       "original": {
