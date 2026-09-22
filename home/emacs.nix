@@ -44,7 +44,7 @@ in
   programs.emacs.extraPackages = epkgs: [
     (epkgs.trivialBuild {
       pname = "sops";
-      version = "0.2.0";
+      version = "0.2.1";
       src = emacs-sops;
     })
   ];
