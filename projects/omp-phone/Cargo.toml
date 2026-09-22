@@ -21,11 +21,12 @@ parking_lot = "0.12"
 fs2 = "0.4"
 hostname = "0.4"
 url = "2"
-web-push = { version = "0.11", default-features = false }
+ece = { version = "2.4", default-features = false, features = ["backend-openssl"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls"] }
 webauthn-rs = { version = "=0.5.5", features = ["danger-credential-internals"] }
 
 [dev-dependencies]
+openssl = "0.10"
 tower = { version = "0.5", features = ["util"] }
 tempfile = "3"
 webauthn-authenticator-rs = { version = "=0.5.5", default-features = false, features = ["softpasskey"] }

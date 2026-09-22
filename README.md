@@ -184,7 +184,8 @@ of the tracked hardware inventory.
 
 Run `nix develop .#omp-phone --command cargo test --manifest-path projects/omp-phone/Cargo.toml --locked`
 for signed WebAuthn, replay, origin, user-verification, tailnet authorization,
-enrollment, persistence, session-ownership, state-transition, and push-endpoint checks.
+enrollment, persistence, session-ownership, state-transition, push-endpoint,
+VAPID signature interoperability, and encrypted-payload checks.
 `nix build .#omp-phone` builds the package; new files must be tracked for Git-flake
 evaluation. To use the extension outside this repository, copy this project,
 build/install its Rust companion, and run `omp plugin install /absolute/path/to/omp-phone`.
@@ -364,9 +365,9 @@ intentionally covers the entire tracked repository and is not narrowed.
 
 Dependency auditing uses tools from `flake.lock` and checks both local Cargo
 lockfiles. New advisories fail the audit rather than being automatically
-allowlisted. The phone companion currently reports
-[`RUSTSEC-2023-0071`](https://rustsec.org/advisories/RUSTSEC-2023-0071)
-in its upstream `rsa` dependency; no fixed upgrade is available.
+allowlisted. The phone companion signs VAPID tokens with P-256 and encrypts push
+payloads with ECE directly, without a general-purpose JWT/RSA dependency chain.
+Existing VAPID keys and browser subscriptions remain compatible.
 
 Agent writing guidance is defined once in [`home/writing-style.nix`](home/writing-style.nix).
 Home Manager substitutes it verbatim for `@writingStyle@` in `.in` templates,

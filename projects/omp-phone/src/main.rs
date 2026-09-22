@@ -674,9 +674,10 @@ async fn push_key(State(app): State<Arc<App>>) -> Json<serde_json::Value> {
 }
 async fn subscribe(
     State(app): State<Arc<App>>,
-    Json(sub): Json<web_push::SubscriptionInfo>,
+    Json(sub): Json<push::Subscription>,
 ) -> ApiResult<Json<serde_json::Value>> {
-    push::validate(&sub).map_err(|error| ApiError(StatusCode::BAD_REQUEST, error.to_string()))?;
+    push::parse_subscription(&sub)
+        .map_err(|error| ApiError(StatusCode::BAD_REQUEST, error.to_string()))?;
     app.push.subscribe(sub).await.map_err(|_| {
         ApiError::new(
             StatusCode::INTERNAL_SERVER_ERROR,
