@@ -54,6 +54,9 @@ in
 
   time.timeZone = "Asia/Tokyo";
 
+  # Homelab CA for https://*.internal; name-constrained to the home network.
+  security.pki.certificateFiles = [ ../../pki/homelab-ca.crt ];
+
   nix.gc = {
     automatic = true;
     dates = "weekly";

@@ -194,3 +194,10 @@ if [[ "$os_name" == "Darwin" ]]; then
 else
 	run_home_manager_switch "${home_manager_cmd[@]}"
 fi
+
+# System trust needs root, so Home Manager cannot own it. Work machines
+# keep their managed trust store.
+case "$flake_ref" in
+*"#work-"*) ;;
+*) "$repo_root/bin/setup-homelab-ca.sh" ;;
+esac
