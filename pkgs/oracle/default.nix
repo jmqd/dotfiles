@@ -14,7 +14,7 @@ buildNpmPackage rec {
       ./bin
     ];
   };
-  npmDepsHash = "sha256-Q5Qns2EVzvZHKsf4DZfiXUyEInlosvOD0Jy+kcMdqe4=";
+  npmDepsHash = "sha256-ozOiQ1go7nHVzU8pfZzXL5V5W9XShzXxUji0GJcmnKU=";
   npmDepsFetcherVersion = 2;
   dontNpmBuild = true;
 
