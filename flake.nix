@@ -31,7 +31,7 @@
       inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
     };
     voxtype = {
-      url = "github:peteonrails/voxtype/v1.0.1";
+      url = "github:peteonrails/voxtype/v1.1.0";
       inputs.flake-utils.follows = "flake-utils";
       inputs.nixpkgs.follows = "nixpkgs";
     };
