@@ -4,14 +4,16 @@ theme:
 setupVersion: 2
 # Claude Opus 5.5 is the default across every OMP role.
 modelRoles:
-  # Primary, planning, and full-agent work use high reasoning.
-  default: anthropic/claude-opus-5-5:high
+  # Startup uses medium reasoning.
+  default: anthropic/claude-opus-5-5:medium
+
+  # Planning and full-agent work use high reasoning.
   slow: anthropic/claude-opus-5-5:high
   advisor: anthropic/claude-opus-5-5:high
   plan: anthropic/claude-opus-5-5:high
   task: anthropic/claude-opus-5-5:high
 
-  # The lightweight role uses the requested lower reasoning mode.
+  # The lightweight role also uses medium reasoning.
   smol: anthropic/claude-opus-5-5:medium
 advisor:
   enabled: true
