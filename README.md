@@ -282,6 +282,23 @@ The cache URL and `nix-community.cachix.org-1` signing key should appear, and
 expected for an ordinary client: using the configured cache does not require
 granting that client administrative Nix privileges.
 
+`bin/hm-switch.sh` also trusts the homelab CA (`pki/homelab-ca.crt`) so
+`https://*.internal` works in browsers and CLI tools. The CA is limited to
+`.internal` names, `192.168.1.0/24` and tailnet addresses. The script checks
+first and asks for `sudo` only when the CA is missing. On macOS, the System
+keychain may also show a confirmation dialog. It skips `work-*` targets. To run
+it alone:
+
+```bash
+bash ~/src/dotfiles/bin/setup-homelab-ca.sh
+```
+
+It supports macOS and Linux with `update-ca-certificates` (Debian, Ubuntu) or
+`update-ca-trust` (Fedora, Arch). NixOS hosts set
+`security.pki.certificateFiles` instead. Firefox on Linux keeps its own
+store; import the CA there by hand. The homelab repo owns the CA; copy
+`nixos/homelab-ca.crt` here if it is ever reissued.
+
 Raycast is the Option-Space launcher on macOS. If that shortcut was changed,
 open **Raycast Settings → General** and set **Raycast Hotkey** to Option-Space;
 Raycast does not provide a supported noninteractive hotkey setter. Home Manager
