@@ -13,6 +13,15 @@ let
   );
 in
 {
+  # Earlier generations linked this whole directory into the store; Home Manager
+  # cannot replace that link with the recursive directory and writes through it.
+  home.activation.unlinkStoreOmpExtensions = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+    ompExtensions="$HOME/.omp/agent/extensions"
+    if [[ -L $ompExtensions && $(readlink "$ompExtensions") == /nix/store/* ]]; then
+      run unlink "$ompExtensions"
+    fi
+  '';
+
   home.file = {
     ".bashrc".source = ../.bashrc;
     ".gdbinit".source = ../.gdbinit;
