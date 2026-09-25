@@ -191,6 +191,11 @@ in
       "ydotool"
     ];
     shell = pkgs.zsh;
+    # The Mac workstation's key, for deploying and checking jmws over the
+    # tailnet (the homelab's glass also depends on jmws's NAS).
+    openssh.authorizedKeys.keys = [
+      "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQCkwoUSir+GH4HkiP6wDCFY6Jw6uNISiYps7yalRSc/glr+JlFnLmheXbgK5NffLnFpvGm6brYWIsKAVvOiD6qyH032NBHjreFK6w0hMe14fV6UFJoB+5JRNmHW99P+q1DcvrWfAMZdvjK0jyVf5GHhp2uUQJeeAM3/IXBUnpyjj6bw863TCvJGD6VEcdj8KEU/1E1HYkwJonSWOtwHSidNwnpbLBTcIwb0sPfJ620fQxl9Sh/JLLP90Jnoxn6mxdoK/SYBnYlISqQ/fWpzvjMVe6qEfnI2qRGra8eoMFqDyoMG7dFl5AwkkWhHl4z7kB8PemB7441GFeb5BHRt71sJchi8Hdod2XzdrJ7N9J6Mtm5G1k15RARHM4NQJtiilgljfg3S5tj7YOvgdkyhAb+IJJQIAJHQ8rhx2Ob26PMb02s7LIuZvwcv+0/KnjmmdJ2UFkhEU3YicTpSiSshMmpLG3JUbAbl3iab/xxLfdXBjoHFTabHXpIHdjXO0at8qHD3hhkmn96SazgRRJhKCYBGiWoU2Fk9I3XuFEhOuh9hwqKPbt3E5lMFCoBSGCT88lR+FByzx7bsn6GTKD3KR0difUE1RAa1w7miPWjJasf9XBESf9sbxxSaL24CNLvcnGwxnTY7DrL3A8SHLtuRjzCvcl+KlkcP03grhLgRQqPV6Q== j@jm.dev"
+    ];
   };
 
   environment.systemPackages =
