@@ -45,6 +45,7 @@ in
     ../common.nix
     ./raycast.nix
     ./tailscale.nix
+    ./wispr-flow.nix
   ];
 
   targets.darwin = {

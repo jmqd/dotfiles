@@ -502,6 +502,23 @@ Activation restores the exact pin, including replacing a newer installed version
 with an older pin. Disable automatic app updates in Tailscale's settings to avoid
 competing with Nix; otherwise the next switch restores the pinned version.
 
+## wispr flow on macOS
+
+`pkgs/wispr-flow` pins Wispr's signed DMGs for Apple Silicon and Intel.
+`home/darwin/wispr-flow.nix` copies the app to `~/Applications/Wispr Flow.app`
+during the normal `hm-switch`. It does not use `copyApps`: Wispr Flow asks to be
+moved unless its bundle sits directly in an Applications folder, which rules out
+`~/Applications/Home Manager Apps/` and Nix-store symlinks.
+
+The pin is a floor. Activation installs the app when it is absent or older than
+the pin and keeps newer versions from Wispr's in-app updater. It never downgrades.
+It skips replacing a running app and refuses symlinks or other apps at that path.
+Replaced bundles go to `~/.Trash`. Grant Microphone and Accessibility access in
+System Settings the first time you run Wispr Flow.
+
+For updates, change `version` and both hashes in `pkgs/wispr-flow/default.nix`.
+`just audit-deps` reports new releases from Wispr's `RELEASES.json` feed.
+
 ## home manager backup mode
 
 This wrapper is only for standalone Home Manager, not NixOS hosts like `jmws`.

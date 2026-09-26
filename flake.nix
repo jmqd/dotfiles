@@ -138,6 +138,16 @@
         in
         pkgs.callPackage ./pkgs/codex-desktop { };
 
+      mkWisprFlowPkg =
+        system:
+        let
+          pkgs = import (nixpkgsFor system) {
+            inherit system;
+            config.allowUnfree = true;
+          };
+        in
+        pkgs.callPackage ./pkgs/wispr-flow { };
+
       mkFlowPkg =
         system:
         let
@@ -222,6 +232,7 @@
           claudeCodePkg = mkClaudeCodePkg system;
           codexPkg = mkCodexPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
+          wisprFlowPkg = mkWisprFlowPkg system;
           flowPkg = mkFlowPkg system;
           voxtypePkg = mkVoxtypePkg system;
 
@@ -459,6 +470,7 @@
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = codexDesktopPkg;
+            wispr-flow = wisprFlowPkg;
           };
 
           checks = {
@@ -484,6 +496,7 @@
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = codexDesktopPkg;
+            wispr-flow = wisprFlowPkg;
           };
 
           apps = {
@@ -612,6 +625,7 @@
                 "orbstack"
                 "raycast"
                 "spotify"
+                "wispr-flow"
               ];
           };
           extraModules = [

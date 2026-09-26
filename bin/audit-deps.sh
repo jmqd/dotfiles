@@ -171,6 +171,32 @@ check_codex_desktop_latest() {
 	note_upgrade "codex-desktop" "$current" "$latest_arm"
 }
 
+check_wispr_flow_latest() {
+	local current="$1" arch latest latest_arm=""
+	section "latest check: wispr-flow"
+
+	for arch in arm64 x64; do
+		if ! latest="$(curl --fail --silent --show-error --location \
+			"https://dl.wisprflow.com/wispr-flow/darwin/${arch}/RELEASES.json" |
+			jq -er '.currentRelease')"; then
+			fail "could not fetch Wispr Flow ${arch} release feed"
+			return
+		fi
+		if [[ ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+			fail "Wispr Flow ${arch} release feed has malformed version: $latest"
+			return
+		fi
+		if [ -z "$latest_arm" ]; then
+			latest_arm="$latest"
+		elif [ "$latest" != "$latest_arm" ]; then
+			fail "Wispr Flow release versions differ: arm64 $latest_arm, x86_64 $latest"
+			return
+		fi
+	done
+
+	note_upgrade "wispr-flow" "$current" "$latest_arm"
+}
+
 npm_audit() {
 	local name="$1" prefix="$2"
 	shift 2
@@ -423,7 +449,7 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version pi_wrapper_version oracle_version claude_version codex_version codex_desktop_version notion_version gws_version
+	local pi_version pi_wrapper_version oracle_version claude_version codex_version codex_desktop_version wispr_flow_version notion_version gws_version
 	pi_version="$(package_version "$system" pi)"
 	oracle_version="$(package_version "$system" oracle)"
 	claude_version="$(package_version "$system" claude-code)"
@@ -431,6 +457,7 @@ main() {
 	notion_version="$(package_version "$system" notion-cli)"
 	gws_version="$(package_version "$system" googleworkspace-cli)"
 	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
+	wispr_flow_version="$(package_version "aarch64-darwin" wispr-flow)"
 	pi_wrapper_version="$(jq -er '.dependencies["@earendil-works/pi-coding-agent"]' pkgs/pi/package.json)"
 
 	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
@@ -442,6 +469,7 @@ main() {
 	check_github_release_latest "lox/notion-cli" "v${notion_version}"
 
 	check_codex_desktop_latest "$codex_desktop_version"
+	check_wispr_flow_latest "$wispr_flow_version"
 
 	npm_audit "oracle" "pkgs/oracle"
 	npm_audit "pi-coding-agent" "pkgs/pi"
