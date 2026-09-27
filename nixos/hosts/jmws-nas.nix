@@ -38,11 +38,19 @@ in
     options = btrfsOptions ++ [ "subvol=media" ];
   };
 
+  # A separate filesystem boundary gives this NFS export its own write policy
+  # rather than inheriting the read-only fsid=0 parent.
+  fileSystems."/srv/nas/frigate" = {
+    device = nasDevice;
+    fsType = "btrfs";
+    options = btrfsOptions ++ [ "subvol=frigate" ];
+  };
+
   systemd.tmpfiles.rules = [
     "d /srv/nas/shared 2775 jmq nas - -"
     "d /srv/nas/backups 2770 jmq nas - -"
     "d /srv/nas/media 2775 jmq nas - -"
-    "d /srv/nas/frigate 2775 jmq nas - -"
+    "d /srv/nas/frigate 2770 jmq nas - -"
   ];
 
   services.btrfs.autoScrub = {
@@ -60,8 +68,8 @@ in
   # backups here, so those shares accept only glass's tailnet address: NFS
   # trusts the client's claimed uid, and any other tailnet device (tagged
   # family devices included) could otherwise write as anyone. Frigate writes
-  # as root, so its share maps every write to jmq:nas (all_squash), and is
-  # async for its constant video stream.
+  # as root, so its share maps every write to jmq:nas (all_squash). Acknowledge
+  # writes only once committed, so an NAS interruption cannot lose accepted data.
   services.nfs.server = {
     enable = true;
     exports = ''
@@ -69,7 +77,23 @@ in
       /srv/nas/shared  100.64.0.0/10(rw,sync,no_subtree_check)
       /srv/nas/backups 100.97.225.21(rw,sync,no_subtree_check)
       /srv/nas/media   100.97.225.21(rw,sync,no_subtree_check)
-      /srv/nas/frigate 100.97.225.21(rw,async,no_subtree_check,all_squash,anonuid=1000,anongid=2000)
+      /srv/nas/frigate 100.97.225.21(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=2000)
     '';
+  };
+
+  # Never serve an empty directory from the system disk if the NAS is absent.
+  systemd.services.nfs-server = {
+    requires = [
+      "srv-nas.mount"
+      "srv-nas-frigate.mount"
+    ];
+    after = [
+      "srv-nas.mount"
+      "srv-nas-frigate.mount"
+    ];
+    bindsTo = [
+      "srv-nas.mount"
+      "srv-nas-frigate.mount"
+    ];
   };
 }
