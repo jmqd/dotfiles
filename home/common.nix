@@ -110,6 +110,7 @@ in
       gawk
       gh
       git-lfs
+      gogcli
       gopls
       gnuplot
       graphviz

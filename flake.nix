@@ -437,6 +437,7 @@
                   curl
                   git
                   gitleaks
+                  gogcli
                   gws
                   just
                   jq
@@ -456,6 +457,7 @@
             claude-code = claudeCodePkg;
             codex = codexPkg;
             flow = flowPkg;
+            gogcli = pkgs.gogcli;
             googleworkspace-cli = pkgs.gws;
             home-manager = (homeManagerFor system).packages.${system}.home-manager;
             notion-cli = notionCliPkg;

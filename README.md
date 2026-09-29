@@ -233,6 +233,86 @@ Inspect the service with `systemctl --user status postgresql` on Linux or
 Changing the pinned PostgreSQL major version intentionally selects a new data
 directory; migrate the existing cluster before changing that pin.
 
+## Google Calendar CLI
+
+Home Manager installs `gogcli` (the `gog` command) on macOS and Linux from
+the Nixpkgs revision pinned in `flake.lock`. It is also available in
+`nix develop`, or without switching your home configuration:
+
+```bash
+nix run .#gogcli -- --version
+```
+
+Intel macOS uses the repository's separate Nixpkgs pin and may have an older
+CLI; consult `gog --help` for the installed version's options.
+
+### One-time authorization
+
+1. Create a [Google Cloud project](https://console.cloud.google.com/projectcreate)
+   and enable the **Google Calendar API**.
+2. Configure the OAuth consent screen. For a personal Google account, choose
+   **External** and change the publishing status to **In production**.
+   External apps left in **Testing** issue Calendar refresh tokens that expire
+   after seven days. Publishing is separate from submitting for verification;
+   personal unverified apps can still show Google's unverified-app warning.
+3. Create a **Desktop app** OAuth client and download its JSON outside this
+   checkout. Do not put credentials or tokens in Git, Nix expressions, or
+   Home Manager-managed files: the Nix store is not secret storage.
+4. On macOS, explicitly select Keychain, then import the client and authorize
+   only Calendar (replace the path and email):
+
+```bash
+gog auth keyring keychain
+gog auth credentials ~/Downloads/client_secret.json
+gog auth add you@gmail.com --services calendar
+gog auth list --check
+```
+
+The browser consent step is manual; installation never authorizes an account.
+The CLI stores the refresh token in Keychain and refreshes access tokens as
+needed. Keychain must be accessible to the process running `gog`.
+On Linux, use the platform keyring with `gog auth keyring auto`; for headless
+machines, provision the encrypted file backend and its password separately
+using the [upstream authentication guide](https://gogcli.sh/auth-clients.html).
+Do not commit a keyring password or export refresh tokens into shell startup
+files. If you authorized while the app was in Testing, authorize again after
+publishing with `gog auth add you@gmail.com --services calendar --force-consent`.
+
+### Create events
+
+Create a dedicated **Automation** calendar in Google Calendar, then find its ID:
+
+```bash
+gog --account you@gmail.com calendar calendars --json
+```
+
+Use that ID instead of `primary` below to target the dedicated calendar.
+The following command **creates a real event**; replace the example times and
+UTC offsets with the intended local date/time:
+
+```bash
+gog --account you@gmail.com --no-input calendar create primary \
+  --summary "Dentist" \
+  --from "2026-10-05T10:00:00-04:00" \
+  --to   "2026-10-05T11:00:00-04:00" \
+  --json
+```
+
+On versions supporting `--dry-run`, add that flag to preview the request without
+creating an event. Scripts should select the account and calendar explicitly,
+use `--no-input` to fail instead of prompting, and consume JSON output.
+After an uncertain network failure, inspect the calendar before retrying a
+create command to avoid duplicate events.
+
+Calendar-only authorization still grants broad Calendar access, not add-only
+access or access limited to one calendar. A dedicated calendar organizes writes;
+it is not an authorization boundary. No Gmail or Drive consent is needed.
+Revoke access through your Google Account's third-party connections when it is
+no longer required.
+
+References: [upstream setup](https://gogcli.sh/quickstart.html),
+[Google token expiration](https://developers.google.com/identity/protocols/oauth2#expiration).
+
 
 ## bootstrap
 
