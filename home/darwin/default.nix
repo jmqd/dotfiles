@@ -22,11 +22,11 @@ let
   spotifyPackage =
     if pkgs.stdenv.hostPlatform.system == "aarch64-darwin" then
       pkgs.spotify.overrideAttrs {
-        version = "1.3.1.234";
+        version = "1.3.3.264";
         # The CDN URL moves; verify the bundle version before refreshing the hash.
         src = pkgs.fetchurl {
           url = "https://download.scdn.co/SpotifyARM64.dmg";
-          hash = "sha256-MBccsEHAd0mtQfwEh8bZwOKDuXqUXDR9Zxnsb/4hvgc=";
+          hash = "sha256-V5R7WMMoIYY3nu+BOC3uoO/sxOPrds6BPqm0U3vBWaM=";
         };
         # Generic fixup invalidates the vendor's Apple signature.
         dontFixup = true;
