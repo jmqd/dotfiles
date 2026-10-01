@@ -472,7 +472,8 @@ main() {
 	npm_audit "oracle" "pkgs/oracle"
 
 	local gws_src trueflow_src notion_src voxtype_src
-	gws_src="$(flake_expr "flake.packages.\"${system}\".googleworkspace-cli.src.outPath")"
+	# Build the source so the lockfile exists even when the store lacks it.
+	gws_src="$(nix build --no-link --print-out-paths "$repo_root#packages.${system}.googleworkspace-cli.src")"
 	trueflow_src="$(input_path trueflow)"
 	notion_src="$(input_path notion-cli)"
 	voxtype_src="$(input_path voxtype)"
@@ -486,7 +487,8 @@ main() {
 		RUSTSEC-2026-0099 \
 		RUSTSEC-2026-0104 \
 		RUSTSEC-2026-0185 \
-		RUSTSEC-2026-0258
+		RUSTSEC-2026-0258 \
+		RUSTSEC-2026-0285
 	cargo_audit_lock \
 		"trueflow" \
 		"$trueflow_src/trueflow/Cargo.lock"
@@ -501,7 +503,8 @@ main() {
 		RUSTSEC-2026-0099 \
 		RUSTSEC-2026-0194 \
 		RUSTSEC-2026-0195 \
-		RUSTSEC-2026-0204
+		RUSTSEC-2026-0204 \
+		RUSTSEC-2026-0285
 
 	govulncheck_notion_cli "$notion_src"
 
