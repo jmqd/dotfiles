@@ -28,10 +28,7 @@ let
       luatexja
       ;
   };
-  aspellWithDicts = pkgs.aspellWithDicts (dicts: [
-    dicts.en
-    dicts."en-computers"
-  ]);
+  aspellWithDicts = pkgs.aspellWithDicts (dicts: [ dicts.en ]);
   misePackage =
     if pkgs.stdenv.hostPlatform.isDarwin then
       (pkgs.mise.override {
