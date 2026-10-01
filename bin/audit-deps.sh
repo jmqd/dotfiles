@@ -285,7 +285,9 @@ cargo_audit_lock() {
 	nix run --inputs-from "$repo_root" nixpkgs#cargo-audit -- audit --file "$lock_file" --json >"$json_file" 2>"$json_stderr"
 	set -e
 
-	if ! jq -r '[.vulnerabilities.list[]?.advisory.id] | sort | .[]' "$json_file" | sort -u >"$actual_file"; then
+	# Empty or error output must fail; jq alone accepts empty input.
+	if ! jq -e '.vulnerabilities.list | type == "array"' "$json_file" >/dev/null 2>&1 ||
+		! jq -r '[.vulnerabilities.list[].advisory.id] | sort | .[]' "$json_file" | sort -u >"$actual_file"; then
 		cat "$json_stderr" "$json_file"
 		fail "cargo audit JSON failed for $name"
 		return
