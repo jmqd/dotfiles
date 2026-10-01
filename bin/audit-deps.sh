@@ -449,7 +449,7 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version pi_wrapper_version oracle_version claude_version codex_version codex_desktop_version wispr_flow_version notion_version gws_version
+	local pi_version oracle_version claude_version codex_version codex_desktop_version wispr_flow_version notion_version gws_version
 	pi_version="$(package_version "$system" pi)"
 	oracle_version="$(package_version "$system" oracle)"
 	claude_version="$(package_version "$system" claude-code)"
@@ -458,10 +458,8 @@ main() {
 	gws_version="$(package_version "$system" googleworkspace-cli)"
 	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
 	wispr_flow_version="$(package_version "aarch64-darwin" wispr-flow)"
-	pi_wrapper_version="$(jq -er '.dependencies["@earendil-works/pi-coding-agent"]' pkgs/pi/package.json)"
 
 	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
-	check_npm_latest "pi-coding-agent" "@earendil-works/pi-coding-agent" "$pi_wrapper_version"
 	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
 	check_npm_latest "claude-code" "@anthropic-ai/claude-code" "$claude_version"
 	check_github_release_latest "openai/codex" "rust-v${codex_version}"
@@ -472,7 +470,6 @@ main() {
 	check_wispr_flow_latest "$wispr_flow_version"
 
 	npm_audit "oracle" "pkgs/oracle"
-	npm_audit "pi-coding-agent" "pkgs/pi"
 
 	local gws_src trueflow_src notion_src voxtype_src
 	gws_src="$(flake_expr "flake.packages.\"${system}\".googleworkspace-cli.src.outPath")"
