@@ -42,13 +42,6 @@ let
         })
     else
       pkgs.mise;
-  mitmproxyPackage = pkgs.mitmproxy.overridePythonAttrs (old: {
-    pythonRelaxDeps =
-      let
-        relaxDeps = old.pythonRelaxDeps or [ ];
-      in
-      if relaxDeps == true then true else relaxDeps ++ [ "msgpack" ];
-  });
 in
 {
   imports = [
@@ -221,10 +214,7 @@ in
         netcat-openbsd
         nmap
         rustscan
-        (sherlock.overridePythonAttrs (_: {
-          # Nixpkgs #540584: Sherlock works with pandas 3; upstream metadata is stale.
-          pythonRelaxDeps = [ "pandas" ];
-        }))
+        sherlock
         socat
         subfinder
         theharvester
@@ -253,7 +243,7 @@ in
 
         # Packet, protocol, and traffic analysis.
         bettercap
-        mitmproxyPackage
+        mitmproxy
         netsniff-ng
         ngrep
         python3Packages.scapy
