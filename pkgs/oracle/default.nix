@@ -4,7 +4,7 @@
 }:
 buildNpmPackage rec {
   pname = "oracle";
-  version = "0.21.3";
+  version = "0.21.4";
 
   src = lib.fileset.toSource {
     root = ./.;
@@ -14,7 +14,7 @@ buildNpmPackage rec {
       ./bin
     ];
   };
-  npmDepsHash = "sha256-Qx5jA3CtoUDGpJsoq8sRP0Y3GgP+3LZXWzY4qDDfCRA=";
+  npmDepsHash = "sha256-tcciLMKJnAh8wun6gAJPIF8aMwctR7sLDmNeuInOfCM=";
   npmDepsFetcherVersion = 2;
   dontNpmBuild = true;
 
