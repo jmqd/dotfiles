@@ -50,6 +50,7 @@
       nixpkgs,
       nixpkgs-darwin-x86,
       flake-utils,
+      rust-overlay,
       notion-cli,
       trueflow,
       trueflow-darwin-x86,
@@ -64,6 +65,22 @@
       trueflowFor = system: if system == "x86_64-darwin" then trueflow-darwin-x86 else trueflow;
       homeManagerFor =
         system: if system == "x86_64-darwin" then home-manager-darwin-x86 else home-manager;
+
+      # Local crates build with the newest stable Rust in the locked rust-overlay
+      # rather than whichever rustc the Nixpkgs revision happens to ship.
+      rustPlatformFor =
+        system:
+        let
+          pkgs = import (nixpkgsFor system) {
+            inherit system;
+            overlays = [ rust-overlay.overlays.default ];
+          };
+          toolchain = pkgs.rust-bin.stable.latest.minimal;
+        in
+        pkgs.makeRustPlatform {
+          cargo = toolchain;
+          rustc = toolchain;
+        };
 
       mkNotionCliPkg =
         system:
@@ -154,8 +171,16 @@
           pkgs = import (nixpkgsFor system) { inherit system; };
         in
         pkgs.callPackage ./pkgs/flow {
+          rustPlatform = rustPlatformFor system;
           zoekt = pkgs.callPackage ./pkgs/zoekt { };
         };
+
+      mkOmpPhonePkg =
+        system:
+        let
+          pkgs = import (nixpkgsFor system) { inherit system; };
+        in
+        pkgs.callPackage ./projects/omp-phone { rustPlatform = rustPlatformFor system; };
 
       mkVoxtypePkg =
         system:
@@ -180,6 +205,7 @@
           codexPkg = mkCodexPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
+          ompPhonePkg = mkOmpPhonePkg system;
           voxtypePkg = mkVoxtypePkg system;
         in
         {
@@ -211,6 +237,7 @@
               trueflowPkg
             ]
             ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
+            services.omp-phone.package = ompPhonePkg;
             programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
               enable = true;
               package = voxtypePkg;
@@ -462,7 +489,7 @@
             home-manager = (homeManagerFor system).packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             omp = piPkg;
-            omp-phone = pkgs.callPackage ./projects/omp-phone { };
+            omp-phone = mkOmpPhonePkg system;
             oracle = oraclePkg;
             pi = piPkg;
             secrets-lint = secretsLint;

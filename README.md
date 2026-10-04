@@ -500,6 +500,10 @@ missing components. An existing installation is not updated during a switch.
 Run `just rust-update` (or `bin/bootstrap-rust.sh --update stable`) to update it
 explicitly.
 
+Nix builds of `flow` and `omp-phone` do not use rustup or the Nixpkgs `rustc`.
+They use the newest stable toolchain in the locked `rust-overlay` input, so
+`nix flake update rust-overlay` advances their compiler.
+
 ## direnv
 
 ```bash
