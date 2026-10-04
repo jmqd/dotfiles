@@ -4,6 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
+    # Last nixpkgs-unstable revision before the GCC 16 / pyjwt 2.14 breakage;
+    # see pkgsPreGcc16For below.
+    nixpkgs-pre-gcc16.url = "github:NixOS/nixpkgs/00455b0a3690d3f5dc61e9aef4277dc86235b73f";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
@@ -49,6 +52,7 @@
     {
       nixpkgs,
       nixpkgs-darwin-x86,
+      nixpkgs-pre-gcc16,
       flake-utils,
       rust-overlay,
       notion-cli,
@@ -65,6 +69,21 @@
       trueflowFor = system: if system == "x86_64-darwin" then trueflow-darwin-x86 else trueflow;
       homeManagerFor =
         system: if system == "x86_64-darwin" then home-manager-darwin-x86 else home-manager;
+
+      # Packages that fail on current nixpkgs-unstable come from the pre-GCC 16
+      # revision until their fixes land. Drop each use once it builds on
+      # unstable, then drop this input:
+      # - ltrace: GCC 16 test failure, NixOS/nixpkgs#569799
+      # - trunk: vendored libdeflate needs evex512, NixOS/nixpkgs#569964
+      # - semgrep: requires pyjwt 2.13, NixOS/nixpkgs#569851
+      # - prowler: depends on kingfisher 1.113.0, whose version check fails;
+      #   fixed by NixOS/nixpkgs#569147 (merged to master)
+      # Intel Darwin stays on its own 26.05 release branch.
+      pkgsPreGcc16For =
+        system:
+        import (if system == "x86_64-darwin" then nixpkgs-darwin-x86 else nixpkgs-pre-gcc16) {
+          inherit system;
+        };
 
       # Local crates build with the newest stable Rust in the locked rust-overlay
       # rather than whichever rustc the Nixpkgs revision happens to ship.
@@ -609,6 +628,7 @@
           inherit pkgs;
           extraSpecialArgs = {
             inherit emacs-sops;
+            pkgsPreGcc16 = pkgsPreGcc16For system;
           };
           modules = [
             module
@@ -688,6 +708,7 @@
         }:
         nixpkgs.lib.nixosSystem {
           inherit system;
+          specialArgs.pkgsPreGcc16 = pkgsPreGcc16For system;
           modules = [
             hostModule
             home-manager.nixosModules.home-manager
@@ -696,6 +717,7 @@
               home-manager.useGlobalPkgs = true;
               home-manager.extraSpecialArgs = {
                 inherit emacs-sops;
+                pkgsPreGcc16 = pkgsPreGcc16For system;
               };
               home-manager.users.jmq =
                 {

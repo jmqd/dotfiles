@@ -107,6 +107,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-pre-gcc16": {
+      "locked": {
+        "lastModified": 1790178388,
+        "narHash": "sha256-kK3t7gwoz4Nx8RF46cs1Xz/skKNcK7y3KYP+gGqX6W8=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "00455b0a3690d3f5dc61e9aef4277dc86235b73f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "00455b0a3690d3f5dc61e9aef4277dc86235b73f",
+        "type": "github"
+      }
+    },
     "notion-cli": {
       "flake": false,
       "locked": {
@@ -132,6 +148,7 @@
         "home-manager-darwin-x86": "home-manager-darwin-x86",
         "nixpkgs": "nixpkgs",
         "nixpkgs-darwin-x86": "nixpkgs-darwin-x86",
+        "nixpkgs-pre-gcc16": "nixpkgs-pre-gcc16",
         "notion-cli": "notion-cli",
         "rust-overlay": "rust-overlay",
         "trueflow": "trueflow",

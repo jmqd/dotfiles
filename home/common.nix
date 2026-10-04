@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  pkgsPreGcc16,
   ...
 }:
 let
@@ -148,7 +149,7 @@ in
         bcc
         bpftrace
         flamegraph
-        ltrace
+        pkgsPreGcc16.ltrace
         perf
         (lib.lowPrio perf-tools)
         strace
@@ -262,8 +263,8 @@ in
         kubeaudit
         kubescape
         osv-scanner
-        prowler
-        semgrep
+        pkgsPreGcc16.prowler
+        pkgsPreGcc16.semgrep
         slsa-verifier
         syft
         trivy
