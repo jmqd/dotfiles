@@ -313,6 +313,17 @@ no longer required.
 References: [upstream setup](https://gogcli.sh/quickstart.html),
 [Google token expiration](https://developers.google.com/identity/protocols/oauth2#expiration).
 
+## Cargo build cleanup
+
+Shared Home Manager packages include `cargo-sweep`. After applying Home Manager,
+preview removal of Cargo build artifacts older than 30 days in the current project:
+
+```bash
+cargo sweep --time 30 --dry-run
+```
+
+Omit `--dry-run` to perform the cleanup.
+
 
 ## bootstrap
 
