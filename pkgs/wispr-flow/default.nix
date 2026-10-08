@@ -5,15 +5,15 @@
   undmg,
 }:
 let
-  version = "1.6.1034";
+  version = "1.6.1074";
   sources = {
     aarch64-darwin = {
       url = "https://dl.wisprflow.com/wispr-flow/darwin/arm64/dmgs/Flow-v${version}.dmg";
-      hash = "sha256-AFFg3sj+DlP+PLBjBV6cGLLuSMBlG29zTZn8CbUwjHU=";
+      hash = "sha256-2PjEchPDKQ7E2jJTNQYJUDFDWEbLJIpSf/YtMZiQPpI=";
     };
     x86_64-darwin = {
       url = "https://dl.wisprflow.com/wispr-flow/darwin/x64/dmgs/Flow-v${version}.dmg";
-      hash = "sha256-AM5yTChgBPnvC9YbG3Toe9Gl0cDj57tvKo9Wqldi9cA=";
+      hash = "sha256-24ixBmiYr5ENTcJL6OcrI7WOyPaEpxZvtvw3sxWYraA=";
     };
   };
   source =
