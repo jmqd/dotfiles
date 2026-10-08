@@ -16,24 +16,24 @@
   darwin,
 }:
 let
-  version = "18.5.1";
+  version = "18.8.4";
 
   sources = {
     "aarch64-darwin" = {
       asset = "omp-darwin-arm64";
-      hash = "sha256-Kr2BYavxNUxZJUfmaeKnqfbmO+EVb6ZYZdKn2wsR/3k=";
+      hash = "sha256-nW+LW+nWtGVi7lYKL9kLxbHzZNpmrfwPia2oLuE2dnU=";
     };
     "x86_64-darwin" = {
       asset = "omp-darwin-x64";
-      hash = "sha256-nnlsbZqh6+2fysINWTe1ezrxW5ZOuoSDrdWWZ9MVlJw=";
+      hash = "sha256-Sz0TDXcenbeP8vgG/fx8zUD+bu1F6xdFDO3y83OGcAo=";
     };
     "aarch64-linux" = {
       asset = "omp-linux-arm64";
-      hash = "sha256-57gblrP585Hsivx+5kwFLOF4MpD4i7tZujbRWztOknw=";
+      hash = "sha256-4SmD0GOhlG16ogufpALApKxl7vomwxaMUCxPKKBM070=";
     };
     "x86_64-linux" = {
       asset = "omp-linux-x64";
-      hash = "sha256-+3Y46C8MnQh+luFdPrg6Zi2SN0zZBxh9bU0mBeOfHjo=";
+      hash = "sha256-stuiI/va4nrL2Zvi8+droQuq4XaPnFfO4wxEDzCN6k4=";
     };
   };
 
