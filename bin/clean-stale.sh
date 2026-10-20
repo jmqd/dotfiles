@@ -21,8 +21,7 @@ Deletes, once idle for AGE:
   - Rust target dirs, or the idle profiles and task dirs inside them
   - other tagged build caches (.pytest_cache, .mypy_cache, ...)
   - per-app caches in ~/Library/Caches and ~/.cache, package caches
-    (npm, bun, yarn, Go modules, rustup downloads, cargo sources and git
-    checkouts), Xcode DerivedData
+    (npm, bun, yarn, Go modules, rustup downloads), Xcode DerivedData
   - your files in the temp directories
   - linked git worktrees that are clean, whose HEAD a branch, tag, or
     remote holds, and whose ignored files are all build output
@@ -683,12 +682,8 @@ plan_package_caches() {
 	done
 	plan_entries cache "$rustup_home/downloads"
 	plan_entries cache "$rustup_home/tmp"
-	# Cargo re-extracts sources and checks out git revisions again from its
-	# own caches, offline.
-	local dir
-	for dir in "$cargo_home"/registry/src/* "$cargo_home"/git/checkouts/*; do
-		plan_entries cache "$dir"
-	done
+	# Cargo's sources and git checkouts stay: cargo cleans them by its own
+	# record of use, and builds read them without leaving a trace on macOS.
 }
 
 # Only our own entries; dot-entries and Apple's per-daemon dirs belong to

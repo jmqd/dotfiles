@@ -545,16 +545,17 @@ clean-stale --root ~/src --dry-run # search only ~/src for projects
 
 Once idle, it deletes Rust `target` dirs (or the idle profiles and per-task
 dirs inside a busy one), tagged build caches, per-app and package caches
-(`~/Library/Caches`, `~/.cache`, npm, bun, yarn, Go modules, rustup downloads,
-cargo sources and git checkouts), Xcode DerivedData, your temp files, clean
-linked git worktrees, orphaned omp task copies, stale worktree entries, Nix
-`result*` out-links and `.direnv` dirs, profile generations past the newest
-five, and versioned rustup toolchains that nothing selects. Then it runs
-`docker`/`podman image prune` for images no container uses that were created
-before the threshold and `docker builder prune` for build cache unused for it;
-containers, networks, and volumes stay, since a stopped container can hold
-state. Last come `flatpak uninstall --unused`, `xcrun simctl delete
-unavailable`, and `nix-store --gc`.
+(`~/Library/Caches`, `~/.cache`, npm, bun, yarn, Go modules, rustup downloads),
+Xcode DerivedData, your temp files, clean linked git worktrees, orphaned omp
+task copies, stale worktree entries, Nix `result*` out-links and `.direnv`
+dirs, profile generations past the newest five, and versioned rustup toolchains
+that nothing selects. Cargo's own GC handles `~/.cargo`.
+
+Then it runs `docker`/`podman image prune` for images no container uses that
+were created before the threshold and `docker builder prune` for build cache
+unused for it; containers, networks, and volumes stay, since a stopped
+container can hold state. Last come `flatpak uninstall --unused`, `xcrun simctl
+delete unavailable`, and `nix-store --gc`.
 
 Idle means nothing was written, renamed, or held open by a process within the
 threshold. Reads count only where the filesystem records them: Linux relatime
