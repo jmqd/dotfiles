@@ -7,12 +7,13 @@ nl=$'\n'
 
 fixture="$(mktemp -d)"
 fixture="$(cd -P "$fixture" && pwd)"
-busy_pid=""
+busy_pids=()
 cleanup() {
-	if [ -n "$busy_pid" ]; then
-		kill "$busy_pid" 2>/dev/null || true
-		wait "$busy_pid" 2>/dev/null || true
-	fi
+	local pid
+	for pid in ${busy_pids[@]+"${busy_pids[@]}"}; do
+		kill "$pid" 2>/dev/null || true
+		wait "$pid" 2>/dev/null || true
+	done
 	chmod -R u+w "$fixture" 2>/dev/null || true
 	rm -rf "$fixture"
 }
@@ -32,6 +33,44 @@ for tool in awk basename bash cat chmod date df du find getconf git grep head id
 	fi
 done
 export PATH="$bin"
+
+# Logging stand-ins for the tools whose collectors clean-stale runs.
+calls="$fixture/calls"
+: >"$calls"
+bash_path="$(command -v bash)"
+cat >"$bin/nix-store" <<EOF
+#!$bash_path
+printf 'nix-store %s\n' "\$*" >>"$calls"
+EOF
+cat >"$bin/nix-env" <<EOF
+#!$bash_path
+printf 'nix-env %s\n' "\$*" >>"$calls"
+[ "\$1" = --profile ] && [ "\$3" = --delete-generations ] || exit 64
+profile="\$2"
+shift 3
+for generation in "\$@"; do
+	rm -f "\$profile-\$generation-link"
+done
+EOF
+cat >"$bin/rustup" <<EOF
+#!$bash_path
+case "\$*" in
+show) printf 'Default host: test-host\n' ;;
+default) printf 'stable-test-host (default)\n' ;;
+"override list") printf 'no overrides\n' ;;
+"toolchain uninstall "*)
+	printf 'rustup %s\n' "\$*" >>"$calls"
+	rm -rf "\$HOME/.rustup/toolchains/\$3"
+	;;
+*) exit 64 ;;
+esac
+EOF
+cat >"$bin/docker" <<EOF
+#!$bash_path
+[ "\$1" = info ] && exit 0
+printf 'docker %s\n' "\$*" >>"$calls"
+EOF
+chmod +x "$bin/nix-store" "$bin/nix-env" "$bin/rustup" "$bin/docker"
 
 export HOME="$fixture/home"
 tmp="$fixture/tmp"
@@ -126,7 +165,7 @@ mkfifo "$tmp/pipe/fifo"
 : >"$tmp/empty.log"
 file "$tmp/busy/data"
 (cd "$tmp/busy" && exec sleep 300) &
-busy_pid=$!
+busy_pids+=($!)
 
 # Git: "origin" holds pushed history, so clones of it hold no unique work.
 origin="$fixture/origin.git"
@@ -189,6 +228,46 @@ omp_copy "$HOME/.omp/wt/reused" $$ "Thu Jan  1 00:00:00 1970"
 omp_copy "$HOME/.omp/wt/dirty" "$dead_pid" "$live_start"
 file "$HOME/.omp/wt/dirty/m/wip.txt"
 
+# Nix: eight old profile generations, seven recent ones, out-links, and
+# dev shells.
+profiles="$HOME/.local/state/nix/profiles"
+mkdir -p "$profiles"
+for generation in 1 2 3 4 5 6 7 8; do
+	ln -s "/nix/store/fake-profile-$generation" "$profiles/profile-$generation-link"
+done
+ln -s profile-8-link "$profiles/profile"
+for generation in 1 2 3 4 5 6 7; do
+	ln -s "/nix/store/fake-channels-$generation" "$profiles/channels-$generation-link"
+	touch -h -m -d "$(stamp $((CLEAN_STALE_NOW - 3600)))" "$profiles/channels-$generation-link"
+done
+ln -s channels-7-link "$profiles/channels"
+ln -s /nix/store/fake-proj "$src/proj/result"
+ln -s /nix/store/fake-fresh "$src/proj/result-fresh"
+touch -h -m -d "$(stamp $((CLEAN_STALE_NOW - 3600)))" "$src/proj/result-fresh"
+ln -s "$fixture/precious" "$src/proj/result-local"
+for project in envproj busyenv; do
+	mkdir -p "$src/$project/.direnv"
+	ln -s /nix/store/fake-shell "$src/$project/.direnv/flake-profile-x"
+	file "$src/$project/.direnv/flake-profile-x.rc"
+done
+(cd "$src/busyenv" && exec sleep 300) &
+busy_pids+=($!)
+
+# rustup: what pins, defaults, channels, and recent use keep.
+toolchains="$HOME/.rustup/toolchains"
+for name in stable nightly 1.70.0 1.71.0 1.72.0 1.80.0 1.81.0 nightly-2026-01-01; do
+	file "$toolchains/$name-test-host/bin/rustc"
+done
+file "$toolchains/1.75.0-other-host/bin/rustc"
+touch_recent "$toolchains/1.81.0-test-host/bin/rustc"
+mkdir -p "$src/pinned" "$src/legacy" "$src/old/target/copy"
+printf '[toolchain]\nchannel = "1.80.0"\n' >"$src/pinned/rust-toolchain.toml"
+printf '1.72.0\n' >"$src/legacy/rust-toolchain"
+# Inside a target dir this run deletes, so it pins nothing.
+printf '[toolchain]\nchannel = "1.71.0"\n' >"$src/old/target/copy/rust-toolchain.toml"
+uninstalled=(1.70.0-test-host 1.71.0-test-host nightly-2026-01-01-test-host)
+installed=(stable-test-host nightly-test-host 1.72.0-test-host 1.80.0-test-host 1.81.0-test-host 1.75.0-other-host)
+
 run() {
 	bash "$script" "$@"
 }
@@ -230,6 +309,8 @@ expected_gone=(
 	"$HOME/.omp/wt/reused"
 	"$tmp/old-build"
 	"$tmp/scratch"
+	"$src/proj/result"
+	"$src/envproj/.direnv"
 )
 expected_kept=(
 	"$src/app/target/CACHEDIR.TAG"
@@ -255,6 +336,10 @@ expected_kept=(
 	"$src/wt-locked"
 	"$HOME/.omp/wt/live/m"
 	"$HOME/.omp/wt/dirty/m/wip.txt"
+	"$src/proj/result-fresh"
+	"$src/proj/result-local"
+	"$profiles/profile-4-link"
+	"$profiles/channels-1-link"
 )
 expected_notes=(
 	"$src/wt-dirty: uncommitted changes"
@@ -270,7 +355,7 @@ if [ "$(uname -s)" = Darwin ]; then
 	expected_kept+=("$HOME/Library/Caches/com.apple.Safari/data")
 fi
 if [ -e "$bin/lsof" ] || [ -d /proc/self/fd ]; then
-	expected_kept+=("$tmp/busy/data")
+	expected_kept+=("$tmp/busy/data" "$src/busyenv/.direnv")
 fi
 
 for bad_age in 0 5x 1w 1234567h; do
@@ -281,14 +366,21 @@ for bad_age in 0 5x 1w 1234567h; do
 	[ "$status" -eq 2 ] || fail "--age $bad_age: expected status 2, got $status"
 done
 
-# Nothing in the fixture is 200 hours old yet.
-output="$(run --age 200h --dry-run)"
-case "$output" in *"nothing idle for 200h"*) ;; *) fail "200h threshold planned deletions: $output" ;; esac
-
 # Paths the plan lists for deletion, without their sizes.
 planned() {
-	printf '%s\n' "$output" | awk '/^  / { sub(/^ +[^ ]+  /, ""); sub(/ \(git worktree remove\)$/, ""); print }'
+	printf '%s\n' "$output" | awk '/^  / { sub(/^ +[^ ]+  /, ""); sub(/ \((git worktree remove|nix out-link)\)$/, ""); print }'
 }
+
+# Fails when the plan deletes paths rather than only running collectors.
+expect_no_deletions() {
+	if planned | grep -q '^/'; then
+		fail "$1 planned deletions:$nl$output"
+	fi
+}
+
+# Nothing in the fixture is 200 hours old yet.
+output="$(run --age 200h --dry-run)"
+expect_no_deletions "200h threshold"
 
 output="$(run --dry-run)"
 for path in "${expected_gone[@]}"; do
@@ -305,6 +397,15 @@ for line in "${expected_notes[@]}"; do
 	case "$output" in *"  $line$nl"* | *"  $line") ;; *) fail "dry run does not report kept $line${nl}$output" ;; esac
 done
 case "$output" in *"$src/proj/.git: prune 1 stale worktree entries"*) ;; *) fail "dry run does not prune the gone worktree${nl}$output" ;; esac
+case "$output" in *"$profiles/profile: delete generations 1 2 3$nl"*) ;; *) fail "dry run does not delete old generations${nl}$output" ;; esac
+case "$output" in *"$profiles/channels:"*) fail "dry run deletes recent generations" ;; esac
+for name in "${uninstalled[@]}"; do
+	case "$output" in *"rustup toolchain uninstall $name$nl"*) ;; *) fail "dry run does not uninstall $name${nl}$output" ;; esac
+done
+for name in "${installed[@]}"; do
+	case "$output" in *"rustup toolchain uninstall $name$nl"*) fail "dry run uninstalls $name" ;; esac
+done
+[ ! -s "$calls" ] || fail "dry run ran collectors:$nl$(cat "$calls")"
 assert_kept "${expected_gone[@]}" "${expected_kept[@]}"
 
 set +e
@@ -319,6 +420,21 @@ if ! output="$(run --yes 2>&1)"; then
 fi
 assert_gone "${expected_gone[@]}"
 assert_kept "${expected_kept[@]}"
+for name in "${uninstalled[@]}"; do
+	assert_gone "$toolchains/$name"
+done
+for name in "${installed[@]}"; do
+	assert_kept "$toolchains/$name"
+done
+
+# Deletions run first and nix-store --gc runs last, once roots are gone.
+expected_calls="rustup toolchain uninstall 1.70.0-test-host
+rustup toolchain uninstall 1.71.0-test-host
+rustup toolchain uninstall nightly-2026-01-01-test-host
+nix-env --profile $profiles/profile --delete-generations 1 2 3
+docker system prune --all --force --filter until=2160m
+nix-store --gc"
+[ "$(cat "$calls")" = "$expected_calls" ] || fail "collector calls:$nl$(cat "$calls")${nl}expected:$nl$expected_calls"
 
 # Removal kept the branches, pruned entries for gone directories, and left
 # every protected worktree registered.
@@ -333,6 +449,6 @@ for path in "$src/wt-dirty" "$src/wt-detached" "$src/wt-env" "$src/wt-locked"; d
 	case "$nl$registered$nl" in *"$nl$path$nl"*) ;; *) fail "worktree $path was unregistered" ;; esac
 done
 
-# A second run finds nothing new.
+# A second run finds nothing new to delete.
 output="$(run --dry-run)"
-case "$output" in *"nothing idle for 36h"*) ;; *) fail "second run planned deletions: $output" ;; esac
+expect_no_deletions "second run"

@@ -4,6 +4,8 @@
 set -euo pipefail
 
 readonly default_age=36h
+# The README's policy: the current generation and four rollbacks.
+readonly keep_generations=5
 readonly tab=$'\t'
 readonly nl=$'\n'
 
@@ -19,12 +21,23 @@ Deletes, once idle for AGE:
   - Rust target dirs, or the idle profiles and task dirs inside them
   - other tagged build caches (.pytest_cache, .mypy_cache, ...)
   - per-app caches in ~/Library/Caches and ~/.cache, package caches
-    (npm, bun, yarn, Go modules, rustup downloads), Xcode DerivedData
+    (npm, bun, yarn, Go modules, rustup downloads, cargo sources and git
+    checkouts), Xcode DerivedData
   - your files in the temp directories
   - linked git worktrees that are clean, whose HEAD a branch, tag, or
     remote holds, and whose ignored files are all build output
   - omp task copies whose owning process has exited
   - git worktree entries whose directories are gone
+  - nix result* out-links and direnv layout dirs (.direnv), except dev
+    shells of projects a process works in
+  - nix profile generations past the newest ${keep_generations}
+  - versioned rustup toolchains (1.85.0, nightly-2026-01-01) that no
+    default, override, or rust-toolchain file selects
+
+Then runs the garbage collectors it finds: docker and podman system prune
+(images, containers, networks, and build cache unused for AGE; volumes
+stay), flatpak uninstall --unused, xcrun simctl delete unavailable, and
+nix-store --gc last.
 
 Keeps anything written, renamed, or held open by a process within AGE;
 anything containing a socket or FIFO; empty files and directories; caches
@@ -511,11 +524,12 @@ plan_entries() {
 	done < <(children "$dir")
 }
 
-# Prints, NUL-separated, every CACHEDIR.TAG, .git, and rust-toolchain file
-# under the search and temp roots. Trees that cannot hold projects are pruned.
+# Prints, NUL-separated, every CACHEDIR.TAG, .git, rust-toolchain file,
+# direnv layout dir, and result* symlink under the search and temp roots.
+# Trees that cannot hold projects are pruned.
 discover() {
 	local prune=(
-		-name .direnv -o -name node_modules -o
+		-name node_modules -o
 		-name deps -o -name .fingerprint -o -name incremental -o
 		-path "$home/Library" -o -path "$home/.Trash" -o -path "$home/.local/share/Trash" -o
 		-path "$home/Pictures" -o -path "$home/Music" -o -path "$home/Movies" -o
@@ -523,21 +537,22 @@ discover() {
 		-path "$home/.npm" -o -path "$home/.nix-defexpr"
 	)
 	find "${search_roots[@]}" ${temp_roots[@]+"${temp_roots[@]}"} -xdev \
-		\( -name .git -type d -print0 -prune \) -o \
+		\( \( -name .git -o -name .direnv \) -type d -print0 -prune \) -o \
 		\( \( "${prune[@]}" \) -prune \) -o \
-		\( -type f \( -name CACHEDIR.TAG -o -name .git -o -name rust-toolchain -o -name rust-toolchain.toml \) -print0 \) \
+		\( -type f \( -name CACHEDIR.TAG -o -name .git -o -name rust-toolchain -o -name rust-toolchain.toml \) -print0 \) -o \
+		\( -type l \( -name result -o -name 'result-*' \) -print0 \) \
 		2>/dev/null || true
 }
 
 # Splits discoveries into cargo target dirs (cargo's tag plus
 # .rustc_info.json; vendored crates and CARGO_HOME carry only the tag),
-# other tagged caches, git checkouts, and toolchain pins.
+# other tagged caches, git checkouts, direnv layout dirs, nix out-links,
+# and toolchain pins.
 classify_discoveries() {
-	local path dir
-	: >"$work/rust-targets.unsorted"
-	: >"$work/build-caches.unsorted"
-	: >"$work/checkouts.unsorted"
-	: >"$work/pins.unsorted"
+	local path dir list
+	for list in rust-targets build-caches checkouts direnvs outlinks pins; do
+		: >"$work/$list.unsorted"
+	done
 	while IFS= read -r -d '' path; do
 		safe_path "$path" || continue
 		dir="${path%/*}"
@@ -554,11 +569,16 @@ classify_discoveries() {
 			fi
 			;;
 		*/.git) printf '%s\n' "$dir" >>"$work/checkouts.unsorted" ;;
+		*/.direnv) printf '%s\n' "$path" >>"$work/direnvs.unsorted" ;;
+		*/result | */result-*)
+			case "$(readlink -- "$path" 2>/dev/null || true)" in
+			/nix/store/*) printf '%s\n' "$path" >>"$work/outlinks.unsorted" ;;
+			esac
+			;;
 		*) printf '%s\n' "$path" >>"$work/pins.unsorted" ;;
 		esac
 	done
-	local list
-	for list in rust-targets build-caches checkouts pins; do
+	for list in rust-targets build-caches checkouts direnvs outlinks pins; do
 		LC_ALL=C sort -u "$work/$list.unsorted" >"$work/$list"
 	done
 }
@@ -655,6 +675,12 @@ plan_package_caches() {
 	done
 	plan_entries cache "$rustup_home/downloads"
 	plan_entries cache "$rustup_home/tmp"
+	# Cargo re-extracts sources and checks out git revisions again from its
+	# own caches, offline.
+	local dir
+	for dir in "$cargo_home"/registry/src/* "$cargo_home"/git/checkouts/*; do
+		plan_entries cache "$dir"
+	done
 }
 
 # Only our own entries; dot-entries and Apple's per-daemon dirs belong to
@@ -788,6 +814,184 @@ plan_worktree_prunes() {
 	done 3<"$work/prune-repos"
 }
 
+# Succeeds when LINK is a symlink that was not created or changed within
+# AGE.
+link_older() {
+	[ -n "$(find "$1" -maxdepth 0 -type l ! -newermm "$cutoff" ! -newercm "$cutoff" -print 2>/dev/null)" ]
+}
+
+# link_older, for a symlink we own.
+link_idle() {
+	[ -n "$(find "$1" -maxdepth 0 -user "$uid" -print 2>/dev/null)" ] && link_older "$1"
+}
+
+# Nix out-links (result, result-*) and direnv layout dirs are GC roots.
+# Idle ones go so that `nix-store --gc` can collect what they held. A
+# dev shell stays while any process works in its project: a shell that
+# loaded it days ago still runs its tools.
+plan_nix_roots() {
+	local path
+	while IFS= read -r path <&3; do
+		if link_idle "$path" && ! in_use "$path"; then
+			add link nix "$path"
+		fi
+	done 3<"$work/outlinks"
+	while IFS= read -r path <&3; do
+		in_use "${path%/.direnv}" || plan_path nix "$path"
+	done 3<"$work/direnvs"
+}
+
+# Prints, space-separated, the generations of PROFILE past the newest
+# $keep_generations (the README's policy) that are older than AGE, never
+# the current one.
+old_generations() {
+	local profile="$1" current link number rank=0
+	current="$(readlink -- "$profile" 2>/dev/null || true)"
+	current="${current##*/}"
+	for link in "$profile"-*-link; do
+		[ -L "$link" ] || continue
+		number="${link##*/}"
+		number="${number#"${profile##*/}"-}"
+		number="${number%-link}"
+		case "$number" in '' | *[!0-9]*) continue ;; esac
+		printf '%s\t%s\n' "$number" "$link"
+	done | LC_ALL=C sort -t "$tab" -k1,1nr | while IFS="$tab" read -r number link; do
+		rank=$((rank + 1))
+		if [ "$rank" -gt "$keep_generations" ] && [ "${link##*/}" != "$current" ] && link_older "$link"; then
+			printf '%s\n' "$number"
+		fi
+	done | LC_ALL=C sort -n | awk '{ printf "%s%s", sep, $0; sep = " " } END { if (NR) print "" }'
+}
+
+# nix-env deletes our profiles' old generations; root's get a note.
+plan_nix_generations() {
+	local dir profile old
+	command -v nix-env >/dev/null 2>&1 || return 0
+	for dir in "${XDG_STATE_HOME:-$home/.local/state}/nix/profiles" "/nix/var/nix/profiles/per-user/$(id -un)" /nix/var/nix/profiles; do
+		[ -d "$dir" ] || continue
+		for profile in "$dir"/*; do
+			[ -L "$profile" ] || continue
+			case "$profile" in *-link) continue ;; esac
+			safe_path "$profile" || continue
+			old="$(old_generations "$profile")"
+			[ -n "$old" ] || continue
+			if [ -n "$(find "$profile" -maxdepth 0 -user "$uid" -print 2>/dev/null)" ]; then
+				add generations nix "$profile" "$old"
+			else
+				note "$profile" "generations $old are idle; as root: nix-env --profile $profile --delete-generations $old"
+			fi
+		done
+	done
+}
+
+# Prints the toolchain a rust-toolchain file selects, if it names one.
+pin_channel() {
+	awk '
+		/^[[:space:]]*channel[[:space:]]*=/ {
+			line = $0
+			sub(/^[^=]*=[[:space:]]*["\047]/, "", line)
+			sub(/["\047].*$/, "", line)
+			print line
+			found = 1
+			exit
+		}
+		NF && first == "" { first = $1 }
+		# Legacy rust-toolchain files may hold just the name.
+		END { if (!found && first != "" && first !~ /[=\[]/) print first }
+	' "$1" 2>/dev/null || true
+}
+
+# Succeeds for channels that name one release: 1.85, 1.85.0, or a dated
+# beta or nightly.
+versioned_channel() {
+	case "$1" in
+	nightly-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] | beta-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) return 0 ;;
+	*[!0-9.]* | .* | *. | *..*) return 1 ;;
+	*.*) return 0 ;;
+	esac
+	return 1
+}
+
+# Succeeds when the search covered all of HOME.
+searched_home() {
+	local root
+	for root in "${search_roots[@]}"; do
+		case "$root" in
+		/) return 0 ;;
+		"$home") return 0 ;;
+		esac
+		case "$home/" in "$root"/*) return 0 ;; esac
+	done
+	return 1
+}
+
+# Uninstalls idle versioned toolchains (1.85.0, nightly-2026-04-15, ...)
+# that no default, override, or rust-toolchain file selects. Undated
+# channels (stable, beta, nightly) stay, since `cargo +nightly` uses them
+# without a pin. Pins are known only when the search covered HOME, and
+# pins inside directories this run deletes do not count.
+plan_rustup_toolchains() {
+	local host pin channel dir name
+	command -v rustup >/dev/null 2>&1 || return 0
+	[ -d "$rustup_home/toolchains" ] || return 0
+	if ! searched_home; then
+		note "$rustup_home/toolchains" "not pruned: rust-toolchain pins are only known when searching $home"
+		return 0
+	fi
+	host="$(cd / && RUSTUP_AUTO_INSTALL=0 rustup show 2>/dev/null | sed -n 's/^Default host: //p' || true)"
+	[ -n "$host" ] || return 0
+	{
+		(cd / && RUSTUP_AUTO_INSTALL=0 rustup default 2>/dev/null | awk '{ print $1 }') || true
+		(cd / && rustup override list 2>/dev/null | awk '{ print $NF }') || true
+		while IFS= read -r pin <&3; do
+			if under_planned "$pin"; then
+				continue
+			fi
+			channel="$(pin_channel "$pin")"
+			case "$channel" in
+			"") ;;
+			*-"$host") printf '%s\n' "$channel" ;;
+			*) printf '%s\n' "$channel-$host" ;;
+			esac
+		done 3<"$work/pins"
+	} >"$work/selected-toolchains"
+	for dir in "$rustup_home/toolchains"/*; do
+		[ -d "$dir" ] && [ ! -L "$dir" ] || continue
+		name="${dir##*/}"
+		safe_path "$name" || continue
+		case "$name" in *-"$host") ;; *) continue ;; esac
+		versioned_channel "${name%-"$host"}" || continue
+		if grep -Fxq -- "$name" "$work/selected-toolchains"; then
+			continue
+		fi
+		if plannable "$dir"; then
+			add toolchain toolchain "$dir" "$name"
+		fi
+	done
+}
+
+# Other tools' garbage collectors; they run after every deletion above.
+plan_collectors() {
+	local tool
+	for tool in docker podman; do
+		command -v "$tool" >/dev/null 2>&1 || continue
+		if "$tool" info >/dev/null 2>&1; then
+			add containers gc "$tool"
+		else
+			note "$tool" "not reachable; skipped its prune"
+		fi
+	done
+	if command -v flatpak >/dev/null 2>&1; then
+		add flatpak gc flatpak
+	fi
+	if [ "$os" = Darwin ] && xcrun --find simctl >/dev/null 2>&1; then
+		add simctl gc simctl
+	fi
+	if command -v nix-store >/dev/null 2>&1; then
+		add nix-gc gc nix-store
+	fi
+}
+
 # Drops repeated entries and entries inside another planned directory:
 # deleting the parent covers them.
 dedupe_plan() {
@@ -816,21 +1020,25 @@ human_kb() {
 }
 
 # Records sizes; drops paths that occupy no blocks, since deleting them
-# frees nothing.
+# frees nothing. Links and commands free space only through a collector.
 size_plan() {
 	local method label path arg kb
 	while IFS="$tab" read -r method label path arg <&3; do
 		kb=0
-		if [ "$method" != prune ]; then
+		case "$method" in
+		path | worktree | toolchain)
 			kb="$({ du -skx -- "$path" 2>/dev/null || true; } | awk 'NR == 1 { print $1 }')"
 			kb="${kb:-0}"
-		fi
+			;;
+		esac
 		if [ "$method" = path ] && [ "$kb" -eq 0 ]; then
 			continue
 		fi
 		printf '%s\t%s\t%s\t%s\t%s\n' "$kb" "$method" "$label" "$path" "$arg"
 	done 3<"$plan" >"$work/sized"
 }
+
+readonly sections="rust build-cache cache tmp xcode agent worktree nix toolchain gc"
 
 label_title() {
 	case "$1" in
@@ -841,26 +1049,36 @@ label_title() {
 	xcode) echo "Xcode DerivedData" ;;
 	agent) echo "Orphaned omp task copies" ;;
 	worktree) echo "Git worktrees" ;;
+	nix) echo "Nix roots and generations" ;;
+	toolchain) echo "Rust toolchains" ;;
+	gc) echo "Garbage collectors" ;;
 	esac
 }
 
 # Prints each section largest first. A parent with more than five planned
-# entries shows its four largest and one line for the rest.
+# paths shows its four largest and one line for the rest.
 print_plan() {
 	local label
-	for label in rust build-cache cache tmp xcode agent worktree; do
+	for label in $sections; do
 		awk -F '\t' -v label="$label" '$3 == label' "$work/sized" | LC_ALL=C sort -t "$tab" -k1,1nr >"$work/section"
 		[ -s "$work/section" ] || continue
 		printf '%s\n' "$(label_title "$label")"
-		awk -F '\t' '
+		awk -F '\t' -v age_m="$age_minutes" '
 			function show(method, path, arg) {
 				if (method == "worktree") return path " (git worktree remove)"
 				if (method == "prune") return path (arg > 0 ? ": prune " arg " stale worktree entries" : ": prune worktree entries after deletions")
+				if (method == "link") return path " (nix out-link)"
+				if (method == "generations") return path ": delete generations " arg
+				if (method == "toolchain") return "rustup toolchain uninstall " arg
+				if (method == "containers") return path " system prune --all --filter until=" age_m "m"
+				if (method == "flatpak") return "flatpak uninstall --user --unused"
+				if (method == "simctl") return "xcrun simctl delete unavailable"
+				if (method == "nix-gc") return "nix-store --gc"
 				return path
 			}
 			{ parent = $4; sub(/\/[^\/]*$/, "", parent) }
-			NR == FNR { count[parent]++; next }
-			count[parent] > 5 && ++shown[parent] > 4 { rest[parent] += $1; next }
+			NR == FNR { if ($2 == "path") count[parent]++; next }
+			$2 == "path" && count[parent] > 5 && ++shown[parent] > 4 { rest[parent] += $1; next }
 			{ print $1 "\t" show($2, $4, $5) }
 			END { for (p in rest) print rest[p] "\t" p "/ (+" count[p] - 4 " more)" }
 		' "$work/section" "$work/section" | LC_ALL=C sort -t "$tab" -k1,1nr |
@@ -870,7 +1088,7 @@ print_plan() {
 
 print_notes() {
 	[ -s "$notes" ] || return 0
-	printf 'Kept\n'
+	printf 'Kept or skipped\n'
 	LC_ALL=C sort -u "$notes" | awk -F '\t' '{ printf "  %s: %s\n", $1, $2 }'
 }
 
@@ -901,11 +1119,76 @@ failed() {
 	failures=$((failures + 1))
 }
 
-# Re-checks every entry against fresh state: anything touched, opened, or
-# changed in git while the plan waited for confirmation stays. Prunes run
-# last so they also cover worktrees deleted with their directory.
-execute_plan() {
+# Succeeds when a planned row still qualifies; anything touched, opened,
+# or changed in git while the plan waited for confirmation stays.
+still_planned() {
+	local method="$1" path="$2"
+	case "$method" in
+	path | worktree | toolchain)
+		[ -e "$path" ] || return 1
+		if ! plannable "$path"; then
+			printf 'kept (used since planning): %s\n' "$path"
+			return 1
+		fi
+		if [ "$method" = worktree ]; then
+			assess_checkout "$path"
+			if [ -n "$checkout_risk" ] || ! ignored_regenerable "$path"; then
+				printf 'kept (changed since planning): %s\n' "$path"
+				return 1
+			fi
+		fi
+		;;
+	link)
+		[ -L "$path" ] || return 1
+		if ! link_idle "$path" || in_use "$path"; then
+			printf 'kept (changed since planning): %s\n' "$path"
+			return 1
+		fi
+		;;
+	esac
+}
+
+run_row() {
+	local method="$1" path="$2" arg="$3"
+	case "$method" in
+	path) delete_path "$path" ;;
+	link) rm -f -- "$path" ;;
+	worktree) git_repo "$arg" worktree remove "$path" ;;
+	toolchain) rustup toolchain uninstall "$arg" ;;
+	prune)
+		printf 'pruning worktree entries in %s\n' "$path"
+		git_repo "$path" worktree prune -v --expire="$git_expire" 2>&1
+		;;
+	generations)
+		# shellcheck disable=SC2086 # one argument per generation number
+		nix-env --profile "$path" --delete-generations $arg
+		;;
+	containers) "$path" system prune --all --force --filter "until=${age_minutes}m" ;;
+	flatpak) flatpak uninstall --user --unused -y ;;
+	simctl) xcrun simctl delete unavailable ;;
+	nix-gc) nix-store --gc ;;
+	*) return 1 ;;
+	esac
+}
+
+# Runs the planned rows whose method is one of the arguments.
+run_rows() {
 	local kb method label path arg
+	while IFS="$tab" read -r kb method label path arg <&3; do
+		case " $* " in *" $method "*) ;; *) continue ;; esac
+		still_planned "$method" "$path" || continue
+		if run_row "$method" "$path" "$arg"; then
+			finished "$kb"
+		else
+			failed "$method failed: $path"
+		fi
+	done 3<"$work/sized"
+}
+
+# Deletions first; prunes then cover worktrees deleted with their
+# directory, and collectors run last to reclaim what the deletions
+# released.
+execute_plan() {
 	snapshot_open_paths
 	reads_after="$plan_done"
 	reads_before=""
@@ -913,37 +1196,11 @@ execute_plan() {
 	assessed_risk=()
 	assessed_linked=()
 	assessed_common=()
-	while IFS="$tab" read -r kb method label path arg <&3; do
-		[ "$method" != prune ] || continue
-		[ -e "$path" ] || [ -L "$path" ] || continue
-		if ! plannable "$path"; then
-			printf 'kept (used since planning): %s\n' "$path"
-			continue
-		fi
-		if [ "$method" = worktree ]; then
-			assess_checkout "$path"
-			if [ -n "$checkout_risk" ] || ! ignored_regenerable "$path"; then
-				printf 'kept (changed since planning): %s\n' "$path"
-			elif git_repo "$arg" worktree remove "$path"; then
-				finished "$kb"
-			else
-				failed "could not remove worktree $path"
-			fi
-		elif delete_path "$path"; then
-			finished "$kb"
-		else
-			failed "could not delete $path"
-		fi
-	done 3<"$work/sized"
-	while IFS="$tab" read -r kb method label path arg <&3; do
-		[ "$method" = prune ] || continue
-		printf 'pruning worktree entries in %s\n' "$path"
-		if git_repo "$path" worktree prune -v --expire="$git_expire" 2>&1; then
-			finished 0
-		else
-			failed "git worktree prune failed in $path"
-		fi
-	done 3<"$work/sized"
+	run_rows path worktree link toolchain
+	run_rows prune
+	run_rows generations
+	run_rows containers flatpak simctl
+	run_rows nix-gc
 }
 
 main() {
@@ -966,6 +1223,10 @@ main() {
 	plan_omp_isolation
 	plan_worktrees
 	plan_worktree_prunes
+	plan_nix_roots
+	plan_nix_generations
+	plan_rustup_toolchains
+	plan_collectors
 	dedupe_plan
 	size_plan
 	# Round up so our last planning reads fall before the mark.
