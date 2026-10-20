@@ -25,6 +25,7 @@ in
   home.file = {
     ".bashrc".source = ../.bashrc;
     ".gdbinit".source = ../.gdbinit;
+    ".local/bin/clean-stale".source = ../bin/clean-stale.sh;
     ".local/bin/linear".source = ../bin/linear;
     ".local/bin/link-private-data".source = ../bin/link-private-data.sh;
     ".local/bin/lint-secrets".source = ../bin/lint-secrets.sh;

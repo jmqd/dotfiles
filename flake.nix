@@ -300,6 +300,7 @@
             "bin/audit-deps.sh"
             "bin/bootstrap-macos.sh"
             "bin/bootstrap-rust.sh"
+            "bin/clean-stale.sh"
             "bin/git-clean-stale.sh"
             "bin/hm-switch.sh"
             "bin/link-private-data.sh"
@@ -307,6 +308,7 @@
             "bin/setup-git-hooks.sh"
             "bin/setup-nix-cache.sh"
             "tests/bootstrap-rust-mapfile.sh"
+            "tests/clean-stale.sh"
             "tests/flow-search-smoke.sh"
             "tests/git-clean-stale.sh"
             "tests/hm-switch-failure.sh"
@@ -404,6 +406,30 @@
                   ]
                 }
                 bash tests/bootstrap-rust-mapfile.sh
+                touch $out
+              '';
+
+          cleanStaleTests =
+            pkgs.runCommand "clean-stale-tests"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.coreutils
+                  pkgs.findutils
+                  pkgs.gawk
+                  pkgs.gnugrep
+                  pkgs.gnused
+                  pkgs.lsof
+                ];
+              }
+              ''
+                cd ${
+                  checkSource [
+                    "bin/clean-stale.sh"
+                    "tests/clean-stale.sh"
+                  ]
+                }
+                bash tests/clean-stale.sh
                 touch $out
               '';
 
@@ -561,6 +587,7 @@
 
           checks = {
             bootstrap-rust-tests = bootstrapRustTests;
+            clean-stale-tests = cleanStaleTests;
             claude-code = claudeCodePkg;
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;

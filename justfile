@@ -12,6 +12,9 @@ check:
 audit-deps:
     bin/audit-deps.sh
 
+clean-stale *args:
+    bin/clean-stale.sh {{args}}
+
 lint-secrets:
     bin/lint-secrets.sh
 
