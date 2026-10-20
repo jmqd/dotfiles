@@ -32,7 +32,7 @@ Deletes, once idle for AGE:
     shells of projects a process works in
   - nix profile generations past the newest ${keep_generations}
   - versioned rustup toolchains (1.85.0, nightly-2026-01-01) that no
-    default, override, or rust-toolchain file selects
+    default, override, rust-toolchain file, or dylint driver selects
 
 Then runs the garbage collectors it finds: docker and podman image prune
 (images no container uses, created before AGE ago) and docker builder
@@ -934,10 +934,10 @@ searched_home() {
 }
 
 # Uninstalls idle versioned toolchains (1.85.0, nightly-2026-04-15, ...)
-# that no default, override, or rust-toolchain file selects. Undated
-# channels (stable, beta, nightly) stay, since `cargo +nightly` uses them
-# without a pin. Pins are known only when the search covered HOME, and
-# pins inside directories this run deletes do not count.
+# that no default, override, rust-toolchain file, or dylint driver
+# selects. Undated channels (stable, beta, nightly) stay, since `cargo
+# +nightly` uses them without a pin. Pins are known only when the search
+# covered HOME, and pins inside directories this run deletes do not count.
 plan_rustup_toolchains() {
 	local host pin channel dir name
 	command -v rustup >/dev/null 2>&1 || return 0
@@ -951,6 +951,12 @@ plan_rustup_toolchains() {
 	{
 		(cd / && RUSTUP_AUTO_INSTALL=0 rustup default 2>/dev/null | awk '{ print $1 }') || true
 		(cd / && rustup override list 2>/dev/null | awk '{ print $NF }') || true
+		# cargo-dylint builds one driver per toolchain it lints with.
+		for dir in "${DYLINT_DRIVER_PATH:-$home/.dylint_drivers}"/*; do
+			if [ -d "$dir" ]; then
+				printf '%s\n' "${dir##*/}"
+			fi
+		done
 		while IFS= read -r pin <&3; do
 			if under_planned "$pin"; then
 				continue

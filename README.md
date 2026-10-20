@@ -573,8 +573,9 @@ It keeps:
   `.env`;
 - dev shells of projects that a process has open;
 - undated toolchain channels (`stable`, `beta`, `nightly`), and versioned
-  toolchains that the default, an override, or a `rust-toolchain` file under
-  `$HOME` selects. A narrower `--root` skips toolchains.
+  toolchains that the default, an override, a dylint driver, or a
+  `rust-toolchain` file under `$HOME` selects. A narrower `--root` skips
+  toolchains.
 
 Each entry is checked again just before deletion. Run it by hand; it is not
 scheduled.

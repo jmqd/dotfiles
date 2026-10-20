@@ -255,10 +255,11 @@ busy_pids+=($!)
 
 # rustup: what pins, defaults, channels, and recent use keep.
 toolchains="$HOME/.rustup/toolchains"
-for name in stable nightly 1.70.0 1.71.0 1.72.0 1.80.0 1.81.0 nightly-2026-01-01; do
+for name in stable nightly 1.70.0 1.71.0 1.72.0 1.80.0 1.81.0 nightly-2026-01-01 nightly-2026-02-02; do
 	file "$toolchains/$name-test-host/bin/rustc"
 done
 file "$toolchains/1.75.0-other-host/bin/rustc"
+file "$HOME/.dylint_drivers/nightly-2026-02-02-test-host/dylint-driver"
 touch_recent "$toolchains/1.81.0-test-host/bin/rustc"
 mkdir -p "$src/pinned" "$src/legacy" "$src/old/target/copy"
 printf '[toolchain]\nchannel = "1.80.0"\n' >"$src/pinned/rust-toolchain.toml"
@@ -266,7 +267,7 @@ printf '1.72.0\n' >"$src/legacy/rust-toolchain"
 # Inside a target dir this run deletes, so it pins nothing.
 printf '[toolchain]\nchannel = "1.71.0"\n' >"$src/old/target/copy/rust-toolchain.toml"
 uninstalled=(1.70.0-test-host 1.71.0-test-host nightly-2026-01-01-test-host)
-installed=(stable-test-host nightly-test-host 1.72.0-test-host 1.80.0-test-host 1.81.0-test-host 1.75.0-other-host)
+installed=(stable-test-host nightly-test-host 1.72.0-test-host 1.80.0-test-host 1.81.0-test-host 1.75.0-other-host nightly-2026-02-02-test-host)
 
 # A recent read keeps a cache. Reads of what clean-stale reads itself, as
 # an earlier run leaves them under Linux relatime, change nothing.
