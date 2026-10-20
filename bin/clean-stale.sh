@@ -240,10 +240,10 @@ set_mtime() {
 	touch -d "$(date_at "$1" -u +%Y-%m-%dT%H:%M:%SZ)" "$2"
 }
 
-# Reference files for find's -newer tests. Our own scans read cache tags
-# and git metadata, so a read counts as use only inside a window: from the
-# cutoff to the start of the scan while planning, and after planning while
-# deleting.
+# Reference files for find's -newer tests. A read counts as use only
+# inside a window: from the cutoff to the start of the scan while
+# planning, and after planning while deleting. Reads that git makes
+# during this run (racily clean files, copied repos) then do not count.
 cutoff="$work/cutoff"
 scan_start="$work/scan-start"
 plan_done="$work/plan-done"
@@ -254,9 +254,16 @@ reads_before="$scan_start"
 
 # Succeeds when nothing at or below PATH was modified or changed after the
 # cutoff, no file there was read inside the read window, and no socket or
-# FIFO lives there. A tree we cannot fully read counts as busy.
+# FIFO lives there. A tree we cannot fully read counts as busy. Reads of
+# what this tool reads itself (cache tags, omp owner records, toolchain
+# pins, git metadata) never count; Linux relatime records those reads, so
+# a run would otherwise mark them busy for the next run.
 is_idle() {
-	local hit window=(! -type d -neweram "$reads_after")
+	local hit window=(
+		! -type d ! -name CACHEDIR.TAG ! -name .omp-isolation-owner.json
+		! -name rust-toolchain ! -name rust-toolchain.toml
+		! -name '.git*' ! -path '*/.git/*' -neweram "$reads_after"
+	)
 	if [ -n "$reads_before" ]; then
 		window+=(! -neweram "$reads_before")
 	fi

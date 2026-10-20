@@ -268,6 +268,17 @@ printf '[toolchain]\nchannel = "1.71.0"\n' >"$src/old/target/copy/rust-toolchain
 uninstalled=(1.70.0-test-host 1.71.0-test-host nightly-2026-01-01-test-host)
 installed=(stable-test-host nightly-test-host 1.72.0-test-host 1.80.0-test-host 1.81.0-test-host 1.75.0-other-host)
 
+# A recent read keeps a cache. Reads of what clean-stale reads itself, as
+# an earlier run leaves them under Linux relatime, change nothing.
+read_recently() {
+	touch -a -d "$(stamp $((CLEAN_STALE_NOW - 3600)))" "$@"
+}
+file "$HOME/.cache/read-app/data"
+read_recently "$HOME/.cache/read-app/data"
+read_recently "$src/old/target/CACHEDIR.TAG" "$src/old/target/copy/rust-toolchain.toml" \
+	"$HOME/.omp/wt/dead/.omp-isolation-owner.json" "$tmp/scratch/proj/.git" \
+	"$src/old3/target/dylint/clone/.git/HEAD" "$src/old3/target/dylint/clone/.gitignore"
+
 run() {
 	bash "$script" "$@"
 }
@@ -320,6 +331,7 @@ expected_kept=(
 	"$src/vendored/vendor/crate/docs/index.html"
 	"$HOME/.cargo/registry/cache/crate.crate"
 	"$HOME/.cache/fresh-app/data"
+	"$HOME/.cache/read-app"
 	"$HOME/.cache/huggingface/hub/model"
 	"$HOME/.cache/empty-app"
 	"$HOME/.cache/nix/eval-cache-v6/new.sqlite"
