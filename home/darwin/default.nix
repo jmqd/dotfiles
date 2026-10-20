@@ -39,6 +39,25 @@ let
       }
     else
       pkgs.spotify;
+  # nixpkgs lags upstream's Sparkle feed
+  # (https://web.whatsapp.com/desktop/mac_native/updates/?branch=master&configuration=Release).
+  whatsappPackage = pkgs.whatsapp-for-mac.overrideAttrs (old: rec {
+    version = "2.26.41.28";
+    src = pkgs.fetchzip {
+      extension = "zip";
+      name = "WhatsApp.app";
+      url = "https://web.whatsapp.com/desktop/mac_native/release/?version=${version}&extension=zip&configuration=Release&branch=master";
+      hash = "sha256-JyIXe5uU2KuDz2rCXuN2tcvo03bRuqmoWhxov8+/Se8=";
+    };
+    # Generic fixup invalidates the vendor's Apple signature.
+    dontFixup = true;
+    doInstallCheck = true;
+    installCheckPhase = ''
+      runHook preInstallCheck
+      /usr/bin/codesign --verify --deep --strict "$out/Applications/WhatsApp.app"
+      runHook postInstallCheck
+    '';
+  });
 in
 {
   imports = [
@@ -62,5 +81,6 @@ in
     pkgs.google-cloud-sdk
     orbstackPackage
     spotifyPackage
+    whatsappPackage
   ];
 }

@@ -199,6 +199,24 @@ check_wispr_flow_latest() {
 	note_upgrade "wispr-flow" "$current" "$latest_arm"
 }
 
+check_whatsapp_latest() {
+	local current="$1" latest
+	section "latest check: whatsapp-for-mac"
+
+	if ! latest="$(curl --fail --silent --show-error --location \
+		"https://web.whatsapp.com/desktop/mac_native/updates/?branch=master&configuration=Release" |
+		sed -n 's/.*enclosure url="[^"]*version=\([0-9.]*\)&amp;.*/\1/p' | head -n 1)"; then
+		fail "could not fetch WhatsApp release feed"
+		return
+	fi
+	if [[ ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+		fail "WhatsApp release feed has malformed version: $latest"
+		return
+	fi
+
+	note_upgrade "whatsapp-for-mac" "$current" "$latest"
+}
+
 # osv-scanner reads the lockfile directly, so no Node.js toolchain runs here.
 osv_audit_lock() {
 	local name="$1" lock_file="$2"
@@ -454,7 +472,7 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version oracle_version claude_version codex_desktop_version wispr_flow_version notion_version gws_version voxtype_version
+	local pi_version oracle_version claude_version codex_desktop_version wispr_flow_version whatsapp_version notion_version gws_version voxtype_version
 	pi_version="$(package_version "$system" pi)"
 	oracle_version="$(package_version "$system" oracle)"
 	claude_version="$(package_version "$system" claude-code)"
@@ -463,6 +481,7 @@ main() {
 	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
 	wispr_flow_version="$(package_version "aarch64-darwin" wispr-flow)"
 	voxtype_version="$(package_version "x86_64-linux" voxtype)"
+	whatsapp_version="$(flake_expr 'let ps = flake.homeConfigurations."macos-aarch64".config.home.packages; in (builtins.head (builtins.filter (p: (p.pname or "") == "whatsapp-for-mac") ps)).version')"
 
 	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
 	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
@@ -473,6 +492,7 @@ main() {
 
 	check_codex_desktop_latest "$codex_desktop_version"
 	check_wispr_flow_latest "$wispr_flow_version"
+	check_whatsapp_latest "$whatsapp_version"
 
 	# GHSA-vfj7-8cjw-p6xm: braces 3.0.3 nested-pattern DoS, no fixed release.
 	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json" GHSA-vfj7-8cjw-p6xm
