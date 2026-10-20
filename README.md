@@ -550,9 +550,11 @@ cargo sources and git checkouts), Xcode DerivedData, your temp files, clean
 linked git worktrees, orphaned omp task copies, stale worktree entries, Nix
 `result*` out-links and `.direnv` dirs, profile generations past the newest
 five, and versioned rustup toolchains that nothing selects. Then it runs
-`docker`/`podman system prune` for images, containers, networks, and build
-cache unused for the threshold (volumes stay), `flatpak uninstall --unused`,
-`xcrun simctl delete unavailable`, and `nix-store --gc` last.
+`docker`/`podman image prune` for images no container uses that were created
+before the threshold and `docker builder prune` for build cache unused for it;
+containers, networks, and volumes stay, since a stopped container can hold
+state. Last come `flatpak uninstall --unused`, `xcrun simctl delete
+unavailable`, and `nix-store --gc`.
 
 Idle means nothing was written, renamed, or held open by a process within the
 threshold. Reads count only where the filesystem records them: Linux relatime

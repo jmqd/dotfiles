@@ -444,7 +444,8 @@ expected_calls="rustup toolchain uninstall 1.70.0-test-host
 rustup toolchain uninstall 1.71.0-test-host
 rustup toolchain uninstall nightly-2026-01-01-test-host
 nix-env --profile $profiles/profile --delete-generations 1 2 3
-docker system prune --all --force --filter until=2160m
+docker image prune --all --force --filter until=2160m
+docker builder prune --force --filter until=2160m
 nix-store --gc"
 [ "$(cat "$calls")" = "$expected_calls" ] || fail "collector calls:$nl$(cat "$calls")${nl}expected:$nl$expected_calls"
 

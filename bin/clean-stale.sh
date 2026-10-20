@@ -34,9 +34,10 @@ Deletes, once idle for AGE:
   - versioned rustup toolchains (1.85.0, nightly-2026-01-01) that no
     default, override, or rust-toolchain file selects
 
-Then runs the garbage collectors it finds: docker and podman system prune
-(images, containers, networks, and build cache unused for AGE; volumes
-stay), flatpak uninstall --unused, xcrun simctl delete unavailable, and
+Then runs the garbage collectors it finds: docker and podman image prune
+(images no container uses, created before AGE ago) and docker builder
+prune (build cache unused for AGE), keeping containers, networks, and
+volumes; flatpak uninstall --unused; xcrun simctl delete unavailable; and
 nix-store --gc last.
 
 Keeps anything written, renamed, or held open by a process within AGE;
@@ -978,14 +979,20 @@ plan_rustup_toolchains() {
 }
 
 # Other tools' garbage collectors; they run after every deletion above.
+# Container runtimes lose only images and build cache: a stopped
+# container's writable layer can hold state, and `until` would judge it
+# by when it was created, not when it stopped.
 plan_collectors() {
 	local tool
 	for tool in docker podman; do
 		command -v "$tool" >/dev/null 2>&1 || continue
-		if "$tool" info >/dev/null 2>&1; then
-			add containers gc "$tool"
-		else
+		if ! "$tool" info >/dev/null 2>&1; then
 			note "$tool" "not reachable; skipped its prune"
+			continue
+		fi
+		add images gc "$tool"
+		if [ "$tool" = docker ]; then
+			add buildcache gc docker
 		fi
 	done
 	if command -v flatpak >/dev/null 2>&1; then
@@ -1077,7 +1084,8 @@ print_plan() {
 				if (method == "link") return path " (nix out-link)"
 				if (method == "generations") return path ": delete generations " arg
 				if (method == "toolchain") return "rustup toolchain uninstall " arg
-				if (method == "containers") return path " system prune --all --filter until=" age_m "m"
+				if (method == "images") return path " image prune --all --filter until=" age_m "m"
+				if (method == "buildcache") return path " builder prune --filter until=" age_m "m"
 				if (method == "flatpak") return "flatpak uninstall --user --unused"
 				if (method == "simctl") return "xcrun simctl delete unavailable"
 				if (method == "nix-gc") return "nix-store --gc"
@@ -1170,7 +1178,8 @@ run_row() {
 		# shellcheck disable=SC2086 # one argument per generation number
 		nix-env --profile "$path" --delete-generations $arg
 		;;
-	containers) "$path" system prune --all --force --filter "until=${age_minutes}m" ;;
+	images) "$path" image prune --all --force --filter "until=${age_minutes}m" ;;
+	buildcache) "$path" builder prune --force --filter "until=${age_minutes}m" ;;
 	flatpak) flatpak uninstall --user --unused -y ;;
 	simctl) xcrun simctl delete unavailable ;;
 	nix-gc) nix-store --gc ;;
@@ -1206,7 +1215,7 @@ execute_plan() {
 	run_rows path worktree link toolchain
 	run_rows prune
 	run_rows generations
-	run_rows containers flatpak simctl
+	run_rows images buildcache flatpak simctl
 	run_rows nix-gc
 }
 
