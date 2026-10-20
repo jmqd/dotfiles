@@ -549,6 +549,7 @@
             oracle = oraclePkg;
             pi = piPkg;
             secrets-lint = secretsLint;
+            spotify-export = pkgs.callPackage ./projects/spotify-export { };
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             voxtype = voxtypePkg;
@@ -706,6 +707,7 @@
                 "orbstack"
                 "raycast"
                 "spotify"
+                "whatsapp-for-mac"
                 "wispr-flow"
               ];
           };

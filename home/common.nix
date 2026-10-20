@@ -12,6 +12,7 @@ let
   enableTexliveOrgPdf = false;
 
   berkleyMono = pkgs.callPackage ../pkgs/berkley-mono { };
+  spotifyExport = pkgs.callPackage ../projects/spotify-export { };
   texliveOrgPdf = pkgs.texlive.combine {
     # Enough for normal Org LaTeX/PDF export, latexmk workflows, and CJK
     # documents via LuaLaTeX/XeLaTeX without pulling in scheme-full's multi-GB
@@ -83,6 +84,7 @@ in
   home.packages =
     (with pkgs; [
       berkleyMono
+      spotifyExport
       age
       aspellWithDicts
       awscli2
