@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::fs;
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -109,13 +109,19 @@ fn run(args: &Args) -> Result<()> {
         None => find_playlist_by_name(&api, &args.playlist)?,
     };
 
-    // Open the output only after every fallible lookup has succeeded.
-    let mut out: Box<dyn Write> = match &args.output {
-        Some(path) => Box::new(BufWriter::new(fs::File::create(path)?)),
-        None => Box::new(BufWriter::new(io::stdout().lock())),
-    };
-    let count = export(&api, &playlist_id, &mut out)?;
-    out.flush()?;
+    // Buffer the whole export so a mid-pagination failure never leaves a
+    // truncated file or clobbers an earlier good export.
+    let mut tsv = Vec::new();
+    let count = export(&api, &playlist_id, &mut tsv)?;
+    match &args.output {
+        Some(path) => {
+            let mut tmp = path.clone().into_os_string();
+            tmp.push(".tmp");
+            fs::write(&tmp, &tsv)?;
+            fs::rename(&tmp, path)?;
+        }
+        None => io::stdout().lock().write_all(&tsv)?,
+    }
     eprintln!("spotify-export: wrote {count} rows");
     Ok(())
 }
