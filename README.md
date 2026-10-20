@@ -500,6 +500,9 @@ nix run .#flow -- --help
 # Run credential-pattern lint manually
 nix run .#secrets-lint
 
+# Preview what has been idle for 36 hours (see "Cleaning idle files")
+just clean-stale --dry-run
+
 # Periodically scan Git history for committed secrets. Current allowlists cover
 # ignored local caches and old vendored oh-my-zsh dotenv sample-token docs.
 bin/lint-secrets.sh --history
@@ -525,6 +528,55 @@ template. OMP's `PERSONALITY.md` uses the same string without replacing its tool
 or workflow instructions. Edit the Nix string to change the shared wording, then
 apply it with `bin/hm-switch.sh`. Caveman mode requires an explicit request.
 
+## Cleaning idle files
+
+`clean-stale` deletes regenerable files that nothing has touched for 36 hours,
+then runs the garbage collectors it finds. Home Manager links
+`bin/clean-stale.sh` into `~/.local/bin`; `just clean-stale` runs it from the
+checkout. It prints the plan and asks before deleting anything.
+
+```bash
+clean-stale --dry-run              # print the plan only
+clean-stale                        # print the plan, then ask
+clean-stale --age 3d               # threshold: N or Nh hours, Nd days
+clean-stale --yes                  # skip the prompt; required without a TTY
+clean-stale --root ~/src --dry-run # search only ~/src for projects
+```
+
+Once idle, it deletes Rust `target` dirs (or the idle profiles and per-task
+dirs inside a busy one), tagged build caches, per-app and package caches
+(`~/Library/Caches`, `~/.cache`, npm, bun, yarn, Go modules, rustup downloads,
+cargo sources and git checkouts), Xcode DerivedData, your temp files, clean
+linked git worktrees, orphaned omp task copies, stale worktree entries, Nix
+`result*` out-links and `.direnv` dirs, profile generations past the newest
+five, and versioned rustup toolchains that nothing selects. Then it runs
+`docker`/`podman system prune` for images, containers, networks, and build
+cache unused for the threshold (volumes stay), `flatpak uninstall --unused`,
+`xcrun simctl delete unavailable`, and `nix-store --gc` last.
+
+Idle means nothing was written, renamed, or held open by a process within the
+threshold. Reads count only where the filesystem records them: Linux relatime
+records at most one read a day, and macOS records only the first read after a
+change. A cache that is only read can therefore look idle on macOS; its tool
+rebuilds it on next use.
+
+It keeps:
+
+- caches that hold installs or models (playwright, puppeteer, huggingface, ...)
+  and anything holding a socket or FIFO;
+- git checkouts with uncommitted changes, stashes, dependent worktrees, or
+  commits no remote or tag holds; the plan deletes around them and lists them
+  under "Kept or skipped";
+- linked worktrees with ignored files that are not build output, such as
+  `.env`;
+- dev shells of projects that a process has open;
+- undated toolchain channels (`stable`, `beta`, `nightly`), and versioned
+  toolchains that the default, an override, or a `rust-toolchain` file under
+  `$HOME` selects. A narrower `--root` skips toolchains.
+
+Each entry is checked again just before deletion. Run it by hand; it is not
+scheduled.
+
 ## Nix storage maintenance
 
 Keep the current generation and four rollback generations for each user profile:
@@ -541,10 +593,12 @@ collection removes only unreferenced store paths; discarded build results may ne
 to be downloaded or rebuilt later. Determinate Nix already runs automatic GC, so
 do not add a competing scheduled collector. If macOS denies access to an old app
 bundle, resolve App Management permission rather than changing store permissions.
+`clean-stale` applies the same generation policy to generations older than its
+threshold, then runs `nix-store --gc`.
 
 Inspect project `rust-toolchain` files and `rustup override list` before using
 `rustup toolchain uninstall VERSION`; different selectors such as `1.93` and
-`1.93.0` are not interchangeable.
+`1.93.0` are not interchangeable. `clean-stale` matches selectors exactly.
 
 Home Manager installs Rust only when the requested compiler is missing and adds
 missing components. An existing installation is not updated during a switch.
