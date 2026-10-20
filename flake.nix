@@ -589,8 +589,8 @@
 
           checks = {
             bootstrap-rust-tests = bootstrapRustTests;
-            clean-stale-tests = cleanStaleTests;
             claude-code = claudeCodePkg;
+            clean-stale-tests = cleanStaleTests;
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
             googleworkspace-cli = pkgs.gws;
