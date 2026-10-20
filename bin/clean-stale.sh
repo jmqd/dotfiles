@@ -21,11 +21,18 @@ Deletes, once idle for AGE:
   - per-app caches in ~/Library/Caches and ~/.cache, package caches
     (npm, bun, yarn, Go modules, rustup downloads), Xcode DerivedData
   - your files in the temp directories
+  - linked git worktrees that are clean, whose HEAD a branch, tag, or
+    remote holds, and whose ignored files are all build output
+  - omp task copies whose owning process has exited
+  - git worktree entries whose directories are gone
 
-Keeps anything written, renamed, read (where the filesystem records
-reads), or held open by a process within AGE; anything containing a
-socket or FIFO; empty files and directories; and caches that hold
-installs or models (playwright, puppeteer, huggingface, ...).
+Keeps anything written, renamed, or held open by a process within AGE;
+anything containing a socket or FIFO; empty files and directories; caches
+that hold installs or models (playwright, puppeteer, huggingface, ...);
+and any git checkout with uncommitted changes, stashes, or commits no
+remote or tag holds. Reads count only where the filesystem records them:
+Linux relatime records at most one read a day, and macOS records only the
+first read after each change.
 
 options:
   -n, --dry-run   print the plan and exit
@@ -168,6 +175,14 @@ if rm --version >/dev/null 2>&1; then
 else
 	rm_one_fs=-x
 fi
+have_git=0
+if command -v git >/dev/null 2>&1; then
+	have_git=1
+fi
+have_ps=0
+if command -v ps >/dev/null 2>&1; then
+	have_ps=1
+fi
 
 # Runs date(1) for epoch second $1 with the remaining options and format.
 date_at() {
@@ -193,22 +208,46 @@ trap 'rm -rf "$work"' EXIT
 plan="$work/plan"
 planned_dirs="$work/planned-dirs"
 open_paths="$work/open-paths"
+notes="$work/notes"
 : >"$plan"
 : >"$planned_dirs"
+: >"$notes"
 
 # CLEAN_STALE_NOW (epoch seconds) moves the clock for tests.
 now="${CLEAN_STALE_NOW:-$(date +%s)}"
 case "$now" in '' | *[!0-9]*) die "CLEAN_STALE_NOW must be epoch seconds" ;; esac
 cutoff_epoch=$((now - age_minutes * 60))
-cutoff="$work/cutoff"
-touch -d "$(date_at "$cutoff_epoch" -u +%Y-%m-%dT%H:%M:%SZ)" "$cutoff"
+git_expire="$(date_at "$cutoff_epoch" -u '+%Y-%m-%d %H:%M:%S +0000')"
 
-# Succeeds when nothing at or below PATH was modified, changed, or (files
-# only; our own scans read directories) accessed after the cutoff, and no
-# socket or FIFO lives there. A tree we cannot fully read counts as busy.
+current_epoch() {
+	printf '%s\n' "${CLEAN_STALE_NOW:-$(date +%s)}"
+}
+
+set_mtime() {
+	touch -d "$(date_at "$1" -u +%Y-%m-%dT%H:%M:%SZ)" "$2"
+}
+
+# Reference files for find's -newer tests. Our own scans read cache tags
+# and git metadata, so a read counts as use only inside a window: from the
+# cutoff to the start of the scan while planning, and after planning while
+# deleting.
+cutoff="$work/cutoff"
+scan_start="$work/scan-start"
+plan_done="$work/plan-done"
+set_mtime "$cutoff_epoch" "$cutoff"
+set_mtime "$now" "$scan_start"
+reads_after="$cutoff"
+reads_before="$scan_start"
+
+# Succeeds when nothing at or below PATH was modified or changed after the
+# cutoff, no file there was read inside the read window, and no socket or
+# FIFO lives there. A tree we cannot fully read counts as busy.
 is_idle() {
-	local hit
-	hit="$(find "$1" -xdev \( -type s -o -type p -o -newermm "$cutoff" -o -newercm "$cutoff" -o \( ! -type d -neweram "$cutoff" \) \) -print -quit 2>/dev/null)" || return 1
+	local hit window=(! -type d -neweram "$reads_after")
+	if [ -n "$reads_before" ]; then
+		window+=(! -neweram "$reads_before")
+	fi
+	hit="$(find "$1" -xdev \( -type s -o -type p -o -newermm "$cutoff" -o -newercm "$cutoff" -o \( "${window[@]}" \) \) -print -quit 2>/dev/null)" || return 1
 	[ -z "$hit" ]
 }
 
@@ -260,15 +299,14 @@ plannable() {
 
 add() {
 	printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >>"$plan"
-	if [ "$1" = path ]; then
-		printf '%s\n' "$3" >>"$planned_dirs"
-	fi
+	case "$1" in
+	path | worktree) printf '%s\n' "$3" >>"$planned_dirs" ;;
+	esac
 }
 
-plan_path() {
-	if plannable "$2"; then
-		add path "$1" "$2"
-	fi
+# Records an idle path kept because deleting it could lose work.
+note() {
+	printf '%s\t%s\n' "$1" "$2" >>"$notes"
 }
 
 under_planned() {
@@ -283,6 +321,184 @@ under_planned() {
 
 children() {
 	find "$1" -mindepth 1 -maxdepth 1 "${@:2}" -print0 2>/dev/null
+}
+
+# Runs git read-only in a checkout or repository: no optional locks (so no
+# index refresh), no fsmonitor daemon, and untranslated messages.
+git_in() {
+	local dir="$1"
+	shift
+	LC_ALL=C GIT_OPTIONAL_LOCKS=0 git -C "$dir" -c core.fsmonitor=false "$@"
+}
+
+git_repo() {
+	local repo="$1"
+	shift
+	LC_ALL=C GIT_OPTIONAL_LOCKS=0 git --git-dir="$repo" -c core.fsmonitor=false "$@"
+}
+
+# Sets checkout_risk to why deleting the checkout at DIR could lose work,
+# or to "" when git holds all of it elsewhere. Also sets checkout_linked
+# (1 for a linked worktree) and checkout_common (its repository's git dir).
+assess_checkout() {
+	local dir="$1" git_dir="" line="" status unique
+	checkout_risk=""
+	checkout_linked=0
+	checkout_common=""
+	# A linked worktree's metadata lives in its repository; check it for
+	# use before git reads it.
+	if [ -f "$dir/.git" ]; then
+		read -r line <"$dir/.git" 2>/dev/null || true
+		case "$line" in "gitdir: "*) git_dir="${line#gitdir: }" ;; esac
+		case "$git_dir" in
+		"" | /*) ;;
+		*) git_dir="$dir/$git_dir" ;;
+		esac
+		case "$git_dir" in */worktrees/*) checkout_linked=1 ;; esac
+		if [ -n "$git_dir" ] && [ -d "$git_dir" ] && ! is_idle "$git_dir"; then
+			checkout_risk="git metadata used within $age"
+			return
+		fi
+	fi
+	if [ "$have_git" -ne 1 ]; then
+		checkout_risk="git is not installed"
+		return
+	fi
+	if ! git_dir="$(git_in "$dir" rev-parse --path-format=absolute --git-dir 2>/dev/null)" ||
+		! checkout_common="$(git_in "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+		checkout_risk="not a readable git checkout"
+		return
+	fi
+	if [ "$git_dir" != "$checkout_common" ]; then
+		checkout_linked=1
+	else
+		checkout_linked=0
+	fi
+	if ! status="$(git_in "$dir" status --porcelain --untracked-files=normal --ignore-submodules=none 2>/dev/null)"; then
+		checkout_risk="git status failed"
+	elif [ -n "$status" ]; then
+		checkout_risk="uncommitted changes"
+	elif [ -e "$dir/.gitmodules" ]; then
+		checkout_risk="has submodules"
+	elif [ "$checkout_linked" -eq 1 ]; then
+		# Branches and stashes stay in the repository; only HEAD can be lost.
+		if [ -e "$git_dir/locked" ]; then
+			checkout_risk="locked worktree"
+		elif [ -z "$(git_in "$dir" for-each-ref --count=1 --contains HEAD --format=x refs/heads refs/remotes refs/tags 2>/dev/null || true)" ]; then
+			checkout_risk="HEAD is on no branch, tag, or remote"
+		fi
+	elif git_in "$dir" rev-parse -q --verify refs/stash >/dev/null 2>&1; then
+		checkout_risk="stashed changes"
+	elif [ -n "$(find "$git_dir/worktrees" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then
+		checkout_risk="other worktrees use its repository"
+	elif ! unique="$(git_in "$dir" rev-list -n 1 HEAD --branches --not --remotes --tags 2>/dev/null)"; then
+		checkout_risk="cannot list its commits"
+	elif [ -n "$unique" ]; then
+		checkout_risk="commits no remote or tag holds"
+	fi
+}
+
+assessed=()
+assessed_risk=()
+assessed_linked=()
+assessed_common=()
+
+# assess_checkout, once per checkout per run.
+assess_cached() {
+	local i=0
+	while [ "$i" -lt "${#assessed[@]}" ]; do
+		if [ "${assessed[$i]}" = "$1" ]; then
+			checkout_risk="${assessed_risk[$i]}"
+			checkout_linked="${assessed_linked[$i]}"
+			checkout_common="${assessed_common[$i]}"
+			return 0
+		fi
+		i=$((i + 1))
+	done
+	assess_checkout "$1"
+	assessed+=("$1")
+	assessed_risk+=("$checkout_risk")
+	assessed_linked+=("$checkout_linked")
+	assessed_common+=("$checkout_common")
+}
+
+# Succeeds when every ignored path in the checkout at DIR is build output
+# or cache; otherwise sets ignored_keeper to the first one that is not.
+ignored_regenerable() {
+	local dir="$1" entry name
+	ignored_keeper=""
+	if ! git_in "$dir" status --porcelain=v1 -z --ignored=matching --untracked-files=normal >"$work/ignored" 2>/dev/null; then
+		ignored_keeper="(git status failed)"
+		return 1
+	fi
+	while IFS= read -r -d '' entry; do
+		case "$entry" in '!! '*) ;; *) continue ;; esac
+		entry="${entry#!! }"
+		entry="${entry%/}"
+		name="${entry##*/}"
+		case "$name" in
+		target | node_modules | __pycache__ | *.pyc | *.pyo | .pytest_cache | .mypy_cache | .ruff_cache | \
+			.hypothesis | .tox | .nox | .venv | venv | *.egg-info | .eggs | .direnv | result | result-* | \
+			.gradle | .next | .turbo | .parcel-cache | .DS_Store | .coverage | htmlcov)
+			continue
+			;;
+		esac
+		if [ -f "$dir/$entry/CACHEDIR.TAG" ]; then
+			continue
+		fi
+		ignored_keeper="$entry"
+		return 1
+	done <"$work/ignored"
+}
+
+contained=()
+
+is_contained() {
+	local c
+	for c in ${contained[@]+"${contained[@]}"}; do
+		if [ "$c" = "$1" ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
+# Succeeds when deleting PATH would delete a checkout holding work; sets
+# blocker to that checkout and blocker_risk to why.
+blocks_work() {
+	local c
+	for c in ${contained[@]+"${contained[@]}"}; do
+		case "$c/" in
+		"$1"/*)
+			assess_cached "$c"
+			if [ -n "$checkout_risk" ]; then
+				blocker="$c"
+				blocker_risk="$checkout_risk"
+				return 0
+			fi
+			;;
+		esac
+	done
+	return 1
+}
+
+# Plans PATH when it is plannable. When deleting it would take a checkout
+# holding work with it, plans the rest of PATH around that checkout.
+plan_path() {
+	local label="$1" path="$2" child
+	plannable "$path" || return 0
+	if ! blocks_work "$path"; then
+		add path "$label" "$path"
+		return 0
+	fi
+	if [ "$blocker" = "$path" ]; then
+		note "$blocker" "$blocker_risk"
+		return 0
+	fi
+	while IFS= read -r -d '' child; do
+		safe_path "$child" || continue
+		plan_path "$label" "$child"
+	done < <(children "$path")
 }
 
 # Plans each idle entry directly inside DIR.
@@ -347,6 +563,22 @@ classify_discoveries() {
 	done
 }
 
+# Collects the checkouts inside directories this run may delete whole:
+# build output, temp directories, and omp task copies.
+find_contained_checkouts() {
+	local dir
+	{
+		cat "$work/rust-targets" "$work/build-caches"
+		printf '%s\n' "$home/.omp/wt" ${temp_roots[@]+"${temp_roots[@]}"}
+	} >"$work/containers"
+	while IFS= read -r dir; do
+		contained+=("$dir")
+	done < <(awk '
+		NR == FNR { container[$0] = 1; next }
+		{ p = $0; while (sub(/\/[^\/]*$/, "", p) && p != "") if (p in container) { print; next } }
+	' "$work/containers" "$work/checkouts")
+}
+
 # Plans an idle target dir whole; otherwise plans its idle profiles, task
 # dirs, and loose files. Nested target dirs get their own pass.
 # shellcheck disable=SC2094 # the loop and the nested check only read the list
@@ -356,7 +588,7 @@ plan_rust_targets() {
 		if under_planned "$target"; then
 			continue
 		fi
-		if plannable "$target"; then
+		if plannable "$target" && ! blocks_work "$target"; then
 			add path rust "$target"
 			continue
 		fi
@@ -438,11 +670,130 @@ plan_temp() {
 	done
 }
 
-# Drops entries inside another planned directory: deleting the parent
-# covers them.
+squeeze() {
+	printf '%s\n' "$1" | awk '{ $1 = $1; print }'
+}
+
+# Succeeds unless the owner file names a process that has exited or whose
+# pid now belongs to a process started at another time. Unknown counts as
+# alive.
+omp_owner_alive() {
+	local json pid token started
+	[ "$have_ps" -eq 1 ] || return 0
+	json="$(cat "$1" 2>/dev/null)" || return 0
+	pid="$(printf '%s\n' "$json" | sed -n 's/.*"pid"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p')"
+	[ -n "$pid" ] || return 0
+	started="$(ps -o lstart= -p "$pid" 2>/dev/null || true)"
+	[ -n "$started" ] || return 1
+	token="$(printf '%s\n' "$json" | sed -n 's/.*"startToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+	[ -n "$token" ] || return 0
+	[ "$(squeeze "$started")" = "$(squeeze "$token")" ]
+}
+
+# omp keeps each isolated task's copy in ~/.omp/wt/<id>, with the owning
+# process recorded beside it. A copy whose owner has exited is an orphan.
+plan_omp_isolation() {
+	local dir
+	for dir in "$home"/.omp/wt/*; do
+		[ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/.omp-isolation-owner.json" ] || continue
+		safe_path "$dir" || continue
+		if omp_owner_alive "$dir/.omp-isolation-owner.json"; then
+			continue
+		fi
+		plannable "$dir" || continue
+		if blocks_work "$dir"; then
+			note "$blocker" "$blocker_risk (orphaned omp task copy)"
+			continue
+		fi
+		add path agent "$dir"
+	done
+}
+
+# Plans removal of idle linked worktrees that hold nothing beyond what
+# their repository keeps and regenerable build output.
+plan_worktrees() {
+	local dir
+	while IFS= read -r dir <&3; do
+		[ -f "$dir/.git" ] || continue
+		if is_contained "$dir" || under_planned "$dir"; then
+			continue
+		fi
+		plannable "$dir" || continue
+		assess_cached "$dir"
+		[ "$checkout_linked" -eq 1 ] || continue
+		if [ -z "$checkout_risk" ] && ! ignored_regenerable "$dir"; then
+			checkout_risk="ignored $ignored_keeper may not be regenerable"
+		fi
+		if [ -n "$checkout_risk" ]; then
+			note "$dir" "$checkout_risk"
+			continue
+		fi
+		add worktree worktree "$dir" "$checkout_common"
+	done 3<"$work/checkouts"
+}
+
+# Plans `git worktree prune` for repositories whose worktree entries point
+# at directories gone for AGE, or that will once planned deletions run.
+# Prune cannot spare one entry, so a gone worktree whose detached HEAD no
+# ref holds keeps all of its repository's entries.
+plan_worktree_prunes() {
+	local dir repo line id wt_head count held
+	: >"$work/prune-repos.unsorted"
+	: >"$work/affected-repos"
+	[ "$have_git" -eq 1 ] || return 0
+	while IFS= read -r dir <&3; do
+		if [ -d "$dir/.git/worktrees" ]; then
+			printf '%s\n' "$dir/.git" >>"$work/prune-repos.unsorted"
+		fi
+	done 3<"$work/checkouts"
+	for dir in ${contained[@]+"${contained[@]}"}; do
+		[ -f "$dir/.git" ] || continue
+		under_planned "$dir" || continue
+		assess_cached "$dir"
+		if [ "$checkout_linked" -eq 1 ] && [ -z "$checkout_risk" ]; then
+			printf '%s\n' "$checkout_common" >>"$work/prune-repos.unsorted"
+			printf '%s\n' "$checkout_common" >>"$work/affected-repos"
+		fi
+	done
+	LC_ALL=C sort -u "$work/prune-repos.unsorted" >"$work/prune-repos"
+	while IFS= read -r repo <&3; do
+		safe_path "$repo" || continue
+		if ! git_repo "$repo" worktree prune -n -v --expire="$git_expire" >"$work/prune-preview" 2>&1; then
+			note "$repo" "git worktree prune --dry-run failed"
+			continue
+		fi
+		count=0
+		held=""
+		while IFS= read -r line; do
+			case "$line" in "Removing worktrees/"*) ;; *) continue ;; esac
+			id="${line#Removing worktrees/}"
+			id="${id%%:*}"
+			count=$((count + 1))
+			wt_head=""
+			read -r wt_head <"$repo/worktrees/$id/HEAD" 2>/dev/null || true
+			case "$wt_head" in
+			"ref: "*) ;;
+			*)
+				if [ -z "$wt_head" ] || [ -z "$(git_repo "$repo" for-each-ref --count=1 --contains "$wt_head" --format=x refs/heads refs/remotes refs/tags 2>/dev/null || true)" ]; then
+					held="$id"
+				fi
+				;;
+			esac
+		done <"$work/prune-preview"
+		if [ -n "$held" ]; then
+			note "$repo" "gone worktree $held holds commits no ref has; not pruning"
+		elif [ "$count" -gt 0 ] || grep -Fxq -- "$repo" "$work/affected-repos"; then
+			add prune worktree "$repo" "$count"
+		fi
+	done 3<"$work/prune-repos"
+}
+
+# Drops repeated entries and entries inside another planned directory:
+# deleting the parent covers them.
 dedupe_plan() {
 	awk -F '\t' '
-		NR == FNR { if ($1 == "path") planned[$3] = 1; next }
+		NR == FNR { if ($1 == "path" || $1 == "worktree") planned[$3] = 1; next }
+		seen[$1 "\t" $3]++ { next }
 		{
 			p = $3
 			while (sub(/\/[^\/]*$/, "", p) && p != "")
@@ -469,8 +820,11 @@ human_kb() {
 size_plan() {
 	local method label path arg kb
 	while IFS="$tab" read -r method label path arg <&3; do
-		kb="$({ du -skx -- "$path" 2>/dev/null || true; } | awk 'NR == 1 { print $1 }')"
-		kb="${kb:-0}"
+		kb=0
+		if [ "$method" != prune ]; then
+			kb="$({ du -skx -- "$path" 2>/dev/null || true; } | awk 'NR == 1 { print $1 }')"
+			kb="${kb:-0}"
+		fi
 		if [ "$method" = path ] && [ "$kb" -eq 0 ]; then
 			continue
 		fi
@@ -485,6 +839,8 @@ label_title() {
 	cache) echo "Caches" ;;
 	tmp) echo "Temporary files" ;;
 	xcode) echo "Xcode DerivedData" ;;
+	agent) echo "Orphaned omp task copies" ;;
+	worktree) echo "Git worktrees" ;;
 	esac
 }
 
@@ -492,19 +848,30 @@ label_title() {
 # entries shows its four largest and one line for the rest.
 print_plan() {
 	local label
-	for label in rust build-cache cache tmp xcode; do
+	for label in rust build-cache cache tmp xcode agent worktree; do
 		awk -F '\t' -v label="$label" '$3 == label' "$work/sized" | LC_ALL=C sort -t "$tab" -k1,1nr >"$work/section"
 		[ -s "$work/section" ] || continue
 		printf '%s\n' "$(label_title "$label")"
 		awk -F '\t' '
+			function show(method, path, arg) {
+				if (method == "worktree") return path " (git worktree remove)"
+				if (method == "prune") return path (arg > 0 ? ": prune " arg " stale worktree entries" : ": prune worktree entries after deletions")
+				return path
+			}
 			{ parent = $4; sub(/\/[^\/]*$/, "", parent) }
 			NR == FNR { count[parent]++; next }
 			count[parent] > 5 && ++shown[parent] > 4 { rest[parent] += $1; next }
-			{ print $1 "\t" $4 }
+			{ print $1 "\t" show($2, $4, $5) }
 			END { for (p in rest) print rest[p] "\t" p "/ (+" count[p] - 4 " more)" }
 		' "$work/section" "$work/section" | LC_ALL=C sort -t "$tab" -k1,1nr |
 			awk -F '\t' "$awk_human"' { printf "  %8s  %s\n", human($1), $2 }'
 	done
+}
+
+print_notes() {
+	[ -s "$notes" ] || return 0
+	printf 'Kept\n'
+	LC_ALL=C sort -u "$notes" | awk -F '\t' '{ printf "  %s: %s\n", $1, $2 }'
 }
 
 free_kb() {
@@ -521,26 +888,60 @@ delete_path() {
 }
 
 failures=0
-deleted=0
+done_items=0
 deleted_kb=0
 
-# Re-checks every entry against fresh state: anything touched or opened
-# while the plan waited for confirmation stays.
+finished() {
+	done_items=$((done_items + 1))
+	deleted_kb=$((deleted_kb + $1))
+}
+
+failed() {
+	warn "$*"
+	failures=$((failures + 1))
+}
+
+# Re-checks every entry against fresh state: anything touched, opened, or
+# changed in git while the plan waited for confirmation stays. Prunes run
+# last so they also cover worktrees deleted with their directory.
 execute_plan() {
 	local kb method label path arg
 	snapshot_open_paths
+	reads_after="$plan_done"
+	reads_before=""
+	assessed=()
+	assessed_risk=()
+	assessed_linked=()
+	assessed_common=()
 	while IFS="$tab" read -r kb method label path arg <&3; do
+		[ "$method" != prune ] || continue
 		[ -e "$path" ] || [ -L "$path" ] || continue
 		if ! plannable "$path"; then
-			printf 'kept (busy since planning): %s\n' "$path"
+			printf 'kept (used since planning): %s\n' "$path"
 			continue
 		fi
-		if delete_path "$path"; then
-			deleted=$((deleted + 1))
-			deleted_kb=$((deleted_kb + kb))
+		if [ "$method" = worktree ]; then
+			assess_checkout "$path"
+			if [ -n "$checkout_risk" ] || ! ignored_regenerable "$path"; then
+				printf 'kept (changed since planning): %s\n' "$path"
+			elif git_repo "$arg" worktree remove "$path"; then
+				finished "$kb"
+			else
+				failed "could not remove worktree $path"
+			fi
+		elif delete_path "$path"; then
+			finished "$kb"
 		else
-			warn "could not delete $path"
-			failures=$((failures + 1))
+			failed "could not delete $path"
+		fi
+	done 3<"$work/sized"
+	while IFS="$tab" read -r kb method label path arg <&3; do
+		[ "$method" = prune ] || continue
+		printf 'pruning worktree entries in %s\n' "$path"
+		if git_repo "$path" worktree prune -v --expire="$git_expire" 2>&1; then
+			finished 0
+		else
+			failed "git worktree prune failed in $path"
 		fi
 	done 3<"$work/sized"
 }
@@ -552,6 +953,7 @@ main() {
 	section "scanning ${search_roots[*]}${temp_roots[*]:+ ${temp_roots[*]}}"
 	snapshot_open_paths
 	discover | classify_discoveries
+	find_contained_checkouts
 	plan_rust_targets
 	plan_build_caches
 	if [ "$os" = Darwin ]; then
@@ -561,18 +963,25 @@ main() {
 	plan_package_caches
 	plan_temp
 	plan_entries xcode "$home/Library/Developer/Xcode/DerivedData"
+	plan_omp_isolation
+	plan_worktrees
+	plan_worktree_prunes
 	dedupe_plan
 	size_plan
+	# Round up so our last planning reads fall before the mark.
+	set_mtime "$(($(current_epoch) + 1))" "$plan_done"
 
 	local count total_kb
 	count="$(awk 'END { print NR }' "$work/sized")"
 	total_kb="$(awk -F '\t' '{ s += $1 } END { print s + 0 }' "$work/sized")"
 	if [ "$count" -eq 0 ]; then
 		section "nothing idle for $age"
+		print_notes
 		return 0
 	fi
 	section "plan: $count items, $(human_kb "$total_kb")"
 	print_plan
+	print_notes
 
 	if [ "$dry_run" -eq 1 ]; then
 		printf '\ndry run: nothing deleted\n'
@@ -600,8 +1009,8 @@ main() {
 	section "deleting"
 	execute_plan
 	section "summary"
-	printf 'deleted %s of %s items (%s); free space %s -> %s\n' \
-		"$deleted" "$count" "$(human_kb "$deleted_kb")" \
+	printf 'done %s of %s items (%s); free space %s -> %s\n' \
+		"$done_items" "$count" "$(human_kb "$deleted_kb")" \
 		"$(human_kb "$free_before")" "$(human_kb "$(free_kb)")"
 	if [ "$failures" -gt 0 ]; then
 		printf 'failures: %s\n' "$failures"

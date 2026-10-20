@@ -417,9 +417,11 @@
                   pkgs.coreutils
                   pkgs.findutils
                   pkgs.gawk
+                  pkgs.git
                   pkgs.gnugrep
                   pkgs.gnused
                   pkgs.lsof
+                  pkgs.ps
                 ];
               }
               ''
