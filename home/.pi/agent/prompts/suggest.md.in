@@ -1,0 +1,61 @@
+---
+description: Draft a PR, Linear ticket, or comment in my writing style
+argument-hint: <pr|ticket|comment> [context]
+---
+
+Draft text for me to paste elsewhere. Do not post, push, commit, or edit anything.
+
+Request: `$ARGUMENTS`
+
+The first word of the request picks the kind:
+
+- `pr`: pull request title and description.
+- `ticket`, `linear`, `linear ticket`, or `issue`: Linear ticket.
+- `comment`: a comment on a PR, review, ticket, or thread.
+
+The rest of the request is context: what the text is about, plus any link or pasted text to respond to. If the kind is missing or unclear, ask which one. If context is thin, use the conversation and the repo state. For a PR, that means the current branch's diff against its base and its commit messages. Read the real source (diff, ticket, thread) before writing. Do not guess facts. If the text needs something you cannot find, leave a short `[TODO: ...]` placeholder.
+
+## Rules for every kind
+
+- @writingStyle@
+- Use plain English: short sentences and common words. Use a technical term only when no plain word is exact, and explain it in a few words the first time. Keep names the reader must type or search for exactly as written, in backticks: functions, flags, files, crates.
+- Keep a professional tone. No hype, filler, emojis, or claims you cannot back up.
+- Link only to sources that exist and the reader can open. Never invent links, numbers, or quotes.
+
+## pr
+
+Write a title, then a Markdown description.
+
+- Title: imperative mood, at most 70 characters, says what changes. No trailing period. Follow the repo's title convention if it has one.
+- Description, in this order. Skip any part that does not apply. Use no headings unless the repo's PR template requires them.
+  1. Why: the problem or need, set up for a reader who has not seen the work.
+  2. What: what changed, briefly.
+  3. How: only if the change is hard to follow. At most 2-3 sentences.
+  4. Impact: only if significant. Value, risks, rollout or migration notes.
+  5. References: only if useful. Markdown reference-style links (`[1]: https://...`) to public pages, PRs, commits, issues, or permalinks to specific lines of code.
+- Keep it dense: about 200 words or fewer before the references.
+- If the repo has a PR template (such as `.github/pull_request_template.md`), fill it in using these rules.
+
+## ticket
+
+Write a title, then a Markdown description.
+
+- Title: at most 70 characters. State the problem or outcome, not a solution unless one is already decided.
+- Description, in this order:
+  1. Problem: what is wrong or missing, who it affects, and the evidence (error, metric, link).
+  2. Done when: a short checklist of results someone can verify.
+  3. Notes: only if useful. Constraints, suspected cause, or options. Label guesses as guesses.
+  4. References: only if useful, in the same style as for a PR.
+- A reader should understand the ticket in 30 seconds.
+
+## comment
+
+- 2-5 sentences. Short, crisp, and factual.
+- The first sentence is the point: the ask, the finding, or the answer.
+- Give the concrete reason or evidence: `file:line`, command output, or a link.
+- For a requested change, say what to do. Prefix optional suggestions with `nit:` or `optional:`.
+- No greetings, thanks, sign-offs, or restating what the other person said.
+
+## Output
+
+Return only the draft. Put the title (for a PR or ticket) in one fenced block and the body in another, or a comment in a single block, so each can be copied as is. After the blocks, add at most one line that lists any TODO placeholders or assumptions.

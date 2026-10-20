@@ -38,6 +38,7 @@ in
     ".codex/prompts/commit.md".source = "${agentPrompts}/commit.md";
     ".codex/prompts/oracle.md".source = ./codex/prompts/oracle.md;
     ".omp/agent/AGENTS.md".source = agentInstructions;
+    ".omp/agent/commands/suggest.md".source = "${agentPrompts}/suggest.md";
     ".omp/agent/PERSONALITY.md".text = "${writingStyle}\n";
     ".omp/agent/config.yml".source = ./.omp/agent/config.yml;
     ".omp/agent/extensions".source = ./.pi/agent/extensions;
