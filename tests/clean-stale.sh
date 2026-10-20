@@ -395,6 +395,18 @@ expect_no_deletions() {
 output="$(run --age 200h --dry-run)"
 expect_no_deletions "200h threshold"
 
+# Every idle entry of a temp root goes, so / and roots in HOME are refused.
+output="$(
+	export CLEAN_STALE_TEMP_ROOTS="$src:/"
+	run --dry-run 2>&1
+)"
+for root in "$src" /; do
+	case "$output" in *"skipping temp dir $root: it is / or inside HOME"*) ;; *) fail "temp root $root was accepted" ;; esac
+done
+if planned | grep -Fxq -- "$src/legacy"; then
+	fail "a temp root inside HOME swept $src/legacy"
+fi
+
 output="$(run --dry-run)"
 for path in "${expected_gone[@]}"; do
 	planned | grep -Fxq -- "$path" || fail "dry run does not list $path${nl}$output"

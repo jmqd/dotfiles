@@ -156,6 +156,13 @@ temp_roots=()
 while IFS= read -r dir; do
 	[ -n "$dir" ] || continue
 	resolved="$(canonical_dir "$dir")" || continue
+	# Every idle entry of a temp root goes, so none may hold HOME or sit in it.
+	case "$resolved" in
+	/ | "$home" | "$home"/*)
+		warn "skipping temp dir $resolved: it is / or inside HOME"
+		continue
+		;;
+	esac
 	case "$home/" in
 	"$resolved"/*)
 		warn "skipping temp dir $resolved: it contains HOME"
@@ -687,13 +694,14 @@ plan_package_caches() {
 }
 
 # Only our own entries; dot-entries and Apple's per-daemon dirs belong to
-# running services.
+# running services. SoftwareUpdateCore keeps macOS update state in
+# /var/tmp, which survives reboots.
 plan_temp() {
 	local dir entry
 	for dir in ${temp_roots[@]+"${temp_roots[@]}"}; do
 		while IFS= read -r -d '' entry; do
 			safe_path "$entry" || continue
-			case "${entry##*/}" in .* | com.apple.* | TemporaryItems) continue ;; esac
+			case "${entry##*/}" in .* | com.apple.* | TemporaryItems | SoftwareUpdateCore) continue ;; esac
 			plan_path tmp "$entry"
 		done < <(children "$dir" -user "$uid")
 	done
