@@ -403,6 +403,10 @@ certificate error. On macOS, apps that skip the shell environment still read
 `/etc/ssl/cert.pem`; see <https://emudhra.we-have-a-problem.com/#macos-curl>
 to patch it.
 
+`home/npm.nix` sets npm and Yarn to skip dependency lifecycle scripts and npm
+to resolve only versions published at least 7 days ago. Override per command
+with `--ignore-scripts=false` or `--min-release-age=0` when a project needs it.
+
 Raycast is the Option-Space launcher on macOS. If that shortcut was changed,
 open **Raycast Settings → General** and set **Raycast Hotkey** to Option-Space;
 Raycast does not provide a supported noninteractive hotkey setter. Home Manager

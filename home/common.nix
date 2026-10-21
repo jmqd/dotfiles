@@ -56,6 +56,7 @@ in
     ./omp-phone.nix
     ./postgresql.nix
     ./nas.nix
+    ./npm.nix
     ./ssh.nix
     ./tmux.nix
     ./tls.nix
