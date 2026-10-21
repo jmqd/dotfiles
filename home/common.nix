@@ -58,6 +58,7 @@ in
     ./nas.nix
     ./ssh.nix
     ./tmux.nix
+    ./tls.nix
     ./trueflow.nix
     ./yubikey.nix
     ./wezterm.nix
