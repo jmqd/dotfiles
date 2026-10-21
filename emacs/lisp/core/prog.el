@@ -104,7 +104,7 @@
          ("\\.puml\\'" . plantuml-mode)
          ("\\.uml\\'" . plantuml-mode))
   :config
-  (when-let ((plantuml (executable-find "plantuml")))
+  (when-let* ((plantuml (executable-find "plantuml")))
     (setq plantuml-default-exec-mode 'executable
           plantuml-executable-path plantuml)))
 

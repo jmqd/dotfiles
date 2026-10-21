@@ -18,7 +18,7 @@
 (defun jmq/yank-file-path ()
   "Copy the current buffer's file path to the kill ring."
   (interactive)
-  (if-let ((path (buffer-file-name)))
+  (if-let* ((path (buffer-file-name)))
       (progn (kill-new path) (message "%s" path))
     (user-error "Buffer is not visiting a file")))
 

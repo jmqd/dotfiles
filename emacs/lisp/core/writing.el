@@ -12,7 +12,7 @@
   "Ensure a spell checker is available for Flyspell.
 
 Return non-nil when spell checking can be enabled."
-  (if-let ((spell-checker (or ispell-program-name (jmq/find-spell-checker))))
+  (if-let* ((spell-checker (or ispell-program-name (jmq/find-spell-checker))))
       (progn
         (setq ispell-program-name spell-checker)
         t)
