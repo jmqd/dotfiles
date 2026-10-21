@@ -71,7 +71,7 @@
    (zig-mode . eglot-ensure))
   :config
   (setq eglot-autoshutdown t
-        eglot-confirm-server-initiated-edits nil)
+        eglot-confirm-server-edits nil)
   (add-to-list 'eglot-server-programs
                '(python-mode . ("basedpyright-langserver" "--stdio")))
   (add-to-list 'eglot-server-programs
