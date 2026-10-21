@@ -4,16 +4,24 @@
   :if (eq system-type 'darwin)
   :demand t
   :config
+  ;; Home Manager exports PATH and locale from login files; skipping the
+  ;; interactive zshrc cuts the import from ~2.5s to ~10ms.
+  (setq exec-path-from-shell-arguments '("-l"))
   (dolist (var '("LANG" "LC_ALL" "LC_CTYPE" "OSFONTDIR"))
     (add-to-list 'exec-path-from-shell-variables var))
   (exec-path-from-shell-initialize))
 
 (defun jmq/setup-corfu-navigation ()
-  "Preserve the old vertical navigation muscle memory inside completion UIs."
-  (define-key corfu-map (kbd "H-i") #'corfu-previous)
-  (define-key corfu-map (kbd "C-k") #'corfu-next)
-  (define-key corfu-map (kbd "TAB") #'corfu-complete)
-  (define-key corfu-map (kbd "<tab>") #'corfu-complete))
+  "Preserve the old vertical navigation muscle memory inside completion UIs.
+
+evil-collection binds C-k to `corfu-previous' in insert state, and that
+state map shadows plain `corfu-map' entries, so bind the insert state too."
+  (dolist (state '(nil insert))
+    (evil-define-key state corfu-map
+      (kbd "H-i") #'corfu-previous
+      (kbd "C-k") #'corfu-next
+      (kbd "TAB") #'corfu-complete
+      (kbd "<tab>") #'corfu-complete)))
 
 (defun jmq/eglot-rename ()
   "Rename symbol at point using Eglot."
