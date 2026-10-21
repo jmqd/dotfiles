@@ -262,8 +262,6 @@ in
       gdb
       poetry
       clang
-      nodejs_24
-      yarn
       black
       pipenv
       trunk
