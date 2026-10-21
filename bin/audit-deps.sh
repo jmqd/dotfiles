@@ -449,7 +449,7 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version oracle_version claude_version codex_version codex_desktop_version wispr_flow_version notion_version gws_version
+	local pi_version oracle_version claude_version codex_version codex_desktop_version wispr_flow_version notion_version gws_version voxtype_version
 	pi_version="$(package_version "$system" pi)"
 	oracle_version="$(package_version "$system" oracle)"
 	claude_version="$(package_version "$system" claude-code)"
@@ -458,6 +458,7 @@ main() {
 	gws_version="$(package_version "$system" googleworkspace-cli)"
 	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
 	wispr_flow_version="$(package_version "aarch64-darwin" wispr-flow)"
+	voxtype_version="$(package_version "x86_64-linux" voxtype)"
 
 	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
 	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
@@ -465,6 +466,7 @@ main() {
 	check_github_release_latest "openai/codex" "rust-v${codex_version}"
 	check_github_release_latest "googleworkspace/cli" "v${gws_version}"
 	check_github_release_latest "lox/notion-cli" "v${notion_version}"
+	check_github_release_latest "peteonrails/voxtype" "v${voxtype_version}"
 
 	check_codex_desktop_latest "$codex_desktop_version"
 	check_wispr_flow_latest "$wispr_flow_version"
@@ -472,12 +474,11 @@ main() {
 	# GHSA-vfj7-8cjw-p6xm: braces 3.0.3 nested-pattern DoS, no fixed release.
 	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json" GHSA-vfj7-8cjw-p6xm
 
-	local gws_src trueflow_src notion_src voxtype_src
+	local gws_src trueflow_src notion_src
 	# Build the source so the lockfile exists even when the store lacks it.
 	gws_src="$(nix build --no-link --print-out-paths "$repo_root#packages.${system}.googleworkspace-cli.src")"
 	trueflow_src="$(input_path trueflow)"
 	notion_src="$(input_path notion-cli)"
-	voxtype_src="$(input_path voxtype)"
 
 	cargo_audit_lock "pkgs/flow" "pkgs/flow/Cargo.lock"
 	cargo_audit_lock "projects/omp-phone" "projects/omp-phone/Cargo.lock"
@@ -502,18 +503,10 @@ main() {
 		"trueflow" \
 		"$trueflow_src/trueflow/Cargo.lock"
 	cargo_audit_lock \
-		"voxtype" \
-		"$voxtype_src/Cargo.lock" \
-		RUSTSEC-2026-0007 \
-		RUSTSEC-2026-0185 \
-		RUSTSEC-2026-0049 \
-		RUSTSEC-2026-0104 \
-		RUSTSEC-2026-0098 \
-		RUSTSEC-2026-0099 \
+		"voxtype (pkgs/voxtype)" \
+		"pkgs/voxtype/Cargo.lock" \
 		RUSTSEC-2026-0194 \
-		RUSTSEC-2026-0195 \
-		RUSTSEC-2026-0204 \
-		RUSTSEC-2026-0285
+		RUSTSEC-2026-0195
 
 	govulncheck_notion_cli "$notion_src"
 

@@ -204,13 +204,36 @@
       mkVoxtypePkg =
         system:
         let
-          package = voxtype.packages.${system}.vulkan;
+          pkgs = import (nixpkgsFor system) { inherit system; };
+          upstream = voxtype.packages.${system};
+          # Upstream's lock keeps webpki-roots and rustls-webpki releases that
+          # trust the compromised eMudhra intermediates (RUSTSEC-2026-0381 to
+          # 0383), plus rustls and quinn-proto releases with open advisories.
+          # pkgs/voxtype/Cargo.lock is upstream's lock after
+          #   cargo update -p rustls-webpki -p webpki-roots@<old> \
+          #     -p webpki-root-certs -p rustls -p quinn-proto -p bytes -p crossbeam-epoch
+          # Regenerate it on each voxtype bump; drop it once upstream catches up.
+          lockFile = ./pkgs/voxtype/Cargo.lock;
+          unwrapped = upstream.voxtype-vulkan-unwrapped.overrideAttrs (old: {
+            cargoDeps = pkgs.rustPlatform.importCargoLock {
+              inherit lockFile;
+              outputHashes = {
+                "openvino-finder-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+                "openvino-genai-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+                "openvino-genai-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+                "openvino-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+              };
+            };
+            postPatch = (old.postPatch or "") + ''
+              cp ${lockFile} Cargo.lock
+            '';
+          });
         in
         # Vulkan gives the NVIDIA Linux desktop GPU acceleration without
         # introducing the CUDA/ONNX closure into every Home Manager switch.
-        package
+        upstream.vulkan.overrideAttrs { paths = [ unwrapped ]; }
         // {
-          inherit (voxtype.packages.${system}.voxtype-vulkan-unwrapped) version;
+          inherit (unwrapped) version;
         };
 
       mkHomePackagesModule =
