@@ -423,7 +423,14 @@ govulncheck_notion_cli() {
 			GO-2026-5030 \
 			GO-2026-5320 \
 			GO-2026-5942 \
-			GO-2026-5970
+			GO-2026-5970 \
+			GO-2026-6603 \
+			GO-2026-6610 \
+			GO-2026-6611 \
+			GO-2026-6612 \
+			GO-2026-6617 \
+			GO-2026-6629 \
+			GO-2026-6809
 	fi
 }
 
@@ -482,7 +489,15 @@ main() {
 		RUSTSEC-2026-0104 \
 		RUSTSEC-2026-0185 \
 		RUSTSEC-2026-0258 \
-		RUSTSEC-2026-0285
+		RUSTSEC-2026-0285 \
+		RUSTSEC-2026-0338 \
+		RUSTSEC-2026-0339 \
+		RUSTSEC-2026-0340 \
+		RUSTSEC-2026-0342 \
+		RUSTSEC-2026-0346 \
+		RUSTSEC-2026-0348 \
+		RUSTSEC-2026-0349 \
+		RUSTSEC-2026-0382
 	cargo_audit_lock \
 		"trueflow" \
 		"$trueflow_src/trueflow/Cargo.lock"
