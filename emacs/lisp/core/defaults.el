@@ -4,8 +4,16 @@
       user-mail-address "j@jm.dev")
 
 ;; Free up a distinct Hyper chord so the old Doom-era navigation muscle memory
-;; can carry forward outside of Doom's key machinery.
-(keyboard-translate ?\C-i ?\H-i)
+;; can carry forward outside of Doom's key machinery.  Only graphic terminals
+;; can tell C-i from TAB; translating C-i on a tty would hijack every TAB.
+(defun jmq/decode-C-i-as-H-i (&optional frame)
+  "Decode C-i as H-i on FRAME's terminal when it is graphic."
+  (with-selected-frame (or frame (selected-frame))
+    (when (display-graphic-p)
+      (define-key input-decode-map [?\C-i] [?\H-i]))))
+
+(jmq/decode-C-i-as-H-i)
+(add-hook 'after-make-frame-functions #'jmq/decode-C-i-as-H-i)
 
 (defconst jmq/var-directory
   (expand-file-name "var/" user-emacs-directory))
