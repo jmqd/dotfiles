@@ -1,27 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-resolve_loader_file() {
-  local configured_loader repo_root repo_loader
+# Emacs resolves symlinks in --load paths, so a loader file cannot locate the
+# Home Manager-linked config. Hand Emacs the config directory itself instead.
+resolve_init_directory() {
+  local configured_dir repo_root repo_dir
 
-  configured_loader="${EMACS_HANDCRAFTED_LOADER_FILE:-${HOME}/.emacs.d/handcrafted-loader.el}"
-  if [[ -f "${configured_loader}" ]]; then
-    printf '%s\n' "${configured_loader}"
+  configured_dir="${EMACS_HANDCRAFTED_INIT_DIRECTORY:-${HOME}/.emacs.d}"
+  if [[ -f "${configured_dir}/init.el" ]]; then
+    printf '%s\n' "${configured_dir}"
     return 0
   fi
 
   repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  repo_loader="${repo_root}/emacs/handcrafted-loader.el"
-  if [[ -f "${repo_loader}" ]]; then
-    printf '%s\n' "${repo_loader}"
+  repo_dir="${repo_root}/emacs"
+  if [[ -f "${repo_dir}/init.el" ]]; then
+    printf '%s\n' "${repo_dir}"
     return 0
   fi
 
-  echo "No handcrafted loader found. Checked ${configured_loader} and ${repo_loader}." >&2
+  echo "No handcrafted init directory found. Checked ${configured_dir} and ${repo_dir}." >&2
   return 1
 }
 
-loader_file="$(resolve_loader_file)"
+init_directory="$(resolve_init_directory)"
 emacs_bin="${EMACS_HANDCRAFTED_EMACS_BIN:-${EMACS:-}}"
 
 if [[ -z "${emacs_bin}" ]]; then
@@ -33,4 +35,4 @@ if [[ -z "${emacs_bin}" ]]; then
   exit 1
 fi
 
-exec "${emacs_bin}" -Q --load "${loader_file}" "$@"
+exec "${emacs_bin}" --init-directory="${init_directory}" "$@"
