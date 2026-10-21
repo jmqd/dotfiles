@@ -37,10 +37,9 @@ in
     })
   ];
 
-  services.emacs = {
-    enable = true;
-    package = emacsPkg;
-  };
+  # Defaults to programs.emacs.finalPackage, which carries extraPackages such
+  # as sops; the bare emacsPkg would abort init on (use-package sops).
+  services.emacs.enable = true;
 
   launchd.agents.emacs.config.EnvironmentVariables =
     lib.mkIf pkgs.stdenv.hostPlatform.isDarwin latexExportEnvironment;
