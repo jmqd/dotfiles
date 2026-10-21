@@ -5,10 +5,10 @@
   ...
 }:
 let
-  version = "1.102.4";
+  version = "1.104.2";
   installer = pkgs.fetchurl {
     url = "https://pkgs.tailscale.com/stable/Tailscale-${version}-macos.pkg";
-    hash = "sha256-tAtzOvdiM/0eSvesrrMlJo5V5oGMFcbpqp549CckXFs=";
+    hash = "sha256-FyTS4CHTxfgX9Cf2KCYMATUxpSjxJYp9R3c10ZixH1U=";
   };
   app = "/Applications/Tailscale.app";
 
