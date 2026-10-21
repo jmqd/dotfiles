@@ -206,24 +206,29 @@ osv_audit_lock() {
 	local -a allowed_ids=("$@")
 	section "osv-scanner: $name"
 
-	local output_file found_file allowed_file unexpected_file stale_file status
+	local output_file stderr_file found_file allowed_file unexpected_file stale_file status
 	output_file="$(mktemp)"
+	stderr_file="$(mktemp)"
 	found_file="$(mktemp)"
 	allowed_file="$(mktemp)"
 	unexpected_file="$(mktemp)"
 	stale_file="$(mktemp)"
-	tmp_paths+=("$output_file" "$found_file" "$allowed_file" "$unexpected_file" "$stale_file")
+	tmp_paths+=("$output_file" "$stderr_file" "$found_file" "$allowed_file" "$unexpected_file" "$stale_file")
 
 	set +e
-	nix run --inputs-from "$repo_root" nixpkgs#osv-scanner -- scan --format json --lockfile "$lock_file" >"$output_file" 2>/dev/null
+	nix run --inputs-from "$repo_root" nixpkgs#osv-scanner -- scan --format json --lockfile "$lock_file" >"$output_file" 2>"$stderr_file"
 	status=$?
 	set -e
 
-	# Exit 0 means no findings and 1 means findings; anything else is an error.
-	if { [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; } ||
-		! jq -r '[.results[]?.packages[]?.vulnerabilities[]?.id] | unique | .[]' "$output_file" >"$found_file"; then
-		cat "$output_file"
-		fail "osv-scanner failed for $name"
+	# Exit 0 must report no findings and exit 1 must report some; anything
+	# else, including empty or unparsable output, is an error.
+	if ! jq -e '.results | type == "array"' "$output_file" >/dev/null 2>&1 ||
+		! jq -r '[.results[]?.packages[]?.vulnerabilities[]?.id] | unique | .[]' "$output_file" >"$found_file" ||
+		{ [ "$status" -eq 0 ] && [ -s "$found_file" ]; } ||
+		{ [ "$status" -eq 1 ] && [ ! -s "$found_file" ]; } ||
+		{ [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; }; then
+		cat "$stderr_file" "$output_file"
+		fail "osv-scanner failed for $name (exit $status)"
 		return
 	fi
 
