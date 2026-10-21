@@ -4,9 +4,6 @@
   :if (eq system-type 'darwin)
   :demand t
   :config
-  ;; Home Manager exports PATH and locale from login files; skipping the
-  ;; interactive zshrc cuts the import from ~2.5s to ~10ms.
-  (setq exec-path-from-shell-arguments '("-l"))
   (dolist (var '("LANG" "LC_ALL" "LC_CTYPE" "OSFONTDIR"))
     (add-to-list 'exec-path-from-shell-variables var))
   (exec-path-from-shell-initialize))
