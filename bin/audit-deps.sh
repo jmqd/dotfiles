@@ -72,9 +72,11 @@ note_upgrade() {
 	fi
 }
 
+# Query the registry directly so the audit does not need a Node.js toolchain.
 npm_latest_version() {
 	local package="$1"
-	nix shell --quiet --inputs-from "$repo_root" nixpkgs#nodejs -c npm view "$package" version
+	curl --fail --silent --show-error --location "https://registry.npmjs.org/${package}/latest" |
+		jq -er '.version // empty'
 }
 
 check_npm_latest() {
@@ -197,11 +199,12 @@ check_wispr_flow_latest() {
 	note_upgrade "wispr-flow" "$current" "$latest_arm"
 }
 
-npm_audit() {
-	local name="$1" prefix="$2"
+# osv-scanner reads the lockfile directly, so no Node.js toolchain runs here.
+osv_audit_lock() {
+	local name="$1" lock_file="$2"
 	shift 2
 	local -a allowed_ids=("$@")
-	section "npm audit: $name"
+	section "osv-scanner: $name"
 
 	local output_file found_file allowed_file unexpected_file stale_file status
 	output_file="$(mktemp)"
@@ -212,57 +215,45 @@ npm_audit() {
 	tmp_paths+=("$output_file" "$found_file" "$allowed_file" "$unexpected_file" "$stale_file")
 
 	set +e
-	nix shell --quiet --inputs-from "$repo_root" nixpkgs#nodejs -c npm audit --json --prefix "$prefix" --omit dev >"$output_file" 2>&1
+	nix run --inputs-from "$repo_root" nixpkgs#osv-scanner -- scan --format json --lockfile "$lock_file" >"$output_file" 2>/dev/null
 	status=$?
 	set -e
 
-	if [ "$#" -eq 0 ] && [ "$status" -eq 0 ]; then
-		ok "npm audit passed for $name"
-		return
-	fi
-
-	if ! jq -r '
- 		[.vulnerabilities[]?.via[]?
- 		 | select(type == "object")
- 		 | .url // empty
- 		 | select(test("/advisories/"))
- 		 | split("/")[-1]]
- 		| unique
- 		| .[]
- 	' "$output_file" >"$found_file"; then
+	# Exit 0 means no findings and 1 means findings; anything else is an error.
+	if { [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; } ||
+		! jq -r '[.results[]?.packages[]?.vulnerabilities[]?.id] | unique | .[]' "$output_file" >"$found_file"; then
 		cat "$output_file"
-		fail "npm audit failed for $name"
+		fail "osv-scanner failed for $name"
 		return
 	fi
 
-	printf '%s\n' "${allowed_ids[@]}" | sort -u >"$allowed_file"
+	: >"$allowed_file"
+	if [ "${#allowed_ids[@]}" -gt 0 ]; then
+		printf '%s\n' "${allowed_ids[@]}" | sort -u >"$allowed_file"
+	fi
 	comm -23 "$found_file" "$allowed_file" >"$unexpected_file"
 	comm -13 "$found_file" "$allowed_file" >"$stale_file"
 
-	if [ -s "$unexpected_file" ] || [ -s "$stale_file" ] || [ ! -s "$found_file" ]; then
-		cat "$output_file"
+	if [ -s "$unexpected_file" ] || [ -s "$stale_file" ]; then
 		if [ -s "$unexpected_file" ]; then
-			fail "$name reported unexpected npm advisories: $(tr '\n' ' ' <"$unexpected_file")"
+			fail "$name reported unexpected advisories: $(tr '\n' ' ' <"$unexpected_file")"
 		fi
 		if [ -s "$stale_file" ]; then
-			fail "$name npm advisory allowlist is stale: $(tr '\n' ' ' <"$stale_file")"
-		fi
-		if [ ! -s "$found_file" ]; then
-			fail "npm audit failed for $name without advisory IDs"
+			fail "$name advisory allowlist is stale: $(tr '\n' ' ' <"$stale_file")"
 		fi
 		return
 	fi
 
-	if [ "$status" -eq 0 ]; then
-		fail "$name npm audit unexpectedly passed with residual advisories"
+	if [ ! -s "$found_file" ]; then
+		ok "osv-scanner passed for $name"
 		return
 	fi
 
 	local count
 	count="$(wc -l <"$found_file" | tr -d ' ')"
 	residuals=$((residuals + count))
-	printf 'known residual npm advisories ignored for pass/fail: %s\n' "$(tr '\n' ' ' <"$found_file")"
-	ok "npm audit passed for $name with documented residuals"
+	printf 'known residual advisories ignored for pass/fail: %s\n' "$(tr '\n' ' ' <"$found_file")"
+	ok "osv-scanner passed for $name with documented residuals"
 }
 
 cargo_audit_lock() {
@@ -471,7 +462,8 @@ main() {
 	check_codex_desktop_latest "$codex_desktop_version"
 	check_wispr_flow_latest "$wispr_flow_version"
 
-	npm_audit "oracle" "pkgs/oracle"
+	# GHSA-vfj7-8cjw-p6xm: braces 3.0.3 nested-pattern DoS, no fixed release.
+	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json" GHSA-vfj7-8cjw-p6xm
 
 	local gws_src trueflow_src notion_src voxtype_src
 	# Build the source so the lockfile exists even when the store lacks it.
