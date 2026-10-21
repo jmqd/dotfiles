@@ -28,9 +28,10 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        Point OpenSSL, Bun, Node.js, Python, AWS CLI, curl and Git at one
-        trust store. Without this, Bun-based tools (Claude Code, OMP) and
-        botocore use their own embedded roots and miss root distrusts.
+        Point OpenSSL, Bun, Node.js, Python, AWS CLI, gRPC, curl and Git at
+        one trust store. Without this, Bun-based tools (Claude Code, OMP),
+        botocore, httplib2 and gRPC use their own embedded roots and miss root
+        distrusts.
       '';
     };
 
@@ -63,6 +64,8 @@ in
       REQUESTS_CA_BUNDLE = caBundle;
       PIP_CERT = caBundle;
       AWS_CA_BUNDLE = caBundle;
+      HTTPLIB2_CA_CERTS = caBundle;
+      GRPC_DEFAULT_SSL_ROOTS_FILE_PATH = caBundle;
     };
   };
 }
