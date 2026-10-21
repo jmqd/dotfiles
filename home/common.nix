@@ -150,7 +150,7 @@ in
         bcc
         bpftrace
         flamegraph
-        pkgsPreGcc16.ltrace
+        ltrace
         perf
         (lib.lowPrio perf-tools)
         strace

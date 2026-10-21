@@ -73,11 +73,10 @@
       # Packages that fail on current nixpkgs-unstable come from the pre-GCC 16
       # revision until their fixes land. Drop each use once it builds on
       # unstable, then drop this input:
-      # - ltrace: GCC 16 test failure, NixOS/nixpkgs#569799
-      # - trunk: vendored libdeflate needs evex512, NixOS/nixpkgs#569964
       # - semgrep: requires pyjwt 2.13, NixOS/nixpkgs#569851
       # - prowler: depends on kingfisher 1.113.0, whose version check fails;
-      #   fixed by NixOS/nixpkgs#569147 (merged to master)
+      #   fixed by NixOS/nixpkgs#569147, but Hydra has no aarch64-linux build
+      #   on unstable yet
       # - cutter: uic in Qt 6.12 rejects its .ui files, NixOS/nixpkgs#576576
       # Intel Darwin stays on its own 26.05 release branch.
       pkgsPreGcc16For =
@@ -709,7 +708,6 @@
         }:
         nixpkgs.lib.nixosSystem {
           inherit system;
-          specialArgs.pkgsPreGcc16 = pkgsPreGcc16For system;
           modules = [
             hostModule
             home-manager.nixosModules.home-manager

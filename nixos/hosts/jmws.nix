@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  pkgsPreGcc16,
   ...
 }:
 let
@@ -267,7 +266,7 @@ in
       yarn
       black
       pipenv
-      pkgsPreGcc16.trunk
+      trunk
       vultr-cli
 
       libGLU
