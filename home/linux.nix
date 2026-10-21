@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  pkgsPreGcc16,
   ...
 }:
 let
@@ -325,7 +326,7 @@ in
           kdePackages.kcachegrind
           kdePackages.massif-visualizer
           kernelshark
-          cutter
+          pkgsPreGcc16.cutter
           ghidra
           imhex
           wireshark

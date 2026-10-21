@@ -163,7 +163,18 @@ in
   services.spice-vdagentd.enable = true;
 
   boot.kernelModules = [ "v4l2loopback" ];
-  boot.extraModulePackages = with config.boot.kernelPackages; [ v4l2loopback.out ];
+  boot.extraModulePackages = [
+    # nixpkgs 5adc508 leaves depmod indexes in the module output, which collide
+    # with the kernel's. Mirrors NixOS/nixpkgs@40df9d166b; drop this override
+    # once that commit reaches nixpkgs-unstable.
+    (config.boot.kernelPackages.v4l2loopback.overrideAttrs (old: {
+      preBuild = "";
+      installFlags = (old.installFlags or [ ]) ++ [
+        "DEPMOD=true"
+        "INSTALL_MOD_PATH=${placeholder "out"}"
+      ];
+    })).out
+  ];
 
   boot.extraModprobeConfig = ''
     options kvm_amd nested=1

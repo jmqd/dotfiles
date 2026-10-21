@@ -78,6 +78,7 @@
       # - semgrep: requires pyjwt 2.13, NixOS/nixpkgs#569851
       # - prowler: depends on kingfisher 1.113.0, whose version check fails;
       #   fixed by NixOS/nixpkgs#569147 (merged to master)
+      # - cutter: uic in Qt 6.12 rejects its .ui files, NixOS/nixpkgs#576576
       # Intel Darwin stays on its own 26.05 release branch.
       pkgsPreGcc16For =
         system:
