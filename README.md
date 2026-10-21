@@ -394,12 +394,13 @@ Home Manager (`home/tls.nix`) also exports `SSL_CERT_FILE`,
 `NIX_SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, `REQUESTS_CA_BUNDLE`,
 `PIP_CERT`, `AWS_CA_BUNDLE`, `HTTPLIB2_CA_CERTS` and
 `GRPC_DEFAULT_SSL_ROOTS_FILE_PATH` so tools with embedded roots use one store.
-Bun binaries (Claude Code, OMP), botocore, httplib2 and gRPC otherwise ignore
-the system store. On NixOS the variables point at
+OMP's Bun runtime, botocore and httplib2 ignore the system store without them;
+gRPC ships its own roots file. On NixOS the variables point at
 `/etc/ssl/certs/ca-certificates.crt`. Elsewhere they point at a pinned Nixpkgs
 bundle that distrusts the roots behind the compromised eMudhra intermediates
-(CVE-2026-111943) and adds the homelab CA (except on `work-*` targets). To
-check a shell, run
+(CVE-2026-111943) and adds the homelab CA. `work-*` targets leave the
+variables unset, because corporate TLS-inspection CAs may live only in the
+keychain or `/etc/ssl/cert.pem`. To check a shell, run
 `curl https://dv-g3b-emudhra.we-have-a-problem.com/`; it must fail with a
 certificate error. On macOS, apps that skip the shell environment still read
 `/etc/ssl/cert.pem`; see <https://emudhra.we-have-a-problem.com/#macos-curl>

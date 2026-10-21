@@ -1,10 +1,11 @@
-{ ... }:
+{ lib, ... }:
 {
   jmq.trueflow.ai = {
     provider = "claude_cli";
     model = "claude-haiku-4-5";
   };
 
-  # Work machines do not trust the homelab CA (see bin/hm-switch.sh).
-  jmq.tls.extraCertificateFiles = [ ];
+  # Corporate TLS inspection CAs often live only in the keychain or in
+  # /etc/ssl/cert.pem; a pinned bundle would break CLI and Nix fetches.
+  jmq.tls.enable = lib.mkDefault false;
 }

@@ -29,9 +29,10 @@ in
       default = true;
       description = ''
         Point OpenSSL, Bun, Node.js, Python, AWS CLI, gRPC, curl and Git at
-        one trust store. Without this, Bun-based tools (Claude Code, OMP),
-        botocore, httplib2 and gRPC use their own embedded roots and miss root
-        distrusts.
+        one trust store. With the system store fixed and no variables set,
+        OMP's Bun runtime, botocore and httplib2 still accepted a chain
+        through the compromised eMudhra intermediates; with them, all three
+        rejected it.
       '';
     };
 
