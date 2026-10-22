@@ -576,10 +576,16 @@ It keeps:
 - undated toolchain channels (`stable`, `beta`, `nightly`), and versioned
   toolchains that the default, an override, a dylint driver, or a
   `rust-toolchain` file under `$HOME` selects. A narrower `--root` skips
-  toolchains.
+  toolchains;
+- everything in the trash: `~/.Trash`, `$XDG_DATA_HOME/Trash`, and per-volume
+  `.Trashes` and `.Trash-UID` dirs.
 
 Each entry is checked again just before deletion. Run it by hand; it is not
 scheduled.
+
+It runs on macOS and Linux under bash 3.2 or later with BSD or GNU tools. It
+finds open files with `lsof`, or `/proc` on Linux without it. Filesystem walks
+(discovery, idle checks, sizes) run one per CPU.
 
 ## Nix storage maintenance
 

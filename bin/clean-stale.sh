@@ -42,10 +42,10 @@ nix-store --gc last.
 Keeps anything written, renamed, or held open by a process within AGE;
 anything containing a socket or FIFO; empty files and directories; caches
 that hold installs or models (playwright, puppeteer, huggingface, ...);
-and any git checkout with uncommitted changes, stashes, or commits no
-remote or tag holds. Reads count only where the filesystem records them:
-Linux relatime records at most one read a day, and macOS records only the
-first read after each change.
+anything in the trash; and any git checkout with uncommitted changes,
+stashes, or commits no remote or tag holds. Reads count only where the
+filesystem records them: Linux relatime records at most one read a day,
+and macOS records only the first read after each change.
 
 options:
   -n, --dry-run   print the plan and exit
