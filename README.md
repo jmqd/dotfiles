@@ -327,19 +327,22 @@ Omit `--dry-run` to perform the cleanup.
 ## Stale worktree cleanup
 
 `git clean-stale` lists every linked worktree of the current repository and why it
-is kept: `unmerged`, `dirty` (including untracked files), `locked`, `recent`, or
-`stale`. A stale worktree's HEAD is already in the base branch (default: the branch
-`origin/HEAD` names, else `main`), it has no changes, and nothing has touched it
-for `--days` (default 14). Ages come from the HEAD commit and the worktree's HEAD,
-index and reflog, so any `git status` that refreshes the index counts as activity.
+is kept: `unmerged`, `dirty` (including untracked files), `locked`, `recent`,
+`no-trash`, or `stale`. A stale worktree's HEAD is already in the base branch
+(default: the branch `origin/HEAD` names, else `main`), it has no changes, and its
+HEAD has not moved for `--days` (default 14). Age is the newest of the HEAD commit
+and the worktree's last checkout, commit or reset; index refreshes from prompts and
+editors do not count.
 
 ```bash
 git clean-stale            # dry run with sizes
 git clean-stale --apply    # move stale worktrees to the trash, then prune
 ```
 
-`--apply` uses the trash on each worktree's own filesystem, so space returns when
-that trash is emptied. Branches are never deleted.
+`--apply` moves each worktree to the trash on its own filesystem (the home trash, or
+`.Trash-$UID` on another writable Linux mount), so space returns when that trash is
+emptied. A worktree with no such trash is reported `no-trash` and kept. A move that
+fails keeps the worktree and makes the run exit 1. Branches are never deleted.
 
 
 ## bootstrap
