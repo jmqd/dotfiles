@@ -23,7 +23,7 @@ trap cleanup EXIT
 # cargo, or rustup.
 bin="$fixture/bin"
 mkdir -p "$bin"
-for tool in awk basename bash cat chmod date df du find getconf git grep head id ln lsof mkdir mkfifo mktemp mv ps readlink rm sed sleep sort stat touch tr uname; do
+for tool in awk basename bash cat chmod date df du find getconf git grep head id ln lsof mkdir mkfifo mktemp mv ps readlink rm sed sleep sort stat touch tr uname xargs; do
 	path="$(command -v "$tool" 2>/dev/null || true)"
 	if [ -z "$path" ] && [ -x "/usr/sbin/$tool" ]; then
 		path="/usr/sbin/$tool"

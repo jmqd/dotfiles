@@ -205,6 +205,9 @@ have_ps=0
 if ps -o lstart= -p $$ >/dev/null 2>&1; then
 	have_ps=1
 fi
+# Filesystem walks run this many at a time.
+parallel_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+case "$parallel_jobs" in '' | 0 | *[!0-9]*) parallel_jobs=4 ;; esac
 
 # Runs date(1) for epoch second $1 with the remaining options and format.
 date_at() {
@@ -312,7 +315,7 @@ safe_path() {
 
 # Succeeds when PATH is a non-empty regular file or directory that we own,
 # sits on its parent's filesystem, is not held open, and is idle.
-plannable() {
+check_plannable() {
 	local path="$1"
 	[ ! -L "$path" ] || return 1
 	if [ -d "$path" ]; then
@@ -326,6 +329,59 @@ plannable() {
 	[ -O "$path" ] || return 1
 	! in_use "$path" || return 1
 	is_idle "$path"
+}
+
+# Results prefetch_plannable computed ahead, as newline-delimited sets.
+# execute_plan clears them, so each deletion rechecks its path just
+# before it acts.
+plannable_yes="$nl"
+plannable_no="$nl"
+
+plannable() {
+	case "$plannable_yes" in *"$nl$1$nl"*) return 0 ;; esac
+	case "$plannable_no" in *"$nl$1$nl"*) return 1 ;; esac
+	check_plannable "$1"
+}
+
+# Prints check_plannable's verdict on each argument: 1 or 0, a tab, and
+# the path.
+probe_paths() {
+	local path
+	for path; do
+		if check_plannable "$path"; then
+			printf '1\t%s\n' "$path"
+		else
+			printf '0\t%s\n' "$path"
+		fi
+	done
+}
+
+# Runs check_plannable on the NUL-separated paths on stdin, up to
+# $parallel_jobs at a time in child shells, and caches the results for
+# plannable. Paths it skips or misses are checked when plannable asks.
+prefetch_plannable() {
+	local probe path ok
+	probe="$(declare -p cutoff reads_after reads_before open_paths gnu_stat)
+$(declare -f probe_paths check_plannable is_idle in_use device_of)
+probe_paths \"\$@\""
+	while IFS="$tab" read -r ok path; do
+		if [ "$ok" = 1 ]; then
+			plannable_yes="$plannable_yes$path$nl"
+		else
+			plannable_no="$plannable_no$path$nl"
+		fi
+	done < <(
+		while IFS= read -r -d '' path; do
+			safe_path "$path" || continue
+			case "$plannable_yes$plannable_no" in *"$nl$path$nl"*) continue ;; esac
+			printf '%s\0' "$path"
+		done | xargs -0 -n 1 -P "$parallel_jobs" "$BASH" -c "$probe" clean-stale-probe 2>/dev/null || true
+	)
+}
+
+# Prefetches the paths listed one per line in FILE.
+prefetch_listed() {
+	prefetch_plannable < <(tr '\n' '\0' <"$1")
 }
 
 # Newline-delimited planned paths, for under_planned without a process.
@@ -526,6 +582,7 @@ plan_path() {
 plan_entries() {
 	local label="$1" dir="$2" entry
 	[ -d "$dir" ] && [ ! -L "$dir" ] || return 0
+	prefetch_plannable < <(children "$dir")
 	while IFS= read -r -d '' entry; do
 		safe_path "$entry" || continue
 		plan_path "$label" "$entry"
@@ -605,11 +662,24 @@ find_contained_checkouts() {
 	' "$work/containers" "$work/checkouts" >"$contained"
 }
 
+# Prints, NUL-separated, the entries of each target dir not already
+# planned whole: the paths plan_rust_targets checks one by one.
+busy_target_entries() {
+	local target
+	while IFS= read -r target; do
+		if ! under_planned "$target" && ! plannable "$target"; then
+			children "$target"
+		fi
+	done <"$work/rust-targets"
+}
+
 # Plans an idle target dir whole; otherwise plans its idle profiles, task
 # dirs, and loose files. Nested target dirs get their own pass.
 # shellcheck disable=SC2094 # the loop and the nested check only read the list
 plan_rust_targets() {
 	local target entry
+	prefetch_listed "$work/rust-targets"
+	prefetch_plannable < <(busy_target_entries)
 	while IFS= read -r target <&3; do
 		if under_planned "$target"; then
 			continue
@@ -631,6 +701,7 @@ plan_rust_targets() {
 
 plan_build_caches() {
 	local dir
+	prefetch_listed "$work/build-caches"
 	while IFS= read -r dir <&3; do
 		plan_path build-cache "$dir"
 	done 3<"$work/build-caches"
@@ -640,6 +711,14 @@ plan_build_caches() {
 # the directory stays busy.
 plan_nix_cache() {
 	local entry
+	prefetch_plannable < <(
+		children "$1"
+		for entry in "$1"/eval-cache-v*; do
+			if [ -d "$entry" ] && [ ! -L "$entry" ]; then
+				children "$entry"
+			fi
+		done
+	)
 	while IFS= read -r -d '' entry; do
 		safe_path "$entry" || continue
 		if plannable "$entry"; then
@@ -650,23 +729,32 @@ plan_nix_cache() {
 	done < <(children "$1")
 }
 
+# Prints, NUL-separated, the plain app caches in cache root DIR: not
+# system state, not installs or models that tools do not fetch again on
+# demand, and not nix, which plan_nix_cache handles.
+cache_root_entries() {
+	local entry
+	while IFS= read -r -d '' entry; do
+		case "${entry##*/}" in
+		com.apple.* | CloudKit | FamilyCircle | GeoServices | PassKit | Metadata | familycircled) ;;
+		ms-playwright* | puppeteer | Cypress | huggingface | torch | whisper | lm-studio | llama.cpp | gpt4all | codex-runtimes | pypoetry) ;;
+		nix) ;;
+		*) printf '%s\0' "$entry" ;;
+		esac
+	done < <(children "$1")
+}
+
 plan_cache_root() {
 	local entry
 	[ -d "$1" ] || return 0
+	if [ -e "$1/nix" ]; then
+		plan_nix_cache "$1/nix"
+	fi
+	prefetch_plannable < <(cache_root_entries "$1")
 	while IFS= read -r -d '' entry; do
 		safe_path "$entry" || continue
-		case "${entry##*/}" in
-		# macOS system state rather than app caches.
-		com.apple.* | CloudKit | FamilyCircle | GeoServices | PassKit | Metadata | familycircled) continue ;;
-		# Installs and models that tools do not fetch again on demand.
-		ms-playwright* | puppeteer | Cypress | huggingface | torch | whisper | lm-studio | llama.cpp | gpt4all | codex-runtimes | pypoetry) continue ;;
-		nix)
-			plan_nix_cache "$entry"
-			continue
-			;;
-		esac
 		plan_path cache "$entry"
-	done < <(children "$1")
+	done < <(cache_root_entries "$1")
 }
 
 plan_package_caches() {
@@ -685,18 +773,29 @@ plan_package_caches() {
 	# record of use, and builds read them without leaving a trace on macOS.
 }
 
-# Only our own entries; dot-entries and Apple's per-daemon dirs belong to
-# running services. SoftwareUpdateCore keeps macOS update state in
-# /var/tmp, which survives reboots.
-plan_temp() {
+# Prints, NUL-separated, our own entries in the temp roots. Dot-entries
+# and Apple's per-daemon dirs belong to running services.
+# SoftwareUpdateCore keeps macOS update state in /var/tmp, which survives
+# reboots.
+temp_entries() {
 	local dir entry
 	for dir in ${temp_roots[@]+"${temp_roots[@]}"}; do
 		while IFS= read -r -d '' entry; do
-			safe_path "$entry" || continue
-			case "${entry##*/}" in .* | com.apple.* | TemporaryItems | SoftwareUpdateCore) continue ;; esac
-			plan_path tmp "$entry"
+			case "${entry##*/}" in
+			.* | com.apple.* | TemporaryItems | SoftwareUpdateCore) ;;
+			*) printf '%s\0' "$entry" ;;
+			esac
 		done < <(children "$dir" -user "$uid")
 	done
+}
+
+plan_temp() {
+	local entry
+	prefetch_plannable < <(temp_entries)
+	while IFS= read -r -d '' entry; do
+		safe_path "$entry" || continue
+		plan_path tmp "$entry"
+	done < <(temp_entries)
 }
 
 squeeze() {
@@ -722,13 +821,17 @@ omp_owner_alive() {
 # omp keeps each isolated task's copy in ~/.omp/wt/<id>, with the owning
 # process recorded beside it. A copy whose owner has exited is an orphan.
 plan_omp_isolation() {
-	local dir
+	local dir orphans=()
 	for dir in "$home"/.omp/wt/*; do
 		[ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/.omp-isolation-owner.json" ] || continue
 		safe_path "$dir" || continue
-		if omp_owner_alive "$dir/.omp-isolation-owner.json"; then
-			continue
+		if ! omp_owner_alive "$dir/.omp-isolation-owner.json"; then
+			orphans+=("$dir")
 		fi
+	done
+	[ ${#orphans[@]} -gt 0 ] || return 0
+	prefetch_plannable < <(printf '%s\0' "${orphans[@]}")
+	for dir in "${orphans[@]}"; do
 		plannable "$dir" || continue
 		if blocks_work "$dir"; then
 			note "$blocker" "$blocker_risk (orphaned omp task copy)"
@@ -738,16 +841,28 @@ plan_omp_isolation() {
 	done
 }
 
+# Prints, NUL-separated, the checkouts with a .git file that no planned or
+# deletable directory holds: the candidates of plan_worktrees.
+worktree_candidates() {
+	local dir
+	while IFS= read -r dir; do
+		[ -f "$dir/.git" ] || continue
+		if ! is_contained "$dir" && ! under_planned "$dir"; then
+			printf '%s\0' "$dir"
+		fi
+	done <"$work/checkouts"
+}
+
 # Plans removal of idle linked worktrees that hold nothing beyond what
 # their repository keeps and regenerable build output.
 plan_worktrees() {
 	local dir
-	while IFS= read -r dir <&3; do
-		[ -f "$dir/.git" ] || continue
-		if is_contained "$dir" || under_planned "$dir"; then
+	worktree_candidates >"$work/worktree-candidates"
+	prefetch_plannable <"$work/worktree-candidates"
+	while IFS= read -r -d '' dir <&3; do
+		if under_planned "$dir" || ! plannable "$dir"; then
 			continue
 		fi
-		plannable "$dir" || continue
 		assess_cached "$dir"
 		[ "$checkout_linked" -eq 1 ] || continue
 		if [ -z "$checkout_risk" ] && ! ignored_regenerable "$dir"; then
@@ -758,7 +873,7 @@ plan_worktrees() {
 			continue
 		fi
 		add worktree worktree "$dir" "$checkout_common"
-	done 3<"$work/checkouts"
+	done 3<"$work/worktree-candidates"
 }
 
 # Plans `git worktree prune` for repositories whose worktree entries point
@@ -1211,6 +1326,8 @@ execute_plan() {
 	reads_before=""
 	assessed=()
 	assessed_risk=()
+	plannable_yes="$nl"
+	plannable_no="$nl"
 	assessed_linked=()
 	assessed_common=()
 	run_rows path worktree link toolchain
