@@ -202,7 +202,7 @@ if command -v git >/dev/null 2>&1; then
 fi
 # omp_owner_alive needs process start times; BusyBox ps has no lstart.
 have_ps=0
-if ps -o lstart= -p $$ >/dev/null 2>&1; then
+if [ -n "$(ps -o lstart= -p $$ 2>/dev/null)" ]; then
 	have_ps=1
 fi
 # Filesystem walks run this many at a time.
@@ -573,14 +573,14 @@ is_contained() {
 blocks_work() {
 	local c
 	[ -s "$contained" ] || return 1
-	while IFS= read -r c; do
+	while IFS= read -r c <&4; do
 		assess_cached "$c"
 		if [ -n "$checkout_risk" ]; then
 			blocker="$c"
 			blocker_risk="$checkout_risk"
 			return 0
 		fi
-	done < <(P="$1/" awk 'BEGIN { p = ENVIRON["P"] } index($0 "/", p) == 1' "$contained")
+	done 4< <(P="$1/" awk 'BEGIN { p = ENVIRON["P"] } index($0 "/", p) == 1' "$contained")
 	return 1
 }
 
