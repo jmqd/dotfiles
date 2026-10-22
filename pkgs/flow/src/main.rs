@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use flow::cli::{Cli, Commands};
 use flow::commands::{doctor, pin, search};
@@ -22,7 +23,9 @@ fn main() -> anyhow::Result<()> {
     };
 
     let Cli { common, command } = cli;
-    let ctx = Ctx::new(common)?;
+    let working_dir =
+        std::env::current_dir().context("failed to determine current working directory")?;
+    let ctx = Ctx::new(common, working_dir);
 
     logging::init(&LoggingOptions {
         automated: ctx.is_automated(),

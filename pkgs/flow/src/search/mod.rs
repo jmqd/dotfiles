@@ -7,9 +7,9 @@ pub mod zoekt;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SearchTools {
-    git_bin: String,
-    zoekt_bin: String,
-    zoekt_git_index_bin: String,
+    pub git_bin: String,
+    pub zoekt_bin: String,
+    pub zoekt_git_index_bin: String,
 }
 
 impl SearchTools {
@@ -21,18 +21,6 @@ impl SearchTools {
             zoekt_git_index_bin: std::env::var("FLOW_SEARCH_ZOEKT_GIT_INDEX_BIN")
                 .unwrap_or_else(|_| "zoekt-git-index".to_owned()),
         }
-    }
-
-    pub fn git_bin(&self) -> &str {
-        &self.git_bin
-    }
-
-    pub fn zoekt_bin(&self) -> &str {
-        &self.zoekt_bin
-    }
-
-    pub fn zoekt_git_index_bin(&self) -> &str {
-        &self.zoekt_git_index_bin
     }
 }
 

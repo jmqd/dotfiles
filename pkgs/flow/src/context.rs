@@ -1,7 +1,6 @@
 use crate::cli::CommonArgs;
 use crate::logging::LogFormat;
 use crate::output::OutputMode;
-use anyhow::Context as _;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -11,13 +10,11 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    pub fn new(common_args: CommonArgs) -> anyhow::Result<Self> {
-        let working_dir =
-            std::env::current_dir().context("failed to determine current working directory")?;
-        Ok(Self {
+    pub fn new(common_args: CommonArgs, working_dir: PathBuf) -> Self {
+        Self {
             common_args,
             working_dir,
-        })
+        }
     }
 
     pub fn is_automated(&self) -> bool {
@@ -42,18 +39,21 @@ mod tests {
     use super::Ctx;
     use crate::cli::CommonArgs;
     use crate::output::OutputMode;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn ctx_exposes_automation_and_output() {
-        let ctx = Ctx::new(CommonArgs {
-            automated: true,
-            output: OutputMode::Json,
-            log_format: None,
-        })
-        .expect("ctx builds");
+        let ctx = Ctx::new(
+            CommonArgs {
+                automated: true,
+                output: OutputMode::Json,
+                log_format: None,
+            },
+            PathBuf::from("/tmp/project"),
+        );
 
         assert!(ctx.is_automated());
         assert_eq!(ctx.output_mode(), OutputMode::Json);
-        assert!(ctx.working_dir().is_absolute());
+        assert_eq!(ctx.working_dir(), Path::new("/tmp/project"));
     }
 }

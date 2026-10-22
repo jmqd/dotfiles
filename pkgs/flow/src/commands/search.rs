@@ -154,7 +154,7 @@ fn execute_query(
             results.extend(
                 zoekt::search(
                     config,
-                    tools.zoekt_bin(),
+                    &tools.zoekt_bin,
                     &query,
                     selected_repo.as_ref(),
                     args.scope.path.as_deref(),
@@ -205,7 +205,7 @@ fn execute_query(
                 results.extend(
                     dirty::search_repo(
                         config,
-                        tools.git_bin(),
+                        &tools.git_bin,
                         &repo,
                         &normalized_terms,
                         args.scope.path.as_deref(),
@@ -257,7 +257,7 @@ fn execute_code(
     let selected_repo = resolve_optional_repo(config, ctx, args.scope.repo.as_deref())?;
     let results = zoekt::search(
         config,
-        tools.zoekt_bin(),
+        &tools.zoekt_bin,
         &query,
         selected_repo.as_ref(),
         args.scope.path.as_deref(),
@@ -323,7 +323,7 @@ fn execute_reindex(
     let mut warnings = Vec::new();
 
     for repo in &discovered_repos {
-        if repo_has_head(tools.git_bin(), &repo.path)? {
+        if repo_has_head(&tools.git_bin, &repo.path)? {
             indexable_repos.push(repo.clone());
         } else {
             warnings.push(format!(
@@ -333,8 +333,8 @@ fn execute_reindex(
         }
     }
 
-    let zoekt_stats = zoekt::reindex(config, tools.zoekt_git_index_bin(), &indexable_repos)?;
-    let metadata_stats = metadata::reindex(config, tools.git_bin(), &indexable_repos)?;
+    let zoekt_stats = zoekt::reindex(config, &tools.zoekt_git_index_bin, &indexable_repos)?;
+    let metadata_stats = metadata::reindex(config, &tools.git_bin, &indexable_repos)?;
     write_repo_records(config, &discovered_repos)?;
 
     let last_reindex_at = Utc::now().to_rfc3339();
@@ -643,7 +643,6 @@ mod tests {
     use crate::search::metadata;
     use std::fs;
     use std::path::{Path, PathBuf};
-    use std::sync::{Mutex, OnceLock};
     use tempfile::TempDir;
 
     #[test]
@@ -877,40 +876,22 @@ mod tests {
     }
 
     fn test_tools(zoekt_bin: String) -> SearchTools {
-        let _guard = cwd_lock().lock().expect("env lock");
-        unsafe {
-            std::env::set_var("FLOW_SEARCH_GIT_BIN", "git");
-            std::env::set_var("FLOW_SEARCH_ZOEKT_BIN", &zoekt_bin);
-            std::env::set_var("FLOW_SEARCH_ZOEKT_GIT_INDEX_BIN", "zoekt-git-index");
+        SearchTools {
+            git_bin: "git".to_owned(),
+            zoekt_bin,
+            zoekt_git_index_bin: "zoekt-git-index".to_owned(),
         }
-        let tools = SearchTools::load();
-        unsafe {
-            std::env::remove_var("FLOW_SEARCH_GIT_BIN");
-            std::env::remove_var("FLOW_SEARCH_ZOEKT_BIN");
-            std::env::remove_var("FLOW_SEARCH_ZOEKT_GIT_INDEX_BIN");
-        }
-        drop(_guard);
-        tools
     }
 
     fn test_ctx(working_dir: &Path) -> Ctx {
-        let _guard = cwd_lock().lock().expect("cwd lock");
-        let previous = std::env::current_dir().expect("current dir");
-        std::env::set_current_dir(working_dir).expect("set current dir");
-        let ctx = Ctx::new(CommonArgs {
-            automated: true,
-            output: OutputMode::Json,
-            log_format: None,
-        })
-        .expect("ctx builds");
-        std::env::set_current_dir(previous).expect("restore current dir");
-        drop(_guard);
-        ctx
-    }
-
-    fn cwd_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+        Ctx::new(
+            CommonArgs {
+                automated: true,
+                output: OutputMode::Json,
+                log_format: None,
+            },
+            working_dir.to_path_buf(),
+        )
     }
 
     fn test_config(root: PathBuf, state_dir: PathBuf) -> SearchConfig {
