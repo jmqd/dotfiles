@@ -14,7 +14,22 @@ in
   users.groups.nas.gid = 2000;
   users.users.jmq.extraGroups = [ "nas" ];
 
+  # The NFSv4 root (fsid=0) is an empty tmpfs that only holds the subvolume
+  # mount points. If it were the btrfs top level, its backups/media/frigate
+  # directories would be those subvolumes: a client denied a subvolume's
+  # export would read the same data through the read-only root instead.
   fileSystems."/srv/nas" = {
+    device = "none";
+    fsType = "tmpfs";
+    options = [
+      "mode=0755"
+      "size=1M"
+    ];
+  };
+
+  # The btrfs top level stays outside the exported tree, for scrubs and
+  # subvolume administration.
+  fileSystems."/mnt/nas-top" = {
     device = nasDevice;
     fsType = "btrfs";
     options = btrfsOptions ++ [ "subvolid=5" ];
@@ -56,7 +71,7 @@ in
   services.btrfs.autoScrub = {
     enable = true;
     interval = "monthly";
-    fileSystems = [ "/srv/nas" ];
+    fileSystems = [ "/mnt/nas-top" ];
   };
 
   services.smartd = {
@@ -81,19 +96,21 @@ in
     '';
   };
 
-  # Never serve an empty directory from the system disk if the NAS is absent.
-  systemd.services.nfs-server = {
-    requires = [
-      "srv-nas.mount"
-      "srv-nas-frigate.mount"
-    ];
-    after = [
-      "srv-nas.mount"
-      "srv-nas-frigate.mount"
-    ];
-    bindsTo = [
-      "srv-nas.mount"
-      "srv-nas-frigate.mount"
-    ];
-  };
+  # Never serve an empty directory from the system disk if the NAS is absent:
+  # every exported subvolume must be mounted.
+  systemd.services.nfs-server =
+    let
+      nasMounts = [
+        "srv-nas.mount"
+        "srv-nas-shared.mount"
+        "srv-nas-backups.mount"
+        "srv-nas-media.mount"
+        "srv-nas-frigate.mount"
+      ];
+    in
+    {
+      requires = nasMounts;
+      after = nasMounts;
+      bindsTo = nasMounts;
+    };
 }
