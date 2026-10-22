@@ -39,8 +39,10 @@ Deletes, once idle for AGE:
 Then runs the garbage collectors it finds: docker and podman image prune
 (images no container uses, created before AGE ago) and docker builder
 prune (build cache unused for AGE), keeping containers, networks, and
-volumes; flatpak uninstall --unused; xcrun simctl delete unavailable; and
-nix-store --gc last.
+volumes; with a nightly cargo already installed, cargo clean gc for
+extracted crate sources and git checkouts unused for AGE; flatpak
+uninstall --unused; xcrun simctl delete unavailable; and nix-store --gc
+last.
 
 Keeps anything written, renamed, or held open by a process within AGE;
 anything containing a socket or FIFO; empty files and directories; caches
@@ -1203,6 +1205,17 @@ plan_rustup_toolchains() {
 	done
 }
 
+# Cargo records when it last used each extracted crate source and git
+# checkout. Both rebuild offline from the downloaded .crate files and git
+# clones, so they follow AGE; downloads stay under cargo's own auto-GC,
+# which waits months. `clean gc` still needs a nightly cargo, and
+# RUSTUP_AUTO_INSTALL=0 keeps a missing nightly from being installed just
+# to run it.
+cargo_gc() {
+	(cd / && RUSTUP_AUTO_INSTALL=0 cargo +nightly -Zgc clean gc "$@" \
+		--max-src-age="${age_minutes}minutes" --max-git-co-age="${age_minutes}minutes")
+}
+
 # Other tools' garbage collectors; they run after every deletion above.
 # Container runtimes lose only images and build cache: a stopped
 # container's writable layer can hold state, and `until` would judge it
@@ -1220,6 +1233,9 @@ plan_collectors() {
 			add buildcache gc docker
 		fi
 	done
+	if command -v cargo >/dev/null 2>&1 && cargo_gc --dry-run --quiet >/dev/null 2>&1; then
+		add cargo-gc gc cargo
+	fi
 	if command -v flatpak >/dev/null 2>&1; then
 		add flatpak gc flatpak
 	fi
@@ -1311,6 +1327,7 @@ print_plan() {
 				if (method == "buildcache") return path " builder prune --filter until=" age_m "m"
 				if (method == "flatpak") return "flatpak uninstall --user --unused"
 				if (method == "simctl") return "xcrun simctl delete unavailable"
+				if (method == "cargo-gc") return "cargo +nightly -Zgc clean gc --max-src-age=" age_m "minutes --max-git-co-age=" age_m "minutes"
 				if (method == "nix-gc") return "nix-store --gc"
 				return path
 			}
@@ -1410,6 +1427,7 @@ run_row() {
 	buildcache) "$path" builder prune --force --filter "until=${age_minutes}m" ;;
 	flatpak) flatpak uninstall --user --unused -y ;;
 	simctl) xcrun simctl delete unavailable ;;
+	cargo-gc) cargo_gc ;;
 	nix-gc) nix-store --gc ;;
 	*) return 1 ;;
 	esac
@@ -1445,7 +1463,7 @@ execute_plan() {
 	run_rows path worktree link toolchain
 	run_rows prune
 	run_rows generations
-	run_rows images buildcache flatpak simctl
+	run_rows images buildcache cargo-gc flatpak simctl
 	run_rows nix-gc
 }
 

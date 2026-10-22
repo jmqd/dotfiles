@@ -70,7 +70,18 @@ cat >"$bin/docker" <<EOF
 [ "\$1" = info ] && exit 0
 printf 'docker %s\n' "\$*" >>"$calls"
 EOF
-chmod +x "$bin/nix-store" "$bin/nix-env" "$bin/rustup" "$bin/docker"
+# Like the rustup proxy, a missing toolchain is installed unless
+# RUSTUP_AUTO_INSTALL=0.
+cat >"$bin/cargo" <<EOF
+#!$bash_path
+if [ "\$1" = +nightly ] && [ ! -d "\$HOME/.rustup/toolchains/nightly-test-host" ]; then
+	[ "\${RUSTUP_AUTO_INSTALL:-1}" != 0 ] || exit 1
+	printf 'rustup install nightly\n' >>"$calls"
+fi
+case " \$* " in *" --dry-run "*) exit 0 ;; esac
+printf 'cargo %s\n' "\$*" >>"$calls"
+EOF
+chmod +x "$bin/nix-store" "$bin/nix-env" "$bin/rustup" "$bin/docker" "$bin/cargo"
 
 export HOME="$fixture/home"
 tmp="$fixture/tmp"
@@ -511,6 +522,14 @@ if planned | grep -Fxq -- "$HOME/.omp/wt/live"; then
 	fail "dry run without ps start times lists the live omp copy"
 fi
 
+# Cargo GC runs only with a nightly already installed; it never installs one.
+case "$output" in *"cargo +nightly -Zgc clean gc --max-src-age=2160minutes --max-git-co-age=2160minutes$nl"*) ;; *) fail "dry run does not run cargo gc${nl}$output" ;; esac
+mv "$toolchains/nightly-test-host" "$fixture/nightly-test-host"
+output="$(run --dry-run)"
+mv "$fixture/nightly-test-host" "$toolchains/nightly-test-host"
+case "$output" in *"clean gc"*) fail "dry run without a nightly runs cargo gc" ;; esac
+[ ! -s "$calls" ] || fail "dry run without a nightly ran:$nl$(cat "$calls")"
+
 set +e
 run </dev/null >/dev/null 2>&1
 status=$?
@@ -538,6 +557,7 @@ rustup toolchain uninstall nightly-2026-02-02-test-host
 nix-env --profile $profiles/profile --delete-generations 1 2 3
 docker image prune --all --force --filter until=2160m
 docker builder prune --force --filter until=2160m
+cargo +nightly -Zgc clean gc --max-src-age=2160minutes --max-git-co-age=2160minutes
 nix-store --gc"
 [ "$(cat "$calls")" = "$expected_calls" ] || fail "collector calls:$nl$(cat "$calls")${nl}expected:$nl$expected_calls"
 
