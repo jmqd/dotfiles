@@ -50,7 +50,9 @@
 ## Verification
 
 - Define the observable result before implementation. Reproduce a defect before you fix it.
-- Test observable contracts and domain laws through public interfaces.
+- Test behavior, not implementation. Name each test after the use case or domain law it proves. State laws such as round-trips, idempotence, and invariants as seeded property tests. Drive each test through the outermost interface that stays fast and deterministic, such as a CLI, HTTP API, or public library API. Fake only slow or nondeterministic boundaries, such as the network and the clock.
+- Add a test only if it fails when that behavior breaks and passes after any rewrite of the internals that keeps the behavior. Do not test private helpers, internal call order, incidental output such as log text, or code that cannot fail.
+- Change an existing test only when the requirements change. If a refactor or new feature breaks a test, fix the code if behavior regressed; otherwise rewrite the test against behavior or delete it.
 - Run the smallest focused check first. Then run the repository's standard full check. Audit the integrated result after broad changes.
 - Test the changed path with realistic input. Before deployment, test the exact artifact on the target platform.
 - For UI work, use a real browser. Check desktop, mobile, keyboard, failures, console, and network behavior.
