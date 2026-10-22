@@ -72,23 +72,6 @@ note_upgrade() {
 	fi
 }
 
-# Query the registry directly so the audit does not need a Node.js toolchain.
-npm_latest_version() {
-	local package="$1"
-	curl --fail --silent --show-error --location "https://registry.npmjs.org/${package}/latest" |
-		jq -er '.version // empty'
-}
-
-check_npm_latest() {
-	local name="$1" package="$2" current="$3" latest
-	section "latest check: $name"
-	if latest="$(npm_latest_version "$package")"; then
-		note_upgrade "$name" "$current" "$latest"
-	else
-		fail "could not fetch latest npm version for $package"
-	fi
-}
-
 github_api_headers() {
 	local args=(
 		--header "Accept: application/vnd.github+json"
@@ -127,94 +110,29 @@ check_github_release_latest() {
 		fail "could not fetch latest GitHub release for $repo"
 	fi
 }
-check_codex_desktop_latest() {
-	local current="$1" feed_arm feed_x64 latest_arm latest_x64
-	section "latest check: codex-desktop"
 
-	if ! feed_arm="$(curl --fail --silent --show-error --location \
-		"https://persistent.oaistatic.com/codex-app-prod/appcast.xml")"; then
-		fail "could not fetch Codex Desktop arm64 appcast"
+# flow pin check owns the release feeds of every pin listed in pins/ and
+# pkgs/flow/src/pins/registry.rs. It exits 1 when a pin failed but still
+# prints the full report.
+check_pins() {
+	section "latest check: pins"
+	local report name status pinned upstream detail
+	report="$(nix run "$repo_root#flow" -- --output json pin check)" || true
+	if ! jq -e '.command == "check"' <<<"$report" >/dev/null 2>&1; then
+		fail "flow pin check produced no report"
 		return
 	fi
-	if ! feed_x64="$(curl --fail --silent --show-error --location \
-		"https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml")"; then
-		fail "could not fetch Codex Desktop x86_64 appcast"
-		return
-	fi
-
-	local version_pattern='<sparkle:shortVersionString>([^<]+)</sparkle:shortVersionString>'
-	local release_version_pattern='^[0-9]+\.[0-9]+\.[0-9]+$'
-	if [[ "$feed_arm" =~ $version_pattern ]]; then
-		latest_arm="${BASH_REMATCH[1]}"
-	else
-		fail "Codex Desktop arm64 appcast is missing a short version"
-		return
-	fi
-	if [[ ! "$latest_arm" =~ $release_version_pattern ]]; then
-		fail "Codex Desktop arm64 appcast has malformed version: $latest_arm"
-		return
-	fi
-	if [[ "$feed_x64" =~ $version_pattern ]]; then
-		latest_x64="${BASH_REMATCH[1]}"
-	else
-		fail "Codex Desktop x86_64 appcast is missing a short version"
-		return
-	fi
-	if [[ ! "$latest_x64" =~ $release_version_pattern ]]; then
-		fail "Codex Desktop x86_64 appcast has malformed version: $latest_x64"
-		return
-	fi
-
-	if [ "$latest_arm" != "$latest_x64" ]; then
-		fail "Codex Desktop appcast versions differ: arm64 $latest_arm, x86_64 $latest_x64"
-		return
-	fi
-
-	note_upgrade "codex-desktop" "$current" "$latest_arm"
-}
-
-check_wispr_flow_latest() {
-	local current="$1" arch latest latest_arm=""
-	section "latest check: wispr-flow"
-
-	for arch in arm64 x64; do
-		if ! latest="$(curl --fail --silent --show-error --location \
-			"https://dl.wisprflow.com/wispr-flow/darwin/${arch}/RELEASES.json" |
-			jq -er '.currentRelease')"; then
-			fail "could not fetch Wispr Flow ${arch} release feed"
-			return
-		fi
-		if [[ ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-			fail "Wispr Flow ${arch} release feed has malformed version: $latest"
-			return
-		fi
-		if [ -z "$latest_arm" ]; then
-			latest_arm="$latest"
-		elif [ "$latest" != "$latest_arm" ]; then
-			fail "Wispr Flow release versions differ: arm64 $latest_arm, x86_64 $latest"
-			return
-		fi
-	done
-
-	note_upgrade "wispr-flow" "$current" "$latest_arm"
-}
-
-check_whatsapp_latest() {
-	local current="$1" latest
-	section "latest check: whatsapp-for-mac"
-
-	if ! latest="$(curl --fail --silent --show-error --location \
-		"https://web.whatsapp.com/desktop/mac_native/updates/?branch=master&configuration=Release" |
-		sed -n 's/.*enclosure url="[^"]*version=\([0-9.]*\)&amp;.*/\1/p' | head -n 1)"; then
-		fail "could not fetch WhatsApp release feed"
-		return
-	fi
-	if [[ ! "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-		fail "WhatsApp release feed has malformed version: $latest"
-		return
-	fi
-
-	note_upgrade "whatsapp-for-mac" "$current" "$latest"
+	while IFS=$'\t' read -r name status pinned upstream detail; do
+		case "$status" in
+		current | outdated) note_upgrade "$name" "$pinned" "$upstream" ;;
+		manual_update)
+			note_upgrade "$name" "$pinned" "$upstream"
+			printf '  manual bump: %s\n' "$detail"
+			;;
+		failed) fail "flow pin check $name: $detail" ;;
+		*) fail "flow pin check $name: unknown status $status" ;;
+		esac
+	done < <(jq -r '.data[] | [.name, .status, (.pinned // "?"), (.upstream // "?"), (.error // .reason // "")] | @tsv' <<<"$report")
 }
 
 # osv-scanner reads the lockfile directly, so no Node.js toolchain runs here.
@@ -472,27 +390,11 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version oracle_version claude_version codex_desktop_version wispr_flow_version whatsapp_version notion_version gws_version voxtype_version
-	pi_version="$(package_version "$system" pi)"
-	oracle_version="$(package_version "$system" oracle)"
-	claude_version="$(package_version "$system" claude-code)"
-	notion_version="$(package_version "$system" notion-cli)"
+	local gws_version
 	gws_version="$(package_version "$system" googleworkspace-cli)"
-	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
-	wispr_flow_version="$(package_version "aarch64-darwin" wispr-flow)"
-	voxtype_version="$(package_version "x86_64-linux" voxtype)"
-	whatsapp_version="$(flake_expr 'let ps = flake.homeConfigurations."macos-aarch64".config.home.packages; in (builtins.head (builtins.filter (p: (p.pname or "") == "whatsapp-for-mac") ps)).version')"
-
-	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
-	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
-	check_npm_latest "claude-code" "@anthropic-ai/claude-code" "$claude_version"
 	check_github_release_latest "googleworkspace/cli" "v${gws_version}"
-	check_github_release_latest "lox/notion-cli" "v${notion_version}"
-	check_github_release_latest "peteonrails/voxtype" "v${voxtype_version}"
 
-	check_codex_desktop_latest "$codex_desktop_version"
-	check_wispr_flow_latest "$wispr_flow_version"
-	check_whatsapp_latest "$whatsapp_version"
+	check_pins
 
 	# GHSA-vfj7-8cjw-p6xm: braces 3.0.3 nested-pattern DoS, no fixed release.
 	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json" GHSA-vfj7-8cjw-p6xm

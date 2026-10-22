@@ -1,0 +1,13 @@
+{
+  "version": "1.104.2",
+  "sources": {
+    "aarch64-darwin": {
+      "url": "https://pkgs.tailscale.com/stable/Tailscale-1.104.2-macos.pkg",
+      "hash": "sha256-FyTS4CHTxfgX9Cf2KCYMATUxpSjxJYp9R3c10ZixH1U="
+    },
+    "x86_64-darwin": {
+      "url": "https://pkgs.tailscale.com/stable/Tailscale-1.104.2-macos.pkg",
+      "hash": "sha256-FyTS4CHTxfgX9Cf2KCYMATUxpSjxJYp9R3c10ZixH1U="
+    }
+  }
+}

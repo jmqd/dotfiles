@@ -1,6 +1,6 @@
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use flow::cli::{Cli, Commands};
-use flow::commands::{doctor, search};
+use flow::commands::{doctor, pin, search};
 use flow::context::Ctx;
 use flow::logging::{self, LoggingOptions, tracing};
 use flow::output::{OutputMode, write_json, write_text};
@@ -58,6 +58,19 @@ fn main() -> anyhow::Result<()> {
             match ctx.output_mode() {
                 OutputMode::Text => write_text(&mut stdout, &search::format_text(&output))?,
                 OutputMode::Json => write_json(&mut stdout, &output)?,
+            }
+        }
+        Commands::Pin(args) => {
+            let output = pin::execute(&ctx, args)?;
+            let stdout = io::stdout();
+            let mut stdout = stdout.lock();
+            match ctx.output_mode() {
+                OutputMode::Text => write_text(&mut stdout, &pin::format_text(&output))?,
+                OutputMode::Json => write_json(&mut stdout, &output)?,
+            }
+            if output.has_failures() {
+                drop(stdout);
+                std::process::exit(1);
             }
         }
         Commands::GenerateCompletions(args) => {

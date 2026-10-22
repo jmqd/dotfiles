@@ -112,6 +112,36 @@ pub struct SearchArgs {
 }
 
 #[derive(Args, Clone, Debug)]
+pub struct PinCheckArgs {
+    /// Pins to check; all pins when omitted.
+    pub names: Vec<String>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct PinBumpArgs {
+    /// Pins to bump; every outdated pin when omitted.
+    pub names: Vec<String>,
+
+    /// Write the new pin without building the package that uses it.
+    #[arg(long, default_value_t = false)]
+    pub no_build: bool,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum PinCommands {
+    /// Compare each pin in pins/ with its newest upstream release.
+    Check(PinCheckArgs),
+    /// Move outdated pins to the newest upstream release, then build them.
+    Bump(PinBumpArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct PinArgs {
+    #[command(subcommand)]
+    pub command: PinCommands,
+}
+
+#[derive(Args, Clone, Debug)]
 pub struct CommonArgs {
     /// Enable automation-safe behavior (no prompts, stable output/logging defaults).
     #[arg(global = true, long, default_value_t = false)]
@@ -148,6 +178,8 @@ pub enum Commands {
     Doctor(DoctorArgs),
     /// Search local repositories, indexes, and git metadata.
     Search(SearchArgs),
+    /// Check and bump manually pinned upstream binaries in the dotfiles repo.
+    Pin(PinArgs),
     /// Generate shell completions.
     GenerateCompletions(GenerateCompletionsArgs),
 }
@@ -157,6 +189,7 @@ impl Commands {
         match self {
             Self::Doctor(_) => "doctor",
             Self::Search(_) => "search",
+            Self::Pin(_) => "pin",
             Self::GenerateCompletions(_) => "generate-completions",
         }
     }
@@ -237,11 +270,7 @@ mod tests {
 
         match cli.command {
             Commands::Search(SearchArgs {
-                command:
-                    SearchCommands::Code(SearchCodeArgs {
-                        scope,
-                        terms,
-                    }),
+                command: SearchCommands::Code(SearchCodeArgs { scope, terms }),
             }) => {
                 assert_eq!(scope.path.as_deref(), Some("src"));
                 assert_eq!(terms, vec!["review"]);

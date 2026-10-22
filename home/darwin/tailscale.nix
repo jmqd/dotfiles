@@ -5,10 +5,14 @@
   ...
 }:
 let
-  version = "1.104.2";
+  # Bump with `flow pin bump tailscale`.
+  pin = lib.importJSON ../../pins/tailscale.json;
+  inherit (pin) version;
+  source =
+    pin.sources.${pkgs.stdenv.hostPlatform.system}
+      or (throw "tailscale is unsupported on ${pkgs.stdenv.hostPlatform.system}");
   installer = pkgs.fetchurl {
-    url = "https://pkgs.tailscale.com/stable/Tailscale-${version}-macos.pkg";
-    hash = "sha256-FyTS4CHTxfgX9Cf2KCYMATUxpSjxJYp9R3c10ZixH1U=";
+    inherit (source) url hash;
   };
   app = "/Applications/Tailscale.app";
 

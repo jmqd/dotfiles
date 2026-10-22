@@ -8,56 +8,9 @@ let
     echo "brew: this system is managed by Nix — install packages there instead." >&2
     exit 1
   '';
-  orbstackPackage =
-    if pkgs.stdenv.hostPlatform.system == "x86_64-darwin" then
-      pkgs.orbstack.overrideAttrs {
-        version = "2.2.3-20963";
-        src = pkgs.fetchurl {
-          url = "https://cdn-updates.orbstack.dev/amd64/OrbStack_v2.2.3_20963_amd64.dmg";
-          hash = "sha256-0aqHI9Gaa8jbpLZJDplxDpJqpfIpkg2o4b4Pu6kDZB8=";
-        };
-      }
-    else
-      pkgs.orbstack;
-  spotifyPackage =
-    if pkgs.stdenv.hostPlatform.system == "aarch64-darwin" then
-      pkgs.spotify.overrideAttrs {
-        version = "1.3.5.3058";
-        # The CDN URL moves; verify the bundle version before refreshing the hash.
-        src = pkgs.fetchurl {
-          url = "https://download.scdn.co/SpotifyARM64.dmg";
-          hash = "sha256-27fDkGdfwDIhRsgfJjp5yUgkSqou8K/h4PSvdtphDL0=";
-        };
-        # Generic fixup invalidates the vendor's Apple signature.
-        dontFixup = true;
-        doInstallCheck = true;
-        installCheckPhase = ''
-          runHook preInstallCheck
-          /usr/bin/codesign --verify --deep --strict "$out/Applications/Spotify.app"
-          runHook postInstallCheck
-        '';
-      }
-    else
-      pkgs.spotify;
-  # nixpkgs lags upstream's Sparkle feed
-  # (https://web.whatsapp.com/desktop/mac_native/updates/?branch=master&configuration=Release).
-  whatsappPackage = pkgs.whatsapp-for-mac.overrideAttrs (old: rec {
-    version = "2.26.41.28";
-    src = pkgs.fetchzip {
-      extension = "zip";
-      name = "WhatsApp.app";
-      url = "https://web.whatsapp.com/desktop/mac_native/release/?version=${version}&extension=zip&configuration=Release&branch=master";
-      hash = "sha256-JyIXe5uU2KuDz2rCXuN2tcvo03bRuqmoWhxov8+/Se8=";
-    };
-    # Generic fixup invalidates the vendor's Apple signature.
-    dontFixup = true;
-    doInstallCheck = true;
-    installCheckPhase = ''
-      runHook preInstallCheck
-      /usr/bin/codesign --verify --deep --strict "$out/Applications/WhatsApp.app"
-      runHook postInstallCheck
-    '';
-  });
+  orbstackPackage = pkgs.callPackage ../../pkgs/orbstack { };
+  spotifyPackage = pkgs.callPackage ../../pkgs/spotify { };
+  whatsappPackage = pkgs.callPackage ../../pkgs/whatsapp { };
 in
 {
   imports = [

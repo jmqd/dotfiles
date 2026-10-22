@@ -177,6 +177,18 @@
         in
         pkgs.callPackage ./pkgs/wispr-flow { };
 
+      # Darwin apps whose pins in pins/ override nixpkgs; packaged so
+      # `flow pin bump` can build them.
+      mkPinnedAppPkg =
+        name: system:
+        let
+          pkgs = import (nixpkgsFor system) {
+            inherit system;
+            config.allowUnfree = true;
+          };
+        in
+        pkgs.callPackage (./pkgs + "/${name}") { };
+
       mkFlowPkg =
         system:
         let
@@ -584,6 +596,9 @@
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = codexDesktopPkg;
+            orbstack = mkPinnedAppPkg "orbstack" system;
+            spotify = mkPinnedAppPkg "spotify" system;
+            whatsapp = mkPinnedAppPkg "whatsapp" system;
             wispr-flow = wisprFlowPkg;
           };
 

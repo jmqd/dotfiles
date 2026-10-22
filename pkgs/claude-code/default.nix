@@ -1,10 +1,8 @@
 # Manually pinned claude-code, mirroring how pi is pinned. nixpkgs lags behind
 # upstream, so we fetch the platform-specific native binary directly from npm.
 #
-# To bump: set `version`, then update each platform `hash` to the npm `integrity`
-# field (already SRI sha512), e.g.
-#   curl -s https://registry.npmjs.org/@anthropic-ai/claude-code-darwin-arm64/<version> \
-#     | jq -r .dist.integrity
+# pins/claude-code.json holds each platform package's npm tarball and its
+# `dist.integrity` (already SRI sha512). Bump it with `flow pin bump claude-code`.
 {
   lib,
   stdenv,
@@ -16,40 +14,21 @@
   socat,
 }:
 let
-  version = "2.1.306";
+  pin = lib.importJSON ../../pins/claude-code.json;
+  inherit (pin) version;
 
   # `claude` ships as a self-contained native executable in a per-platform
-  # package. `hash` is the npm `dist.integrity` of that package's tarball.
-  sources = {
-    "aarch64-darwin" = {
-      plat = "darwin-arm64";
-      hash = "sha512-rX3L0TI2pZdl/SLmqRucVutnPgByT2ZTwU1+/N19okhd/5Grj7np5xhXNycqpEq9JhNX4/DOujb1TxhHii0agA==";
-    };
-    "x86_64-darwin" = {
-      plat = "darwin-x64";
-      hash = "sha512-Jq9enPwecu+1GUwvjB8vTdjnyzA1CtSsKW9PkP3atjt5kcZrCqjnXPvBT7lVZ1dDjQdqe57fk3m4vY6kqrrDXg==";
-    };
-    "aarch64-linux" = {
-      plat = "linux-arm64";
-      hash = "sha512-AePKWuymgDSCh7nScJ4dx/pF1Kppzk4IwQuh6JCROiqQdBVGaaHw6jVf/fY5PhbSjy9EQML6yOiUfc50aFpnTA==";
-    };
-    "x86_64-linux" = {
-      plat = "linux-x64";
-      hash = "sha512-4gsb0IQhxzi1NhoUETXkNZb1t6wJ9tnfAYBKmb0+NmsAwOG37Dacq7bLqsooEkusaT0PyQRFUMt0SgWxx9LEEA==";
-    };
-  };
-
+  # package.
   source =
-    sources.${stdenv.hostPlatform.system}
+    pin.sources.${stdenv.hostPlatform.system}
       or (throw "claude-code: unsupported platform ${stdenv.hostPlatform.system}");
 in
-stdenv.mkDerivation (finalAttrs: {
+stdenv.mkDerivation {
   pname = "claude-code";
   inherit version;
 
   src = fetchurl {
-    url = "https://registry.npmjs.org/@anthropic-ai/claude-code-${source.plat}/-/claude-code-${source.plat}-${finalAttrs.version}.tgz";
-    hash = source.hash;
+    inherit (source) url hash;
   };
 
   sourceRoot = "package";
@@ -96,7 +75,7 @@ stdenv.mkDerivation (finalAttrs: {
     downloadPage = "https://www.npmjs.com/package/@anthropic-ai/claude-code";
     license = lib.licenses.unfree;
     mainProgram = "claude";
-    platforms = builtins.attrNames sources;
+    platforms = builtins.attrNames pin.sources;
     sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
   };
-})
+}

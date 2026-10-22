@@ -5,23 +5,15 @@
   unzip,
 }:
 let
-  sources = {
-    aarch64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-arm64-26.1016.51333.zip";
-      hash = "sha256-Il2XmULYvGkjOZiFZ24jWtUoMVTy8862m7WdiYZzL2g=";
-    };
-    x86_64-darwin = {
-      url = "https://persistent.oaistatic.com/codex-app-prod/ChatGPT-darwin-x64-26.1016.51333.zip";
-      hash = "sha256-wQyXcakTgo5snFt9JY+7KB9s2PG1hDQetLd1Ft0ADVQ=";
-    };
-  };
+  # Bump with `flow pin bump codex-desktop`.
+  pin = lib.importJSON ../../pins/codex-desktop.json;
   source =
-    sources.${stdenvNoCC.hostPlatform.system}
+    pin.sources.${stdenvNoCC.hostPlatform.system}
       or (throw "codex-desktop is unsupported on ${stdenvNoCC.hostPlatform.system}");
 in
 stdenvNoCC.mkDerivation {
   pname = "codex-desktop";
-  version = "26.1016.51333";
+  inherit (pin) version;
 
   src = fetchurl source;
 

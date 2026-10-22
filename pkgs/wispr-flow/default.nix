@@ -5,19 +5,11 @@
   undmg,
 }:
 let
-  version = "1.6.1209";
-  sources = {
-    aarch64-darwin = {
-      url = "https://dl.wisprflow.com/wispr-flow/darwin/arm64/dmgs/Flow-v${version}.dmg";
-      hash = "sha256-Kpgc28LKI5dwEJ0uTEAvDhx4VJoJe1ZWuiVJK73Hqok=";
-    };
-    x86_64-darwin = {
-      url = "https://dl.wisprflow.com/wispr-flow/darwin/x64/dmgs/Flow-v${version}.dmg";
-      hash = "sha256-8NEcTd01+XRoDcQK+NzTtWbsabryYKRKd2tWih0Q6BQ=";
-    };
-  };
+  # Bump with `flow pin bump wispr-flow`.
+  pin = lib.importJSON ../../pins/wispr-flow.json;
+  inherit (pin) version;
   source =
-    sources.${stdenvNoCC.hostPlatform.system}
+    pin.sources.${stdenvNoCC.hostPlatform.system}
       or (throw "wispr-flow is unsupported on ${stdenvNoCC.hostPlatform.system}");
 in
 stdenvNoCC.mkDerivation {

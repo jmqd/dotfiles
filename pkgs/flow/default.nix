@@ -2,6 +2,8 @@
   lib,
   makeWrapper,
   rustPlatform,
+  _7zz,
+  curl,
   gitMinimal,
   zoekt,
 }:
@@ -22,10 +24,14 @@ rustPlatform.buildRustPackage rec {
   nativeBuildInputs = [ makeWrapper ];
   nativeCheckInputs = [ gitMinimal ];
 
+  # `flow pin` also runs the host's `nix`, which must match the daemon, so it
+  # is deliberately not pinned here.
   postInstall = ''
     wrapProgram "$out/bin/flow" \
       --prefix PATH : ${
         lib.makeBinPath [
+          _7zz
+          curl
           gitMinimal
           zoekt
         ]

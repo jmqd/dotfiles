@@ -530,6 +530,32 @@ template. OMP's `PERSONALITY.md` uses the same string without replacing its tool
 or workflow instructions. Edit the Nix string to change the shared wording, then
 apply it with `bin/hm-switch.sh`. Caveman mode requires an explicit request.
 
+## Pinned binaries
+
+Apps and CLIs that track upstream ahead of nixpkgs read their version, download
+URLs, and hashes from `pins/<name>.json`. `flow pin` is the only writer:
+
+```bash
+# Compare every pin with its upstream release feed
+flow pin check
+
+# Download, hash, and write the newest release, then build the package that
+# uses it. A failed build restores the previous pin.
+flow pin bump omp claude-code
+
+# Bump every outdated pin
+flow pin bump
+```
+
+Managed pins: Claude Code, Codex desktop, OMP, OrbStack (Intel), Spotify (Apple
+Silicon), Tailscale, WhatsApp, and Wispr Flow. Spotify's URL is unversioned, so
+checking it downloads the DMG and reads the version from its `Info.plist`. A
+release whose artifact changes without a new version fails instead of moving
+the pin. `notion-cli`, `oracle`, and `voxtype` are reported but need lock-file
+work, so `flow pin` prints the manual step instead of bumping them.
+`just audit-deps` runs `flow pin check`. Bumped apps reach the machine on the
+next `bin/hm-switch.sh`.
+
 ## Cleaning idle files
 
 `clean-stale` deletes regenerable files that nothing has touched for 36 hours,
@@ -705,7 +731,7 @@ approval and Tailscale sign-in cannot be bypassed by Nix.
    OMP URL and tailnet grants if necessary, then follow the private Serve setup
    above. Installing the app does not configure OMP Serve or tailnet policy.
 
-For updates, change both `version` and `hash` in `home/darwin/tailscale.nix`,
+For updates, run `flow pin bump tailscale` (see [Pinned binaries](#pinned-binaries)),
 then switch Home Manager. No second installation command is needed. The pin is
 independent of `flake.lock`; `nix flake update` alone does not advance it.
 Activation restores the exact pin, including replacing a newer installed version
@@ -726,8 +752,7 @@ It skips replacing a running app and refuses symlinks or other apps at that path
 Replaced bundles go to `~/.Trash`. Grant Microphone and Accessibility access in
 System Settings the first time you run Wispr Flow.
 
-For updates, change `version` and both hashes in `pkgs/wispr-flow/default.nix`.
-`just audit-deps` reports new releases from Wispr's `RELEASES.json` feed.
+For updates, run `flow pin bump wispr-flow` (see [Pinned binaries](#pinned-binaries)).
 
 ## home manager backup mode
 
