@@ -35,7 +35,6 @@
 
 
 (use-package sops
-  :ensure nil
   :demand t
   :init
   ;; Upstream SOPS does not support structured TOML encryption. Treat *.toml

@@ -40,7 +40,6 @@ Programming buffers use `flyspell-prog-mode'; other buffers use
     (jmq/enable-spell-checking)))
 
 (use-package flyspell
-  :ensure nil
   :hook ((text-mode . jmq/enable-spell-checking)
          (prog-mode . jmq/enable-spell-checking)
          (git-commit-mode . jmq/enable-spell-checking))

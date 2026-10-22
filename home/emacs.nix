@@ -29,12 +29,43 @@ in
     package = emacsPkg;
   };
 
+  # Every package the handcrafted config loads, pinned by flake.lock. Emacs
+  # never downloads packages itself (emacs/lisp/core/bootstrap.el).
   programs.emacs.extraPackages = epkgs: [
     (epkgs.trivialBuild {
       pname = "sops";
       version = "0.2.1";
       src = emacs-sops;
     })
+    epkgs.avy
+    epkgs.cape
+    epkgs.consult
+    epkgs.corfu
+    epkgs.dap-mode
+    epkgs.embark
+    epkgs.embark-consult
+    epkgs.evil
+    epkgs.evil-collection
+    epkgs.exec-path-from-shell
+    epkgs.general
+    epkgs.go-mode
+    epkgs.htmlize
+    epkgs.kind-icon
+    epkgs.langtool
+    epkgs.magit
+    epkgs.marginalia
+    epkgs.markdown-mode
+    epkgs.nix-mode
+    epkgs.orderless
+    epkgs.ox-reveal
+    epkgs.plantuml-mode
+    epkgs.rust-mode
+    epkgs.vertico
+    epkgs.wgrep
+    epkgs.yaml-mode
+    epkgs.yasnippet
+    epkgs.yasnippet-snippets
+    epkgs.zig-mode
   ];
 
   # Defaults to programs.emacs.finalPackage, which carries extraPackages such

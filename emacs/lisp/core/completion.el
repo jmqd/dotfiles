@@ -1,12 +1,10 @@
 ;;; completion.el -*- lexical-binding: t; -*-
 
 (use-package savehist
-  :ensure nil
   :init
   (savehist-mode 1))
 
 (use-package recentf
-  :ensure nil
   :init
   (recentf-mode 1)
   :config
@@ -21,7 +19,6 @@
   (define-key vertico-map (kbd "C-k") #'vertico-next))
 
 (use-package vertico-directory
-  :ensure nil
   :after vertico
   :bind (:map vertico-map
               ("RET" . vertico-directory-enter)

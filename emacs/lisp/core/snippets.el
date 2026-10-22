@@ -22,7 +22,6 @@
   :after yasnippet)
 
 (use-package autoinsert
-  :ensure nil
   :init
   (setq auto-insert-query t)
   :config
@@ -31,7 +30,6 @@
   (define-auto-insert 'sh-mode #'jmq/auto-insert-shell-script))
 
 (use-package executable
-  :ensure nil
   :hook (after-save . executable-make-buffer-file-executable-if-script-p))
 
 (provide 'jmq-snippets)

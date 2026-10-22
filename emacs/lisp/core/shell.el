@@ -1,7 +1,6 @@
 ;;; shell.el -*- lexical-binding: t; -*-
 
 (use-package eshell
-  :ensure nil
   :init
   (setq eshell-scroll-to-bottom-on-input 'all
         eshell-buffer-maximum-lines 20000
