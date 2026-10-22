@@ -13,10 +13,27 @@ interface PhoneMessage {
 const MAX_MESSAGES = 200;
 const MAX_TEXT = 12_000;
 const MAX_TRANSCRIPT = 120_000;
+// The companion rejects a snapshot whose title or cwd exceeds these UTF-8 byte
+// counts (`Session::valid` in src/sessions.rs).
+const MAX_TITLE_BYTES = 1024;
+const MAX_CWD_BYTES = 4096;
+const utf8 = new TextEncoder();
 
+// The companion parses frames into Rust strings and drops the session on a lone
+// surrogate, so a cut must never split a surrogate pair.
 function clipped(text: string): string {
   const suffix = "\n[Shortened — full output is in the terminal]";
-  return text.length > MAX_TEXT ? text.slice(0, MAX_TEXT - suffix.length) + suffix : text;
+  if (text.length <= MAX_TEXT) return text;
+  const end = MAX_TEXT - suffix.length;
+  const high = text.charCodeAt(end - 1);
+  return text.slice(0, high >= 0xd800 && high <= 0xdbff ? end - 1 : end) + suffix;
+}
+
+function utf8Prefix(text: string, maxBytes: number): string {
+  // A UTF-16 unit never takes more than 3 UTF-8 bytes.
+  if (text.length * 3 <= maxBytes) return text;
+  // encodeInto writes whole code points only, so `read` ends on a boundary.
+  return text.slice(0, utf8.encodeInto(text, new Uint8Array(maxBytes)).read);
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -42,6 +59,8 @@ function messageText(value: unknown): string {
       : block.type === "toolCall" && typeof block.name === "string" ? `Calling ${block.name}`
       : "";
     if (!text) continue;
+    // Keep one unit past the limit so clipped() marks the cut; clipped() then
+    // cuts below it, so a pair split here never reaches a frame.
     parts.push(text.slice(0, remaining + 1));
     remaining -= Math.min(text.length, remaining + 1) + 1;
     if (remaining <= 0) break;
@@ -85,6 +104,10 @@ export default function phone(pi: ExtensionAPI): void {
     return `${process.pid}-${context.sessionManager.getSessionId()}`;
   }
 
+  function currentTitle(context: ExtensionContext): string {
+    return utf8Prefix(pi.getSessionName() || basename(context.cwd) || "OMP session", MAX_TITLE_BYTES);
+  }
+
   function trimMessages(): void {
     if (messages.length > MAX_MESSAGES) messages.splice(0, messages.length - MAX_MESSAGES);
     let size = 0;
@@ -119,7 +142,7 @@ export default function phone(pi: ExtensionAPI): void {
   function updateContext(context: ExtensionContext): void {
     ctx = context;
     sessionId = currentId(context);
-    title = pi.getSessionName() || basename(context.cwd) || "OMP session";
+    title = currentTitle(context);
     state = context.isIdle() ? "idle" : "working";
     partial = "";
     loadTranscript();
@@ -133,7 +156,7 @@ export default function phone(pi: ExtensionAPI): void {
     }
     socket.write(JSON.stringify({
       type: "snapshot",
-      session: { id: sessionId, title, cwd: ctx.cwd, state, messages, partial },
+      session: { id: sessionId, title, cwd: utf8Prefix(ctx.cwd, MAX_CWD_BYTES), state, messages, partial },
     }) + "\n");
     dirty = false;
   }
@@ -229,7 +252,7 @@ export default function phone(pi: ExtensionAPI): void {
     context.setInterval(() => {
       if (stopped || !ctx) return;
       if (currentId(ctx) !== sessionId) updateContext(ctx);
-      const nextTitle = pi.getSessionName() || basename(ctx.cwd) || "OMP session";
+      const nextTitle = currentTitle(ctx);
       if (title !== nextTitle) { title = nextTitle; dirty = true; }
       if (socket?.connecting && Date.now() - connectStarted > 10_000) socket.destroy();
       connect();

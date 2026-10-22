@@ -13,11 +13,16 @@ rustPlatform.buildRustPackage {
     src = ./.;
     filter =
       path: _type:
-      !(builtins.elem (baseNameOf path) [
+      let
+        name = baseNameOf path;
+      in
+      !(builtins.elem name [
         "target"
         "node_modules"
         ".git"
-      ]);
+      ])
+      # Extension tests run as a flake check and are not part of the installed extension.
+      && !(lib.hasSuffix ".test.ts" name);
   };
   cargoLock.lockFile = ./Cargo.lock;
 

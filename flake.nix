@@ -402,6 +402,23 @@
                 touch $out
               '';
 
+          ompPhoneExtensionTests =
+            pkgs.runCommand "omp-phone-extension-tests"
+              {
+                nativeBuildInputs = [ pkgs.nodejs ];
+              }
+              ''
+                cd ${
+                  checkSource [
+                    "projects/omp-phone/package.json"
+                    "projects/omp-phone/extension/index.ts"
+                    "projects/omp-phone/extension/index.test.ts"
+                  ]
+                }
+                node --test projects/omp-phone/extension/index.test.ts
+                touch $out
+              '';
+
           bootstrapRustTests =
             pkgs.runCommand "bootstrap-rust-tests"
               {
@@ -614,6 +631,7 @@
             nixfmt = nixfmtCheck;
             notion-cli = notionCliPkg;
             omp = piPkg;
+            omp-phone-extension-tests = ompPhoneExtensionTests;
             oracle = oraclePkg;
             pre-push-secrets-tests = prePushSecretsTests;
             review-orchestrator-tests = reviewOrchestratorTests;
