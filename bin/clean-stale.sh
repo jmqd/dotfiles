@@ -220,12 +220,16 @@ date_at() {
 	fi
 }
 
-device_of() {
+# Succeeds when PATH sits on its parent directory's filesystem, so it is
+# no mount point.
+on_parent_fs() {
+	local devices lf=$'\n'
 	if [ "$gnu_stat" -eq 1 ]; then
-		stat -c %d -- "$1"
+		devices="$(stat -c %d -- "$1" "${1%/*}" 2>/dev/null)" || return 1
 	else
-		stat -f %d -- "$1"
+		devices="$(stat -f %d -- "$1" "${1%/*}" 2>/dev/null)" || return 1
 	fi
+	[ "${devices%%"$lf"*}" = "${devices#*"$lf"}" ]
 }
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/clean-stale.XXXXXX")"
@@ -320,7 +324,7 @@ check_plannable() {
 	[ ! -L "$path" ] || return 1
 	if [ -d "$path" ]; then
 		[ -n "$(find "$path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ] || return 1
-		[ "$(device_of "$path")" = "$(device_of "${path%/*}")" ] || return 1
+		on_parent_fs "$path" || return 1
 	elif [ -f "$path" ]; then
 		[ -s "$path" ] || return 1
 	else
@@ -356,6 +360,19 @@ probe_paths() {
 	done
 }
 
+# Runs bash CODE on the NUL-separated arguments on stdin, at most COUNT
+# per run and $parallel_jobs runs at a time, then prints all output. Each
+# run writes its own file: POSIX keeps concurrent pipe writes whole only
+# up to PIPE_BUF (512 bytes on macOS), and find writes larger blocks.
+parallel_runs() {
+	local count="$1" code="$2" out
+	out="$(mktemp -d "$work/runs.XXXXXX")"
+	xargs -0 -n "$count" -P "$parallel_jobs" "$BASH" -c "{
+$code
+} >>\"\$0/\$\$\"" "$out" 2>/dev/null || true
+	find "$out" -type f -exec cat {} + 2>/dev/null || true
+}
+
 # Passes on the NUL-separated paths from stdin that plannable has no
 # verdict for and that fit the line-based results.
 unprobed_paths() {
@@ -367,13 +384,13 @@ unprobed_paths() {
 	done
 }
 
-# Runs check_plannable on the NUL-separated paths on stdin, up to
-# $parallel_jobs at a time in child shells, and caches the results for
-# plannable. Paths it skips or misses are checked when plannable asks.
+# Runs check_plannable on the NUL-separated paths on stdin, in parallel,
+# and caches the results for plannable. Paths it skips or misses are
+# checked when plannable asks.
 prefetch_plannable() {
 	local probe path ok
 	probe="$(declare -p cutoff reads_after reads_before open_paths gnu_stat)
-$(declare -f probe_paths check_plannable is_idle in_use device_of)
+$(declare -f probe_paths check_plannable is_idle in_use on_parent_fs)
 probe_paths \"\$@\""
 	while IFS="$tab" read -r ok path; do
 		if [ "$ok" = 1 ]; then
@@ -381,7 +398,7 @@ probe_paths \"\$@\""
 		else
 			plannable_no="$plannable_no$path$nl"
 		fi
-	done < <(unprobed_paths | xargs -0 -n 1 -P "$parallel_jobs" "$BASH" -c "$probe" clean-stale-probe 2>/dev/null || true)
+	done < <(unprobed_paths | parallel_runs 1 "$probe")
 }
 
 # Prefetches the paths listed one per line in FILE.
@@ -594,11 +611,23 @@ plan_entries() {
 	done < <(children "$dir")
 }
 
+# Walks each directory argument, unless it is a mount point, with the
+# find expression in discover_expr, skipping the directory itself.
+discover_below() {
+	local dir
+	for dir; do
+		on_parent_fs "$dir" || continue
+		find "$dir" -mindepth 1 -xdev "${discover_expr[@]}" 2>/dev/null || true
+	done
+}
+
 # Prints, NUL-separated, every CACHEDIR.TAG, .git, rust-toolchain file,
 # direnv layout dir, and result* symlink under the search and temp roots.
-# Trees that cannot hold projects are pruned.
+# Trees that cannot hold projects are pruned. One find covers the top two
+# levels of every root; the directories it reaches at the second level
+# (each project under ~/src) are then walked in parallel.
 discover() {
-	local prune=(
+	local root dir walker discover_expr skip prune=(
 		-name node_modules -o
 		-name deps -o -name .fingerprint -o -name incremental -o
 		-name .Trashes -o -name ".Trash-$uid" -o -path "$home/.Trash" -o -path "$data_home/Trash" -o
@@ -607,12 +636,24 @@ discover() {
 		-path "$cache_home" -o -path "$cargo_home" -o -path "$rustup_home" -o
 		-path "$home/.npm" -o -path "$home/.nix-defexpr"
 	)
-	find "${search_roots[@]}" ${temp_roots[@]+"${temp_roots[@]}"} -xdev \
-		\( \( -name .git -o -name .direnv \) -type d -print0 -prune \) -o \
-		\( \( "${prune[@]}" \) -prune \) -o \
-		\( -type f \( -name CACHEDIR.TAG -o -name .git -o -name rust-toolchain -o -name rust-toolchain.toml \) -print0 \) -o \
-		\( -type l \( -name result -o -name 'result-*' \) -print0 \) \
-		2>/dev/null || true
+	skip=(\( \( -name .git -o -name .direnv \) -type d -prune \) -o \( \( "${prune[@]}" \) -prune \))
+	discover_expr=(
+		\( \( -name .git -o -name .direnv \) -type d -print0 -prune \) -o
+		\( \( "${prune[@]}" \) -prune \) -o
+		\( -type f \( -name CACHEDIR.TAG -o -name .git -o -name rust-toolchain -o -name rust-toolchain.toml \) -print0 \) -o
+		\( -type l \( -name result -o -name 'result-*' \) -print0 \)
+	)
+	walker="$(declare -p discover_expr gnu_stat)
+$(declare -f discover_below on_parent_fs)
+discover_below \"\$@\""
+	find "${search_roots[@]}" ${temp_roots[@]+"${temp_roots[@]}"} -xdev -maxdepth 2 \
+		"${discover_expr[@]}" 2>/dev/null || true
+	for root in "${search_roots[@]}" ${temp_roots[@]+"${temp_roots[@]}"}; do
+		while IFS= read -r -d '' dir; do
+			[ "$dir" != "$root" ] || continue
+			case "${dir#"${root%/}"/}" in */*) printf '%s\0' "$dir" ;; esac
+		done < <(find "$root" -xdev -maxdepth 2 "${skip[@]}" -o \( -type d -print0 \) 2>/dev/null || true)
+	done | parallel_runs 1 "$walker"
 }
 
 # Splits discoveries into cargo target dirs (cargo's tag plus
@@ -1161,7 +1202,7 @@ size_plan() {
 	local method label path arg
 	while IFS="$tab" read -r method label path arg; do
 		case "$method" in path | worktree | toolchain) printf '%s\0' "$path" ;; esac
-	done <"$plan" | { xargs -0 -n 1 -P "$parallel_jobs" du -skx -- 2>/dev/null || true; } | cat >"$work/sizes"
+	done <"$plan" | parallel_runs 1 'du -skx -- "$@" 2>/dev/null' >"$work/sizes"
 	awk -F '\t' '
 		FILENAME == ARGV[1] { kb[substr($0, index($0, "\t") + 1)] = $1; next }
 		{
