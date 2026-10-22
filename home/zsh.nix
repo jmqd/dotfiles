@@ -25,6 +25,13 @@ in
     };
   };
 
+  # `z foo` jumps to the most frecent directory matching foo; `zi` picks one
+  # with fzf.
+  programs.zoxide = {
+    enable = true;
+    enableZshIntegration = true;
+  };
+
   programs.zsh = {
     enable = true;
     enableCompletion = true;
