@@ -548,8 +548,9 @@ dirs inside a busy one), tagged build caches, per-app and package caches
 (`~/Library/Caches`, `~/.cache`, npm, bun, yarn, Go modules, rustup downloads),
 Xcode DerivedData, your temp files, clean linked git worktrees, orphaned omp
 task copies, stale worktree entries, Nix `result*` out-links and `.direnv`
-dirs, profile generations past the newest five, and versioned rustup toolchains
-that nothing selects. Cargo's own GC handles `~/.cargo`.
+dirs, profile generations past the newest five, idle dylint drivers (which
+cargo-dylint rebuilds on demand), and versioned rustup toolchains that
+nothing else selects. Cargo's own GC handles `~/.cargo`.
 
 Then it runs `docker`/`podman image prune` for images no container uses that
 were created before the threshold and `docker builder prune` for build cache

@@ -261,11 +261,16 @@ busy_pids+=($!)
 
 # rustup: what pins, defaults, channels, and recent use keep.
 toolchains="$HOME/.rustup/toolchains"
-for name in stable nightly 1.70.0 1.71.0 1.72.0 1.80.0 1.81.0 nightly-2026-01-01 nightly-2026-02-02; do
+for name in stable nightly 1.70.0 1.71.0 1.72.0 1.80.0 1.81.0 nightly-2026-01-01 nightly-2026-02-02 nightly-2026-03-03; do
 	file "$toolchains/$name-test-host/bin/rustc"
 done
 file "$toolchains/1.75.0-other-host/bin/rustc"
-file "$HOME/.dylint_drivers/nightly-2026-02-02-test-host/dylint-driver"
+# An idle dylint driver goes and frees its toolchain; a used one keeps it.
+drivers="$HOME/.dylint_drivers"
+file "$drivers/nightly-2026-02-02-test-host/dylint-driver"
+file "$drivers/nightly-2026-03-03-test-host/dylint-driver"
+touch_recent "$drivers/nightly-2026-03-03-test-host/dylint-driver"
+file "$drivers/README.txt"
 touch_recent "$toolchains/1.81.0-test-host/bin/rustc"
 mkdir -p "$src/pinned" "$src/pinned2" "$src/legacy" "$src/old/target/copy"
 printf '[toolchain]\nchannel = "1.80.0"\n' >"$src/pinned/rust-toolchain.toml"
@@ -273,8 +278,8 @@ printf '1.80.0\n' >"$src/pinned2/rust-toolchain"
 printf '1.72.0\n' >"$src/legacy/rust-toolchain"
 # Inside a target dir this run deletes, so it pins nothing.
 printf '[toolchain]\nchannel = "1.71.0"\n' >"$src/old/target/copy/rust-toolchain.toml"
-uninstalled=(1.70.0-test-host 1.71.0-test-host nightly-2026-01-01-test-host)
-installed=(stable-test-host nightly-test-host 1.72.0-test-host 1.80.0-test-host 1.81.0-test-host 1.75.0-other-host nightly-2026-02-02-test-host)
+uninstalled=(1.70.0-test-host 1.71.0-test-host nightly-2026-01-01-test-host nightly-2026-02-02-test-host)
+installed=(stable-test-host nightly-test-host 1.72.0-test-host 1.80.0-test-host 1.81.0-test-host 1.75.0-other-host nightly-2026-03-03-test-host)
 
 # A recent read keeps a cache. Reads of what clean-stale reads itself, as
 # an earlier run leaves them under Linux relatime, change nothing.
@@ -326,6 +331,7 @@ expected_gone=(
 	"$HOME/.npm/_cacache"
 	"$HOME/.omp/wt/dead"
 	"$HOME/.omp/wt/reused"
+	"$drivers/nightly-2026-02-02-test-host"
 	"$tmp/old-build"
 	"$tmp/scratch"
 	"$src/proj/result"
@@ -338,6 +344,8 @@ expected_kept=(
 	"$src/app/.venv/lib/site.py"
 	"$src/vendored/vendor/crate/docs/index.html"
 	"$HOME/.cargo/registry/cache/crate.crate"
+	"$drivers/nightly-2026-03-03-test-host/dylint-driver"
+	"$drivers/README.txt"
 	"$XDG_DATA_HOME/Trash/files/gone/target/debug/app"
 	"$src/.Trash-$(id -u)/files/gone/target/debug/app"
 	"$HOME/.cache/fresh-app/data"
@@ -373,7 +381,7 @@ expected_notes=(
 	"$HOME/.omp/wt/dirty/m: uncommitted changes (orphaned omp task copy)"
 	"$toolchains/1.80.0-test-host: selected by $src/pinned/rust-toolchain.toml and 1 more"
 	"$toolchains/1.72.0-test-host: selected by $src/legacy/rust-toolchain"
-	"$toolchains/nightly-2026-02-02-test-host: selected by the dylint driver $HOME/.dylint_drivers/nightly-2026-02-02-test-host"
+	"$toolchains/nightly-2026-03-03-test-host: selected by the dylint driver $drivers/nightly-2026-03-03-test-host"
 )
 if [ "$(uname -s)" = Darwin ]; then
 	expected_gone+=("$HOME/Library/Caches/old-app")
@@ -491,6 +499,7 @@ done
 expected_calls="rustup toolchain uninstall 1.70.0-test-host
 rustup toolchain uninstall 1.71.0-test-host
 rustup toolchain uninstall nightly-2026-01-01-test-host
+rustup toolchain uninstall nightly-2026-02-02-test-host
 nix-env --profile $profiles/profile --delete-generations 1 2 3
 docker image prune --all --force --filter until=2160m
 docker builder prune --force --filter until=2160m

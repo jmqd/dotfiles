@@ -30,8 +30,9 @@ Deletes, once idle for AGE:
   - nix result* out-links and direnv layout dirs (.direnv), except dev
     shells of projects a process works in
   - nix profile generations past the newest ${keep_generations}
-  - versioned rustup toolchains (1.85.0, nightly-2026-01-01) that no
-    default, override, rust-toolchain file, or dylint driver selects
+  - idle dylint drivers, then versioned rustup toolchains (1.85.0,
+    nightly-2026-01-01) that no default, override, rust-toolchain file,
+    or remaining dylint driver selects
 
 Then runs the garbage collectors it finds: docker and podman image prune
 (images no container uses, created before AGE ago) and docker builder
@@ -131,6 +132,7 @@ cache_home="${XDG_CACHE_HOME:-$home/.cache}"
 data_home="${XDG_DATA_HOME:-$home/.local/share}"
 cargo_home="${CARGO_HOME:-$home/.cargo}"
 rustup_home="${RUSTUP_HOME:-$home/.rustup}"
+dylint_drivers="${DYLINT_DRIVER_PATH:-$home/.dylint_drivers}"
 
 if [ ${#roots[@]} -eq 0 ]; then
 	roots=("$home")
@@ -1092,12 +1094,25 @@ searched_home() {
 	return 1
 }
 
+# cargo-dylint builds one driver per toolchain it lints with, and builds
+# it again on its next run. Each driver keeps its toolchain installed,
+# so idle ones go first and free their toolchains in the same run.
+plan_dylint_drivers() {
+	local dir
+	[ -d "$dylint_drivers" ] && [ ! -L "$dylint_drivers" ] || return 0
+	prefetch_plannable < <(children "$dylint_drivers" -type d)
+	while IFS= read -r -d '' dir; do
+		safe_path "$dir" || continue
+		plan_path toolchain "$dir"
+	done < <(children "$dylint_drivers" -type d)
+}
+
 # Uninstalls idle versioned toolchains (1.85.0, nightly-2026-04-15, ...)
 # that no default, override, rust-toolchain file, or dylint driver
 # selects, and notes what selects the rest. Undated channels (stable,
 # beta, nightly) stay, since `cargo +nightly` uses them without a pin.
-# Pins are known only when the search covered HOME, and pins inside
-# directories this run deletes do not count.
+# Pins are known only when the search covered HOME, and pins and dylint
+# drivers this run deletes do not count.
 plan_rustup_toolchains() {
 	local host pin channel dir name selector
 	command -v rustup >/dev/null 2>&1 || return 0
@@ -1113,8 +1128,8 @@ plan_rustup_toolchains() {
 	{
 		(cd / && RUSTUP_AUTO_INSTALL=0 rustup default 2>/dev/null | awk '{ print $1 "\t1\tthe rustup default" }') || true
 		(cd / && rustup override list 2>/dev/null | awk '/^\// { t = $NF; sub(/[ \t]+[^ \t]+$/, ""); print t "\t2\tthe rustup override for " $0 }') || true
-		# cargo-dylint builds one driver per toolchain it lints with.
-		for dir in "${DYLINT_DRIVER_PATH:-$home/.dylint_drivers}"/*; do
+		for dir in "$dylint_drivers"/*; do
+			case "$planned_dirs" in *"$nl$dir$nl"*) continue ;; esac
 			if [ -d "$dir" ]; then
 				printf '%s\t3\tthe dylint driver %s\n' "${dir##*/}" "$dir"
 			fi
@@ -1322,6 +1337,11 @@ still_planned() {
 				return 1
 			fi
 		fi
+		# Driver rows run first; one kept or rebuilt since keeps its toolchain.
+		if [ "$method" = toolchain ] && [ -e "$dylint_drivers/${path##*/}" ]; then
+			printf 'kept (its dylint driver stays): %s\n' "$path"
+			return 1
+		fi
 		;;
 	link)
 		[ -L "$path" ] || return 1
@@ -1413,6 +1433,7 @@ main() {
 	plan_worktree_prunes
 	plan_nix_roots
 	plan_nix_generations
+	plan_dylint_drivers
 	plan_rustup_toolchains
 	plan_collectors
 	dedupe_plan
