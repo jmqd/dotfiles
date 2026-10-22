@@ -29,6 +29,8 @@ age() {
 
 git worktree add -q "$root/stale" -b stale main
 age "$root/stale"
+# A prompt's `git status` refreshes the index; that is not activity.
+touch "$(git -C "$root/stale" rev-parse --absolute-git-dir)/index"
 git worktree add -q "$root/dirty" -b dirty main
 printf 'notes\n' >"$root/dirty/results.txt"
 age "$root/dirty"
@@ -60,5 +62,18 @@ done
 ! git worktree list | grep -q "$root/stale " || fail "stale worktree still registered"
 git rev-parse --verify --quiet refs/heads/stale >/dev/null || fail "branch was deleted"
 grep -qx 'notes' "$root/dirty/results.txt" || fail "dirty worktree contents changed"
+
+# A trash that cannot be created keeps the worktree and fails the run.
+git worktree add -q "$root/stuck" -b stuck main
+age "$root/stuck"
+mkdir -p "$root/blocked"
+: >"$root/blocked/Trash"
+set +e
+XDG_DATA_HOME="$root/blocked" bash "$script" --apply >/dev/null 2>&1
+status=$?
+set -e
+[[ $status -ne 0 ]] || fail "a failed move reported success"
+[[ -d $root/stuck ]] || fail "worktree lost when its move failed"
+git worktree list | grep -q "$root/stuck " || fail "unmoved worktree was unregistered"
 
 printf 'git-clean-stale: ok\n'

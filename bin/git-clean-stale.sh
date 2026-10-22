@@ -95,16 +95,19 @@ mtime() {
 	stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf '0\n'
 }
 
-# Newest of the HEAD commit time and the worktree's admin files. A branch made
-# a minute ago has an old commit but a fresh HEAD and index.
+# Newest of the HEAD commit time and the last time HEAD moved (checkout, commit,
+# reset). A branch made a minute ago has an old commit but a fresh HEAD. The index
+# is left out: shell prompts and editors refresh it with no real activity.
 last_activity() {
 	local worktree="$1" admin newest stamp file
 	newest="$(git -C "$worktree" log -1 --format=%ct HEAD 2>/dev/null || printf '0')"
 	admin="$(git -C "$worktree" rev-parse --absolute-git-dir)"
-	for file in "$admin/HEAD" "$admin/index" "$admin/logs/HEAD"; do
+	for file in "$admin/HEAD" "$admin/logs/HEAD"; do
 		[[ -e $file ]] || continue
 		stamp="$(mtime "$file")"
-		((stamp > newest)) && newest="$stamp"
+		if ((stamp > newest)); then
+			newest="$stamp"
+		fi
 	done
 	printf '%s\n' "$newest"
 }
@@ -113,39 +116,55 @@ mount_point() {
 	df -P "$1" | awk 'NR == 2 { print $NF }'
 }
 
-# The trash on the worktree's own filesystem, so that moving frees space there
-# instead of copying it elsewhere (freedesktop.org trash spec; ~/.Trash on macOS).
-trash_dir() {
-	local path="$1" home_trash mount uid
-	uid="$(id -u)"
+existing_ancestor() {
+	local path="$1"
+	while [[ ! -e $path ]]; do
+		path="$(dirname "$path")"
+	done
+	printf '%s\n' "$path"
+}
+
+home_trash() {
 	if [[ "$(uname -s)" == Darwin ]]; then
-		home_trash="$HOME/.Trash"
+		printf '%s\n' "$HOME/.Trash"
 	else
-		home_trash="${XDG_DATA_HOME:-$HOME/.local/share}/Trash"
-	fi
-	mkdir -p "$home_trash"
-	mount="$(mount_point "$path")"
-	if [[ "$mount" == "$(mount_point "$home_trash")" ]]; then
-		printf '%s\n' "$home_trash"
-	elif [[ "$(uname -s)" == Darwin ]]; then
-		printf '%s/.Trashes/%s\n' "${mount%/}" "$uid"
-	else
-		printf '%s/.Trash-%s\n' "${mount%/}" "$uid"
+		printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/Trash"
 	fi
 }
 
+# The trash on the worktree's own filesystem, so moving frees space there instead of
+# copying it elsewhere: the home trash, or on Linux `.Trash-$UID` at the root of another
+# writable mount. Fails when there is none; such worktrees are kept.
+trash_dir() {
+	local mount home
+	mount="$(mount_point "$1")"
+	home="$(home_trash)"
+	if [[ "$mount" == "$(mount_point "$(existing_ancestor "$home")")" ]]; then
+		printf '%s\n' "$home"
+	elif [[ "$(uname -s)" != Darwin && -w $mount ]]; then
+		printf '%s/.Trash-%s\n' "${mount%/}" "$(id -u)"
+	else
+		return 1
+	fi
+}
+
+# Moves `path` into `trash` and prints its new location. Callers test this in an `if`,
+# which disables errexit, so every step returns on failure.
 trash() {
-	local path="$1" trash name files
-	trash="$(trash_dir "$path")"
-	files="$trash"
+	local path="$1" trash="$2" files="$2" name info=""
 	[[ "$(uname -s)" == Darwin ]] || files="$trash/files"
-	mkdir -p "$files"
 	name="$(basename "$path")-$(date +%Y%m%d%H%M%S)-$$"
-	mv -- "$path" "$files/$name"
+	mkdir -p "$files" || return 1
 	if [[ "$(uname -s)" != Darwin ]]; then
-		mkdir -p "$trash/info"
+		# The trash spec records the origin before the move.
+		info="$trash/info/$name.trashinfo"
+		mkdir -p "$trash/info" || return 1
 		printf '[Trash Info]\nPath=%s\nDeletionDate=%s\n' "$path" "$(date +%Y-%m-%dT%H:%M:%S)" \
-			>"$trash/info/$name.trashinfo"
+			>"$info" || return 1
+	fi
+	if ! mv -- "$path" "$files/$name"; then
+		[[ -z $info ]] || rm -f -- "$info"
+		return 1
 	fi
 	printf '%s\n' "$files/$name"
 }
@@ -184,7 +203,7 @@ main() {
 
 	printf 'base: %s; stale after %s days%s\n' "$base_ref" "$days" \
 		"$([[ $apply -eq 1 ]] && printf ', applying' || printf ', dry run')"
-	local index status age_days size_kb total_kb=0 count=0 activity
+	local index status age_days size_kb total_kb=0 count=0 failed=0 activity trash dest
 	for index in "${!paths[@]}"; do
 		path="${paths[$index]}"
 		[[ $path == "$main_worktree" ]] && continue
@@ -216,14 +235,22 @@ main() {
 		if [[ -d $path ]]; then
 			size_kb="$(du -sk "$path" 2>/dev/null | awk '{ print $1 }')"
 		fi
+		if [[ $status == stale ]] && ! trash="$(trash_dir "$path")"; then
+			status="no-trash"
+		fi
 		printf '%-8s %7s MiB %5sd  %s [%s]\n' "${status%% *}" "$((size_kb / 1024))" "$age_days" \
 			"$path" "${branches[$index]}"
-		if [[ $status == stale ]]; then
+		[[ $status == stale ]] || continue
+		if [[ $apply -eq 0 ]]; then
 			total_kb=$((total_kb + size_kb))
 			count=$((count + 1))
-			if [[ $apply -eq 1 ]]; then
-				printf '         -> %s\n' "$(trash "$path")"
-			fi
+		elif dest="$(trash "$path" "$trash")"; then
+			printf '         -> %s\n' "$dest"
+			total_kb=$((total_kb + size_kb))
+			count=$((count + 1))
+		else
+			printf '         could not move it to %s; kept\n' "$trash" >&2
+			failed=$((failed + 1))
 		fi
 	done
 
@@ -231,6 +258,10 @@ main() {
 		git worktree prune
 		printf '%d stale worktrees (%d MiB) moved to trash; empty it to free the space.\n' \
 			"$count" "$((total_kb / 1024))"
+		if ((failed > 0)); then
+			printf '%d stale worktrees could not be moved.\n' "$failed" >&2
+			exit 1
+		fi
 	else
 		printf '%d stale worktrees (%d MiB); rerun with --apply to trash them.\n' \
 			"$count" "$((total_kb / 1024))"
