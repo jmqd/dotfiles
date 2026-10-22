@@ -20,8 +20,10 @@ confirm it.
 Deletes, once idle for AGE:
   - Rust target dirs, or the idle profiles and task dirs inside them
   - other tagged build caches (.pytest_cache, .mypy_cache, ...)
-  - per-app caches in ~/Library/Caches and ~/.cache, package caches
-    (npm, bun, yarn, Go modules, rustup downloads), Xcode DerivedData
+  - per-app caches in ~/Library/Caches and ~/.cache, the caches of
+    Chromium and Electron profiles (Cache, Code Cache, CacheStorage, ...),
+    package caches (npm, bun, yarn, Go modules, rustup downloads), Xcode
+    DerivedData
   - your files in the temp directories
   - linked git worktrees that are clean, whose HEAD a branch, tag, or
     remote holds, and whose ignored files are all build output
@@ -808,6 +810,42 @@ plan_cache_root() {
 	done < <(cache_root_entries "$1")
 }
 
+# Prints, NUL-separated, the caches of Chromium and Electron profiles
+# under DIR. Those apps keep caches beside profile data, so only a
+# directory holding a Local State or Preferences file counts as a
+# profile, and only its children with Chromium's cache names go. GPU and
+# shader caches stay: each holds under a megabyte, rebuilt on every
+# launch, so they would only crowd the plan.
+chromium_cache_entries() {
+	local marker profile name
+	while IFS= read -r -d '' marker; do
+		profile="${marker%/*}"
+		# Each profile once, when it holds both markers.
+		if [ "${marker##*/}" = "Local State" ] && [ -f "$profile/Preferences" ]; then
+			continue
+		fi
+		for name in Cache "Code Cache" component_crx_cache extensions_crx_cache; do
+			if [ -d "$profile/$name" ] && [ ! -L "$profile/$name" ]; then
+				printf '%s\0' "$profile/$name"
+			fi
+		done
+		name="$profile/Service Worker"
+		if [ -d "$name/CacheStorage" ] && [ ! -L "$name" ] && [ ! -L "$name/CacheStorage" ]; then
+			printf '%s\0' "$name/CacheStorage"
+		fi
+	done < <(find "$1" -mindepth 2 -maxdepth 4 -xdev -type f \( -name "Local State" -o -name Preferences \) -print0 2>/dev/null)
+}
+
+plan_chromium_caches() {
+	local entry
+	[ -d "$1" ] && [ ! -L "$1" ] || return 0
+	prefetch_plannable < <(chromium_cache_entries "$1")
+	while IFS= read -r -d '' entry; do
+		safe_path "$entry" || continue
+		plan_path cache "$entry"
+	done < <(chromium_cache_entries "$1")
+}
+
 plan_package_caches() {
 	local gopath="${GOPATH:-$home/go}" unit
 	for unit in \
@@ -1423,6 +1461,9 @@ main() {
 	plan_build_caches
 	if [ "$os" = Darwin ]; then
 		plan_cache_root "$home/Library/Caches"
+		plan_chromium_caches "$home/Library/Application Support"
+	else
+		plan_chromium_caches "${XDG_CONFIG_HOME:-$home/.config}"
 	fi
 	plan_cache_root "$cache_home"
 	plan_package_caches

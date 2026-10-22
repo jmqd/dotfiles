@@ -75,7 +75,7 @@ chmod +x "$bin/nix-store" "$bin/nix-env" "$bin/rustup" "$bin/docker"
 export HOME="$fixture/home"
 tmp="$fixture/tmp"
 mkdir -p "$HOME" "$tmp"
-unset XDG_CACHE_HOME XDG_STATE_HOME CARGO_HOME RUSTUP_HOME GOPATH GOMODCACHE
+unset XDG_CACHE_HOME XDG_CONFIG_HOME XDG_STATE_HOME CARGO_HOME RUSTUP_HOME GOPATH GOMODCACHE
 export XDG_DATA_HOME="$HOME/data"
 export CLEAN_STALE_TEMP_ROOTS="$tmp"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
@@ -163,6 +163,30 @@ if [ "$(uname -s)" = Darwin ]; then
 	file "$HOME/Library/Caches/old-app/data"
 	file "$HOME/Library/Caches/com.apple.Safari/data"
 fi
+
+# Chromium and Electron apps keep caches beside profile data. Only a
+# directory with a Local State or Preferences file is a profile.
+if [ "$(uname -s)" = Darwin ]; then
+	app_data="$HOME/Library/Application Support"
+else
+	app_data="$HOME/.config"
+fi
+file "$app_data/Chat/Local State"
+file "$app_data/Chat/Preferences"
+file "$app_data/Chat/Cache/Cache_Data/data"
+file "$app_data/Chat/Service Worker/CacheStorage/origin/data"
+file "$app_data/Chat/Service Worker/Database/data"
+file "$app_data/Chat/Local Storage/leveldb/data"
+file "$app_data/Browser/Local State"
+file "$app_data/Browser/extensions_crx_cache/data"
+file "$app_data/Browser/Profile 1/Preferences"
+file "$app_data/Browser/Profile 1/Code Cache/js/data"
+file "$app_data/Editor/Cache/data"
+file "$app_data/Busy/Preferences"
+file "$app_data/Busy/Cache/data"
+touch_recent "$app_data/Busy/Cache/data"
+# GPU caches are tiny and rebuilt on every launch.
+file "$app_data/Chat/GPUCache/data"
 
 file "$tmp/old-build/out"
 file "$tmp/.hidden/state"
@@ -329,6 +353,10 @@ expected_gone=(
 	"$HOME/.cache/nix/eval-cache-v6/old.sqlite"
 	"$HOME/.cache/nix/tarball-cache"
 	"$HOME/.npm/_cacache"
+	"$app_data/Chat/Cache"
+	"$app_data/Chat/Service Worker/CacheStorage"
+	"$app_data/Browser/extensions_crx_cache"
+	"$app_data/Browser/Profile 1/Code Cache"
 	"$HOME/.omp/wt/dead"
 	"$HOME/.omp/wt/reused"
 	"$drivers/nightly-2026-02-02-test-host"
@@ -354,6 +382,13 @@ expected_kept=(
 	"$HOME/.cache/empty-app"
 	"$HOME/.cache/nix/eval-cache-v6/new.sqlite"
 	"$HOME/.cache/linked"
+	"$app_data/Chat/Local State"
+	"$app_data/Chat/Preferences"
+	"$app_data/Chat/Service Worker/Database/data"
+	"$app_data/Chat/Local Storage/leveldb/data"
+	"$app_data/Editor/Cache/data"
+	"$app_data/Busy/Cache/data"
+	"$app_data/Chat/GPUCache/data"
 	"$fixture/precious/data"
 	"$tmp/.hidden/state"
 	"$tmp/pipe/data"
