@@ -356,6 +356,17 @@ probe_paths() {
 	done
 }
 
+# Passes on the NUL-separated paths from stdin that plannable has no
+# verdict for and that fit the line-based results.
+unprobed_paths() {
+	local path
+	while IFS= read -r -d '' path; do
+		safe_path "$path" || continue
+		case "$plannable_yes$plannable_no" in *"$nl$path$nl"*) continue ;; esac
+		printf '%s\0' "$path"
+	done
+}
+
 # Runs check_plannable on the NUL-separated paths on stdin, up to
 # $parallel_jobs at a time in child shells, and caches the results for
 # plannable. Paths it skips or misses are checked when plannable asks.
@@ -370,13 +381,7 @@ probe_paths \"\$@\""
 		else
 			plannable_no="$plannable_no$path$nl"
 		fi
-	done < <(
-		while IFS= read -r -d '' path; do
-			safe_path "$path" || continue
-			case "$plannable_yes$plannable_no" in *"$nl$path$nl"*) continue ;; esac
-			printf '%s\0' "$path"
-		done | xargs -0 -n 1 -P "$parallel_jobs" "$BASH" -c "$probe" clean-stale-probe 2>/dev/null || true
-	)
+	done < <(unprobed_paths | xargs -0 -n 1 -P "$parallel_jobs" "$BASH" -c "$probe" clean-stale-probe 2>/dev/null || true)
 }
 
 # Prefetches the paths listed one per line in FILE.
