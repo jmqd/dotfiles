@@ -72,6 +72,9 @@ in
   fonts.fontconfig.enable = true;
   jmq.yubikey = {
     enable = true;
+    # Enforcement swaps or deletes OTP slots, so it targets this key only, never
+    # whichever key happens to be plugged in.
+    serial = (import ./yubikeys.nix).yubikey-36766394.serial;
     otp.longPressOnly.enforceOnActivation = true;
   };
 

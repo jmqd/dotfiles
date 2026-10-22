@@ -204,7 +204,9 @@ name. From another module in `home/`, select a device with:
 Hardware-only entries do not grant access or opt a device into automatic
 management. Serial numbers are management identifiers, not authentication keys.
 OMP consumes the enrolled public records in each device's `webauthn` list, matching
-the exact service origin. This inventory does not change OTP-management settings.
+the exact service origin. Automatic OTP long-press enforcement changes only the key
+whose serial `home/common.nix` selects, `yubikey-36766394`; other keys are left
+alone, and the build fails if enforcement is on without a serial.
 
 Add purpose-specific public credentials after explicit enrollment; a YubiKey has
 no universal public key. SSH, OpenPGP, PIV, and site-specific WebAuthn credentials

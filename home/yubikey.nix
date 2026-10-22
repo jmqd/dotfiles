@@ -231,8 +231,9 @@ in
       default = null;
       example = "12345678";
       description = ''
-        Optional YubiKey serial number to target for automatic configuration.
-        Leave null to let ykman select the key when exactly one key is present.
+        YubiKey serial number that the helper and automatic enforcement target.
+        Leave null to let ykman select the key when exactly one key is present;
+        automatic enforcement requires a serial.
       '';
     };
 
@@ -241,9 +242,9 @@ in
       default = false;
       description = ''
         Automatically enforce long-press-only OTP touch behavior during Home
-        Manager activation. This may swap OTP slots or delete slot 1 on the
-        physical YubiKey, so enable only for keys you intentionally manage this
-        way.
+        Manager activation on the key with the configured serial. This may swap
+        OTP slots or delete slot 1 on that physical YubiKey; other keys are left
+        alone.
       '';
     };
 
@@ -260,6 +261,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.otp.longPressOnly.enforceOnActivation -> cfg.serial != null;
+        message = "jmq.yubikey.otp.longPressOnly.enforceOnActivation mutates OTP slots; set jmq.yubikey.serial to the key it may change.";
+      }
+    ];
+
     home.packages = [
       cfg.package
       longPressOnlyTool
