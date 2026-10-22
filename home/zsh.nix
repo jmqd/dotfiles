@@ -1,7 +1,8 @@
 { lib, pkgs, ... }:
 let
   # fd respects .gitignore, so pickers skip build output and vendored trees.
-  fdBase = "${lib.getExe pkgs.fd} --hidden --follow --exclude .git";
+  # No --follow: from $HOME it would chase profile links into /nix/store.
+  fdBase = "${lib.getExe pkgs.fd} --hidden --exclude .git";
 in
 {
   # Ctrl-R history, Ctrl-T file, and Alt-C directory pickers. The bindings are
