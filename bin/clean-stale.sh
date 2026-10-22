@@ -228,12 +228,10 @@ device_of() {
 work="$(mktemp -d "${TMPDIR:-/tmp}/clean-stale.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 plan="$work/plan"
-planned_dirs="$work/planned-dirs"
 open_paths="$work/open-paths"
-contained="$work/contained"
 notes="$work/notes"
+contained="$work/contained"
 : >"$plan"
-: >"$planned_dirs"
 : >"$notes"
 
 # CLEAN_STALE_NOW (epoch seconds) moves the clock for tests.
@@ -330,10 +328,13 @@ plannable() {
 	is_idle "$path"
 }
 
+# Newline-delimited planned paths, for under_planned without a process.
+planned_dirs="$nl"
+
 add() {
 	printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >>"$plan"
 	case "$1" in
-	path | worktree) printf '%s\n' "$3" >>"$planned_dirs" ;;
+	path | worktree) planned_dirs="$planned_dirs$3$nl" ;;
 	esac
 }
 
@@ -345,9 +346,7 @@ note() {
 under_planned() {
 	local parent="$1"
 	while parent="${parent%/*}" && [ -n "$parent" ]; do
-		if grep -Fxq -- "$parent" "$planned_dirs"; then
-			return 0
-		fi
+		case "$planned_dirs" in *"$nl$parent$nl"*) return 0 ;; esac
 	done
 	return 1
 }
