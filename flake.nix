@@ -300,6 +300,7 @@
             "bin/audit-deps.sh"
             "bin/bootstrap-macos.sh"
             "bin/bootstrap-rust.sh"
+            "bin/git-clean-stale.sh"
             "bin/hm-switch.sh"
             "bin/link-private-data.sh"
             "bin/lint-secrets.sh"
@@ -307,6 +308,7 @@
             "bin/setup-nix-cache.sh"
             "tests/bootstrap-rust-mapfile.sh"
             "tests/flow-search-smoke.sh"
+            "tests/git-clean-stale.sh"
             "tests/hm-switch-failure.sh"
             "tests/pre-push-secrets.sh"
           ];
@@ -418,6 +420,29 @@
               ''
                 cd ${checkSource [ "tests/flow-search-smoke.sh" ]}
                 bash tests/flow-search-smoke.sh
+                touch $out
+              '';
+
+          gitCleanStaleTests =
+            pkgs.runCommand "git-clean-stale-tests"
+              {
+                nativeBuildInputs = [
+                  pkgs.bash
+                  pkgs.coreutils
+                  pkgs.findutils
+                  pkgs.gawk
+                  pkgs.git
+                  pkgs.gnugrep
+                ];
+              }
+              ''
+                cd ${
+                  checkSource [
+                    "bin/git-clean-stale.sh"
+                    "tests/git-clean-stale.sh"
+                  ]
+                }
+                bash tests/git-clean-stale.sh
                 touch $out
               '';
 
@@ -539,6 +564,7 @@
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
             googleworkspace-cli = pkgs.gws;
+            git-clean-stale-tests = gitCleanStaleTests;
             hm-switch-tests = hmSwitchTests;
             nixfmt = nixfmtCheck;
             notion-cli = notionCliPkg;

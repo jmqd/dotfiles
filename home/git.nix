@@ -33,4 +33,18 @@
   home.file.".gitmessage".source = pkgs.replaceVars ../.gitmessage.in {
     writingStyle = import ./writing-style.nix;
   };
+
+  # `git clean-stale`: report, and with --apply trash, worktrees with nothing left to keep.
+  home.packages = [
+    (pkgs.writeShellApplication {
+      name = "git-clean-stale";
+      runtimeInputs = with pkgs; [
+        coreutils
+        findutils
+        gawk
+        git
+      ];
+      text = builtins.readFile ../bin/git-clean-stale.sh;
+    })
+  ];
 }
