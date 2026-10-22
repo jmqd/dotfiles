@@ -1,5 +1,30 @@
-{ ... }:
+{ lib, pkgs, ... }:
+let
+  # fd respects .gitignore, so pickers skip build output and vendored trees.
+  fdBase = "${lib.getExe pkgs.fd} --hidden --follow --exclude .git";
+in
 {
+  # Ctrl-R history, Ctrl-T file, and Alt-C directory pickers. The bindings are
+  # installed in the emacs, viins, and vicmd keymaps, so they survive bindkey -v.
+  programs.fzf = {
+    enable = true;
+    enableZshIntegration = true;
+    defaultCommand = "${fdBase} --type f";
+    defaultOptions = [
+      "--height=40%"
+      "--layout=reverse"
+      "--border"
+    ];
+    fileWidget = {
+      command = "${fdBase} --type f";
+      options = [ "--preview 'head -n 200 {}'" ];
+    };
+    changeDirWidget = {
+      command = "${fdBase} --type d";
+      options = [ "--preview 'ls -A {}'" ];
+    };
+  };
+
   programs.zsh = {
     enable = true;
     enableCompletion = true;
@@ -44,8 +69,17 @@
 
       TMOUT=1
       TRAPALRM() {
-        zle reset-prompt
+        (( ''${+_fzf_picker_open} )) || zle reset-prompt
       }
+
+      # Redrawing the prompt while an fzf picker owns the terminal kills the
+      # picker within a second. The widgets run with a local flag that
+      # TRAPALRM sees through zsh's dynamic scoping.
+      for widget in fzf-file-widget fzf-cd-widget fzf-history-widget; do
+        functions[_unguarded_$widget]=$functions[$widget]
+        functions[$widget]="local _fzf_picker_open=1; _unguarded_$widget \"\$@\""
+      done
+      unset widget
 
       if [ -f ~/.env ]; then
         . ~/.env
