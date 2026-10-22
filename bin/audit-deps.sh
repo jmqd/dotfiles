@@ -454,11 +454,10 @@ main() {
 	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
 	ok "current system is $system"
 
-	local pi_version oracle_version claude_version codex_version codex_desktop_version wispr_flow_version notion_version gws_version voxtype_version
+	local pi_version oracle_version claude_version codex_desktop_version wispr_flow_version notion_version gws_version voxtype_version
 	pi_version="$(package_version "$system" pi)"
 	oracle_version="$(package_version "$system" oracle)"
 	claude_version="$(package_version "$system" claude-code)"
-	codex_version="$(package_version "$system" codex)"
 	notion_version="$(package_version "$system" notion-cli)"
 	gws_version="$(package_version "$system" googleworkspace-cli)"
 	codex_desktop_version="$(package_version "aarch64-darwin" codex-desktop)"
@@ -468,7 +467,6 @@ main() {
 	check_github_release_latest "can1357/oh-my-pi" "v${pi_version}"
 	check_npm_latest "oracle" "@steipete/oracle" "$oracle_version"
 	check_npm_latest "claude-code" "@anthropic-ai/claude-code" "$claude_version"
-	check_github_release_latest "openai/codex" "rust-v${codex_version}"
 	check_github_release_latest "googleworkspace/cli" "v${gws_version}"
 	check_github_release_latest "lox/notion-cli" "v${notion_version}"
 	check_github_release_latest "peteonrails/voxtype" "v${voxtype_version}"

@@ -157,13 +157,6 @@
         in
         pkgs.callPackage ./pkgs/claude-code { };
 
-      mkCodexPkg =
-        system:
-        let
-          pkgs = import (nixpkgsFor system) { inherit system; };
-        in
-        pkgs.callPackage ./pkgs/codex { };
-
       mkCodexDesktopPkg =
         system:
         let
@@ -244,7 +237,6 @@
           piPkg = mkPiPkg system;
           oraclePkg = mkOraclePkg system;
           claudeCodePkg = mkClaudeCodePkg system;
-          codexPkg = mkCodexPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
           ompPhonePkg = mkOmpPhonePkg system;
@@ -270,7 +262,6 @@
           config = lib.mkIf config.jmq.packageSets.customCli.enable {
             home.packages = [
               claudeCodePkg
-              codexPkg
               flowPkg
               pkgs.gws
               notionCliPkg
@@ -299,7 +290,6 @@
           piPkg = mkPiPkg system;
           oraclePkg = mkOraclePkg system;
           claudeCodePkg = mkClaudeCodePkg system;
-          codexPkg = mkCodexPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           wisprFlowPkg = mkWisprFlowPkg system;
           flowPkg = mkFlowPkg system;
@@ -524,7 +514,6 @@
 
           packages = {
             claude-code = claudeCodePkg;
-            codex = codexPkg;
             flow = flowPkg;
             gogcli = pkgs.gogcli;
             googleworkspace-cli = pkgs.gws;
@@ -547,7 +536,6 @@
           checks = {
             bootstrap-rust-tests = bootstrapRustTests;
             claude-code = claudeCodePkg;
-            codex = codexPkg;
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
             googleworkspace-cli = pkgs.gws;
@@ -575,11 +563,6 @@
               type = "app";
               program = "${claudeCodePkg}/bin/claude";
               meta.description = "Run Claude Code";
-            };
-            codex = {
-              type = "app";
-              program = "${codexPkg}/bin/codex";
-              meta.description = "Run Codex";
             };
             flow = {
               type = "app";

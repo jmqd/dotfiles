@@ -30,13 +30,13 @@ in
         "codex_cli"
         "none"
       ];
-      default = "codex_cli";
+      default = "claude_cli";
       description = "Trueflow AI provider.";
     };
 
     model = lib.mkOption {
       type = lib.types.str;
-      default = "gpt-5.6-sol";
+      default = "claude-haiku-4-5";
       description = "Trueflow AI model.";
     };
 
