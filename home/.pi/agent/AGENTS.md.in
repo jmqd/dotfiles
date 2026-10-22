@@ -31,6 +31,22 @@
 - Remove obsolete code after a clean cutover. Do not leave aliases, shims, or dead paths.
 - Consider what the code compiles to. Avoid needless allocations, copies, and repeated work. Profile the complete user path before optimization. Compare one change with an unchanged baseline.
 
+## Code
+
+- Write comments only for what the code cannot say: why, invariants, and failure contracts such as errors, panics, and safety. Do not restate the code or explain language basics.
+- Match each failure to its mechanism. Return an absent value when the cause is obvious. Return a typed error when the caller must tell failures apart. Panic or assert on bugs and broken invariants. Do not discard an error or replace it with a default to silence a warning.
+- Let types prove facts. Destructure a value instead of checking it and then forcing it (`unwrap`, `!`). When an invariant cannot live in a type, state in the assertion message why it holds.
+- Match enums exhaustively. Avoid catch-all arms on enums you own, so a new variant fails the build wherever it needs handling.
+- Make call sites read correctly. Use an enum instead of a bool parameter with an unclear meaning, distinct types for values that are easy to swap, and named fields instead of tuples.
+- Prefer plain functions and concrete types. Add a trait or interface only for a real generic or dynamic-dispatch need, not to organize code. Prefer functions to macros, and simple macros to code generation.
+
+## Rust
+
+- Follow the Rust API Guidelines. Keep `cargo fmt` and `cargo clippy --all-targets` clean. Use stable Rust.
+- Design ownership first. Prefer unique ownership and borrows. Use `.clone()`, `Rc`, `Arc`, or `RefCell` only when the design needs a copy or shared state, not to satisfy the borrow checker.
+- Write `unsafe` only when safe Rust cannot do the job. Wrap it in a small safe API, give each block a `// SAFETY:` comment, and back any performance reason with a benchmark.
+- In a new crate, add a `[lints.clippy]` table to `Cargo.toml` that sets `let_underscore_must_use`, `unused_result_ok`, `unwrap_used`, and `undocumented_unsafe_blocks` to `"warn"`. Add `allow-unwrap-in-tests = true` to `clippy.toml`.
+
 ## Verification
 
 - Define the observable result before implementation. Reproduce a defect before you fix it.
