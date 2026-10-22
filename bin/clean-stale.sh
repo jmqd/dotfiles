@@ -364,12 +364,15 @@ probe_paths() {
 # per run and $parallel_jobs runs at a time, then prints all output. Each
 # run writes its own file: POSIX keeps concurrent pipe writes whole only
 # up to PIPE_BUF (512 bytes on macOS), and find writes larger blocks.
+# With no arguments it runs nothing; GNU xargs would run CODE once.
 parallel_runs() {
 	local count="$1" code="$2" out
 	out="$(mktemp -d "$work/runs.XXXXXX")"
+	cat >"$out.args"
+	[ -s "$out.args" ] || return 0
 	xargs -0 -n "$count" -P "$parallel_jobs" "$BASH" -c "{
 $code
-} >>\"\$0/\$\$\"" "$out" 2>/dev/null || true
+} >>\"\$0/\$\$\"" "$out" <"$out.args" 2>/dev/null || true
 	find "$out" -type f -exec cat {} + 2>/dev/null || true
 }
 
