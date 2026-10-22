@@ -267,8 +267,9 @@ done
 file "$toolchains/1.75.0-other-host/bin/rustc"
 file "$HOME/.dylint_drivers/nightly-2026-02-02-test-host/dylint-driver"
 touch_recent "$toolchains/1.81.0-test-host/bin/rustc"
-mkdir -p "$src/pinned" "$src/legacy" "$src/old/target/copy"
+mkdir -p "$src/pinned" "$src/pinned2" "$src/legacy" "$src/old/target/copy"
 printf '[toolchain]\nchannel = "1.80.0"\n' >"$src/pinned/rust-toolchain.toml"
+printf '1.80.0\n' >"$src/pinned2/rust-toolchain"
 printf '1.72.0\n' >"$src/legacy/rust-toolchain"
 # Inside a target dir this run deletes, so it pins nothing.
 printf '[toolchain]\nchannel = "1.71.0"\n' >"$src/old/target/copy/rust-toolchain.toml"
@@ -370,6 +371,9 @@ expected_notes=(
 	"$src/old2/target/task/probe: commits no remote or tag holds"
 	"$tmp/dirty-clone: uncommitted changes"
 	"$HOME/.omp/wt/dirty/m: uncommitted changes (orphaned omp task copy)"
+	"$toolchains/1.80.0-test-host: selected by $src/pinned/rust-toolchain.toml and 1 more"
+	"$toolchains/1.72.0-test-host: selected by $src/legacy/rust-toolchain"
+	"$toolchains/nightly-2026-02-02-test-host: selected by the dylint driver $HOME/.dylint_drivers/nightly-2026-02-02-test-host"
 )
 if [ "$(uname -s)" = Darwin ]; then
 	expected_gone+=("$HOME/Library/Caches/old-app")

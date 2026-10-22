@@ -575,8 +575,8 @@ It keeps:
 - dev shells of projects that a process has open;
 - undated toolchain channels (`stable`, `beta`, `nightly`), and versioned
   toolchains that the default, an override, a dylint driver, or a
-  `rust-toolchain` file under `$HOME` selects. A narrower `--root` skips
-  toolchains;
+  `rust-toolchain` file under `$HOME` selects; "Kept or skipped" names the
+  selector of each. A narrower `--root` skips toolchains;
 - everything in the trash: `~/.Trash`, `$XDG_DATA_HOME/Trash`, and per-volume
   `.Trashes` and `.Trash-UID` dirs.
 

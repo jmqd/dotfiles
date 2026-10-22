@@ -1094,11 +1094,12 @@ searched_home() {
 
 # Uninstalls idle versioned toolchains (1.85.0, nightly-2026-04-15, ...)
 # that no default, override, rust-toolchain file, or dylint driver
-# selects. Undated channels (stable, beta, nightly) stay, since `cargo
-# +nightly` uses them without a pin. Pins are known only when the search
-# covered HOME, and pins inside directories this run deletes do not count.
+# selects, and notes what selects the rest. Undated channels (stable,
+# beta, nightly) stay, since `cargo +nightly` uses them without a pin.
+# Pins are known only when the search covered HOME, and pins inside
+# directories this run deletes do not count.
 plan_rustup_toolchains() {
-	local host pin channel dir name
+	local host pin channel dir name selector
 	command -v rustup >/dev/null 2>&1 || return 0
 	[ -d "$rustup_home/toolchains" ] || return 0
 	if ! searched_home; then
@@ -1107,13 +1108,15 @@ plan_rustup_toolchains() {
 	fi
 	host="$(cd / && RUSTUP_AUTO_INSTALL=0 rustup show 2>/dev/null | sed -n 's/^Default host: //p' || true)"
 	[ -n "$host" ] || return 0
+	# One line per selection: toolchain, rank, and selector. The note
+	# names the lowest-ranked selector, then the smallest path.
 	{
-		(cd / && RUSTUP_AUTO_INSTALL=0 rustup default 2>/dev/null | awk '{ print $1 }') || true
-		(cd / && rustup override list 2>/dev/null | awk '{ print $NF }') || true
+		(cd / && RUSTUP_AUTO_INSTALL=0 rustup default 2>/dev/null | awk '{ print $1 "\t1\tthe rustup default" }') || true
+		(cd / && rustup override list 2>/dev/null | awk '/^\// { t = $NF; sub(/[ \t]+[^ \t]+$/, ""); print t "\t2\tthe rustup override for " $0 }') || true
 		# cargo-dylint builds one driver per toolchain it lints with.
 		for dir in "${DYLINT_DRIVER_PATH:-$home/.dylint_drivers}"/*; do
 			if [ -d "$dir" ]; then
-				printf '%s\n' "${dir##*/}"
+				printf '%s\t3\tthe dylint driver %s\n' "${dir##*/}" "$dir"
 			fi
 		done
 		while IFS= read -r pin <&3; do
@@ -1123,8 +1126,8 @@ plan_rustup_toolchains() {
 			channel="$(pin_channel "$pin")"
 			case "$channel" in
 			"") ;;
-			*-"$host") printf '%s\n' "$channel" ;;
-			*) printf '%s\n' "$channel-$host" ;;
+			*-"$host") printf '%s\t4\t%s\n' "$channel" "$pin" ;;
+			*) printf '%s\t4\t%s\n' "$channel-$host" "$pin" ;;
 			esac
 		done 3<"$work/pins"
 	} >"$work/selected-toolchains"
@@ -1134,10 +1137,14 @@ plan_rustup_toolchains() {
 		safe_path "$name" || continue
 		case "$name" in *-"$host") ;; *) continue ;; esac
 		versioned_channel "${name%-"$host"}" || continue
-		if grep -Fxq -- "$name" "$work/selected-toolchains"; then
-			continue
-		fi
-		if plannable "$dir"; then
+		selector="$(awk -F '\t' -v name="$name" '
+			$1 != name { next }
+			!n++ || $2 < rank || ($2 == rank && $3 < best) { rank = $2; best = $3 }
+			END { if (n) print best (n > 1 ? " and " n - 1 " more" : "") }
+		' "$work/selected-toolchains")"
+		if [ -n "$selector" ]; then
+			note "$dir" "selected by $selector"
+		elif plannable "$dir"; then
 			add toolchain toolchain "$dir" "$name"
 		fi
 	done
