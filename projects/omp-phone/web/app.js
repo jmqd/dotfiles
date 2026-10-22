@@ -15,6 +15,8 @@ let sessions = [];
 let authenticated = false;
 let connected = false;
 let events = null;
+let eventsRetry = null;
+let eventsRetryDelay = 1000;
 let generation = 0;
 let authGeneration = 0;
 let ceremonyController = null;
@@ -238,6 +240,8 @@ function applySnapshot(data) {
 
 function closeEvents() {
   generation++;
+  clearTimeout(eventsRetry);
+  eventsRetry = null;
   if (events) events.close();
   events = null;
 }
@@ -289,6 +293,7 @@ function openEvents() {
     try {
       applySnapshot(JSON.parse(event.data));
       snapshotVersion++;
+      eventsRetryDelay = 1000;
       setConnected(true);
     } catch {
       setConnected(false, "Could not read live sessions. Reload to reconnect.");
@@ -306,6 +311,12 @@ function openEvents() {
     } finally {
       checkingLogin = false;
     }
+    // Browsers give up for good on a non-200 answer such as a proxy 502 during a companion restart.
+    if (generation !== ownGeneration || source.readyState !== EventSource.CLOSED) return;
+    const delay = eventsRetryDelay;
+    eventsRetryDelay = Math.min(delay * 2, 30000);
+    eventsRetry = setTimeout(() => { setConnected(false); openEvents(); }, delay);
+    setConnected(false, `Disconnected · replies and Stop are unavailable. Reconnecting in ${delay / 1000} s…`);
   });
 }
 
