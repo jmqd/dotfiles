@@ -446,6 +446,16 @@ if [ -e "$bin/lsof" ] && [ -d /proc/self/fd ]; then
 	done
 fi
 
+# A ps without start times (BusyBox) cannot tell an owner is gone.
+mv "$bin/ps" "$fixture/ps"
+printf '#!%s\nexit 1\n' "$bash_path" >"$bin/ps"
+chmod +x "$bin/ps"
+output="$(run --dry-run)"
+mv "$fixture/ps" "$bin/ps"
+if planned | grep -Fxq -- "$HOME/.omp/wt/live"; then
+	fail "dry run without ps start times lists the live omp copy"
+fi
+
 set +e
 run </dev/null >/dev/null 2>&1
 status=$?

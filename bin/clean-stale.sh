@@ -199,8 +199,9 @@ have_git=0
 if command -v git >/dev/null 2>&1; then
 	have_git=1
 fi
+# omp_owner_alive needs process start times; BusyBox ps has no lstart.
 have_ps=0
-if command -v ps >/dev/null 2>&1; then
+if ps -o lstart= -p $$ >/dev/null 2>&1; then
 	have_ps=1
 fi
 
