@@ -1149,23 +1149,21 @@ human_kb() {
 	awk -v kb="$1" "$awk_human"' BEGIN { print human(kb) }'
 }
 
-# Records sizes; drops paths that occupy no blocks, since deleting them
-# frees nothing. Links and commands free space only through a collector.
+# Records sizes, measuring up to $parallel_jobs trees at a time; drops
+# paths that occupy no blocks, since deleting them frees nothing. Links
+# and commands free space only through a collector.
 size_plan() {
-	local method label path arg kb
-	while IFS="$tab" read -r method label path arg <&3; do
-		kb=0
-		case "$method" in
-		path | worktree | toolchain)
-			kb="$({ du -skx -- "$path" 2>/dev/null || true; } | awk 'NR == 1 { print $1 }')"
-			kb="${kb:-0}"
-			;;
-		esac
-		if [ "$method" = path ] && [ "$kb" -eq 0 ]; then
-			continue
-		fi
-		printf '%s\t%s\t%s\t%s\t%s\n' "$kb" "$method" "$label" "$path" "$arg"
-	done 3<"$plan" >"$work/sized"
+	local method label path arg
+	while IFS="$tab" read -r method label path arg; do
+		case "$method" in path | worktree | toolchain) printf '%s\0' "$path" ;; esac
+	done <"$plan" | { xargs -0 -n 1 -P "$parallel_jobs" du -skx -- 2>/dev/null || true; } | cat >"$work/sizes"
+	awk -F '\t' '
+		FILENAME == ARGV[1] { kb[substr($0, index($0, "\t") + 1)] = $1; next }
+		{
+			size = ($1 == "path" || $1 == "worktree" || $1 == "toolchain") ? kb[$3] + 0 : 0
+			if ($1 == "path" && size == 0) next
+			print size "\t" $0
+		}' "$work/sizes" "$plan" >"$work/sized"
 }
 
 readonly sections="rust build-cache cache tmp xcode agent worktree nix toolchain gc"
@@ -1326,10 +1324,10 @@ execute_plan() {
 	reads_before=""
 	assessed=()
 	assessed_risk=()
-	plannable_yes="$nl"
-	plannable_no="$nl"
 	assessed_linked=()
 	assessed_common=()
+	plannable_yes="$nl"
+	plannable_no="$nl"
 	run_rows path worktree link toolchain
 	run_rows prune
 	run_rows generations
