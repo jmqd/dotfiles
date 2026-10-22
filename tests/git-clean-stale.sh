@@ -75,5 +75,7 @@ set -e
 [[ $status -ne 0 ]] || fail "a failed move reported success"
 [[ -d $root/stuck ]] || fail "worktree lost when its move failed"
 git worktree list | grep -q "$root/stuck " || fail "unmoved worktree was unregistered"
+[[ -f $root/blocked/Trash ]] || fail "the blocking file was replaced"
+! find "$root/blocked" -name 'stuck-*.trashinfo' | grep -q . || fail "a failed move left a trash record"
 
 printf 'git-clean-stale: ok\n'
