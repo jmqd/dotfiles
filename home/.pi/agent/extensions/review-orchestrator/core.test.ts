@@ -13,11 +13,17 @@ import {
 	normalizeScopeKind,
 	parseScope,
 	renderTemplate,
+	runReview,
 	splitFrontmatter,
 	stripAtPrefix,
 	truncateForReview,
 	truncateToBudget,
 	type CommandExecutor,
+	type CompletionFunction,
+	type CompletionResponse,
+	type LoadedTarget,
+	type ReviewTemplates,
+	type TemplateInfo,
 } from "./core.ts";
 
 const historyFormatArg = "--format=\u001e%h\u001f%s";
@@ -420,4 +426,77 @@ test("loadUncommittedTarget truncates huge omitted-file notes to fit the prompt 
 	assert.ok(target);
 	assert.ok(target!.content.length <= MAX_REVIEW_CHARS);
 	assert.match(target!.content, /## Omitted untracked files/);
+});
+
+const reviewTarget: LoadedTarget = {
+	targetName: "staged changes",
+	reviewScope: "staged",
+	scopeDescription: "Git diff of staged changes only.",
+	content: "diff --git a/a b/a",
+	gitHistoryContext: "No focused git history context available for this review scope.",
+};
+
+function promptTemplate(name: string, body: string): TemplateInfo {
+	return { body, frontmatter: {}, path: `/prompts/${name}` };
+}
+
+// The shared template is empty so each prompt's first line names its stage for `fakeModel`.
+const reviewTemplates: ReviewTemplates = {
+	sharedSubReview: promptTemplate("review-prompts/_shared.md", ""),
+	subReviews: [
+		{
+			category: { id: "security", title: "Security", file: "security-review.md" },
+			template: promptTemplate("review-prompts/security-review.md", "Pass: security\n{{REVIEW_TARGET}}"),
+		},
+		{
+			category: { id: "naming", title: "Naming", file: "naming-review.md" },
+			template: promptTemplate("review-prompts/naming-review.md", "Pass: naming\n{{REVIEW_TARGET}}"),
+		},
+	],
+	aggregate: promptTemplate("review.md", "Aggregate:\n{{SUB_REVIEW_RESULTS}}"),
+	plan: promptTemplate("review-plan.md", "Plan:\n{{AGGREGATED_REVIEW}}"),
+};
+
+function textResponse(text: string): CompletionResponse {
+	return { content: [{ type: "text", text }], stopReason: "stop" };
+}
+
+// Stands in for the model: echoes each prompt unless the test scripts a response for its first line.
+function fakeModel(scripted: Record<string, CompletionResponse> = {}): CompletionFunction {
+	return async ({ prompt }) => scripted[prompt.split("\n", 1)[0]] ?? textResponse(`Echo: ${prompt}`);
+}
+
+function review(complete: CompletionFunction) {
+	return runReview({ target: reviewTarget, templates: reviewTemplates, complete, onProgress: () => {} });
+}
+
+test("a review fails with the provider error when one sub-review request fails", async () => {
+	const complete = fakeModel({
+		"Pass: naming": {
+			content: [{ type: "text", text: "partial naming findings" }],
+			stopReason: "error",
+			errorMessage: "429 rate limited",
+		},
+	});
+
+	await assert.rejects(review(complete), (error: Error) => {
+		assert.match(error.message, /Naming/);
+		assert.match(error.message, /429 rate limited/);
+		return true;
+	});
+});
+
+test("a review fails when the aggregator returns no text", async () => {
+	const complete = fakeModel({ "Aggregate:": { content: [], stopReason: "stop" } });
+
+	await assert.rejects(review(complete), /aggregat/i);
+});
+
+test("a review returns the aggregated report and a plan built from it", async () => {
+	const report = await review(fakeModel());
+
+	assert.match(report.aggregatedReview, /^Echo: Aggregate:/);
+	assert.match(report.aggregatedReview, /Echo: Pass: security\ndiff --git a\/a b\/a/);
+	assert.match(report.aggregatedReview, /Echo: Pass: naming\ndiff --git a\/a b\/a/);
+	assert.equal(report.implementationPlan, `Echo: Plan:\n${report.aggregatedReview}`);
 });

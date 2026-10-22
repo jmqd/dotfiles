@@ -155,6 +155,158 @@ export function renderTemplate(template: string, values: Record<string, string>)
 	return output;
 }
 
+export type ReviewCategory = {
+	id: string;
+	title: string;
+	file: string;
+};
+
+export type ReviewTemplates = {
+	sharedSubReview: TemplateInfo;
+	subReviews: { category: ReviewCategory; template: TemplateInfo }[];
+	aggregate: TemplateInfo;
+	plan: TemplateInfo;
+};
+
+// Mirrors the host's `StopReason` so `completionText` must handle every variant.
+export type CompletionStopReason = "stop" | "length" | "toolUse" | "error" | "aborted";
+
+export type CompletionResponse = {
+	content: TextContentItem[];
+	stopReason: CompletionStopReason;
+	errorMessage?: string;
+};
+
+export type CompletionRequest = { systemPrompt: string; prompt: string };
+
+export type CompletionFunction = (request: CompletionRequest) => Promise<CompletionResponse>;
+
+export type ReviewProgress =
+	| { stage: "sub-reviews"; completed: number; total: number }
+	| { stage: "aggregate" }
+	| { stage: "plan" };
+
+export type SubReview = { category: ReviewCategory; output: string; templatePath: string };
+
+export type ReviewReport = {
+	subReviews: SubReview[];
+	aggregatedReview: string;
+	implementationPlan: string;
+};
+
+const SUB_REVIEW_SYSTEM_PROMPT = `You are a specialized code reviewer running one focused review pass. Follow the provided review template exactly. Prefer concrete findings to speculation. Output Markdown only.`;
+const AGGREGATOR_SYSTEM_PROMPT = `You are a staff-level code review aggregator. Combine specialized review passes into one Markdown report. Follow the provided review template exactly. Deduplicate aggressively. Keep refactoring suggestions separate from functional or safety issues.`;
+const PLANNER_SYSTEM_PROMPT = `You are a staff-level implementation planner. Given an aggregated review, create a coherent, dependency-aware change plan that resolves conflicts, minimizes churn, and suggests an execution order.`;
+
+export async function runReview({
+	target,
+	templates,
+	complete,
+	onProgress,
+}: {
+	target: LoadedTarget;
+	templates: ReviewTemplates;
+	complete: CompletionFunction;
+	onProgress: (progress: ReviewProgress) => void;
+}): Promise<ReviewReport> {
+	const templateValues = {
+		TARGET_NAME: target.targetName,
+		REVIEW_SCOPE: target.reviewScope,
+		SCOPE_DESCRIPTION: target.scopeDescription,
+		REVIEW_TARGET: target.content,
+		GIT_HISTORY_CONTEXT: target.gitHistoryContext,
+	};
+
+	const total = templates.subReviews.length;
+	let completed = 0;
+	onProgress({ stage: "sub-reviews", completed, total });
+
+	const subReviewResults = await Promise.allSettled(
+		templates.subReviews.map(async ({ category, template }) => {
+			const prompt = [
+				renderTemplate(templates.sharedSubReview.body, templateValues).trim(),
+				renderTemplate(template.body, templateValues).trim(),
+			]
+				.filter(Boolean)
+				.join("\n\n");
+
+			try {
+				const output = await completionText(complete, `${category.title} sub-review`, {
+					systemPrompt: SUB_REVIEW_SYSTEM_PROMPT,
+					prompt,
+				});
+				return { category, output, templatePath: template.path };
+			} finally {
+				completed += 1;
+				onProgress({ stage: "sub-reviews", completed, total });
+			}
+		}),
+	);
+	const failedSubReview = subReviewResults.find((result) => result.status === "rejected");
+	if (failedSubReview?.status === "rejected") {
+		throw failedSubReview.reason instanceof Error ? failedSubReview.reason : new Error(String(failedSubReview.reason));
+	}
+	const subReviews = subReviewResults
+		.filter((result): result is PromiseFulfilledResult<SubReview> => result.status === "fulfilled")
+		.map((result) => result.value);
+
+	onProgress({ stage: "aggregate" });
+	const aggregatePrompt = renderTemplate(templates.aggregate.body, {
+		TARGET_NAME: target.targetName,
+		REVIEW_SCOPE: target.reviewScope,
+		SCOPE_DESCRIPTION: target.scopeDescription,
+		REVIEW_TARGET: target.content,
+		SUB_REVIEW_LIST: subReviews.map((r) => `- ${r.category.title}`).join("\n"),
+		SUB_REVIEW_RESULTS: subReviews
+			.map((r, index) => `## ${index + 1}. ${r.category.title}\n\n${r.output}\n\nTemplate: ${r.templatePath}`)
+			.join("\n\n"),
+	});
+	const aggregatedReview = await completionText(complete, "Aggregation", {
+		systemPrompt: AGGREGATOR_SYSTEM_PROMPT,
+		prompt: aggregatePrompt,
+	});
+
+	onProgress({ stage: "plan" });
+	const planPrompt = renderTemplate(templates.plan.body, {
+		TARGET_NAME: target.targetName,
+		REVIEW_SCOPE: target.reviewScope,
+		SCOPE_DESCRIPTION: target.scopeDescription,
+		REVIEW_TARGET: target.content,
+		AGGREGATED_REVIEW: aggregatedReview,
+	});
+	const implementationPlan = await completionText(complete, "Planning", {
+		systemPrompt: PLANNER_SYSTEM_PROMPT,
+		prompt: planPrompt,
+	});
+
+	return { subReviews, aggregatedReview, implementationPlan };
+}
+
+// The host's `complete` reports request failures in the response instead of rejecting.
+async function completionText(complete: CompletionFunction, stage: string, request: CompletionRequest): Promise<string> {
+	const response = await complete(request);
+	const detail = response.errorMessage ? `: ${response.errorMessage}` : "";
+	switch (response.stopReason) {
+		case "error":
+			throw new Error(`${stage} failed${detail}`);
+		case "aborted":
+			throw new Error(`${stage} was aborted${detail}`);
+		case "stop":
+		case "length":
+		case "toolUse":
+			break;
+		default: {
+			const unknown: never = response.stopReason;
+			throw new Error(`${stage} ended with unknown stop reason ${String(unknown)}`);
+		}
+	}
+	const text = extractText(response.content).trim();
+	if (!text) {
+		throw new Error(`${stage} returned no text`);
+	}
+	return text;
+}
+
 export async function loadTarget(
 	cwd: string,
 	scope: ScopeSpec,
