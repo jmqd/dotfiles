@@ -433,6 +433,19 @@ done
 [ ! -s "$calls" ] || fail "dry run ran collectors:$nl$(cat "$calls")"
 assert_kept "${expected_gone[@]}" "${expected_kept[@]}"
 
+# Without lsof, Linux reads open files from /proc, where many fds link to
+# sockets, pipes, and anonymous inodes rather than paths.
+if [ -e "$bin/lsof" ] && [ -d /proc/self/fd ]; then
+	mv "$bin/lsof" "$fixture/lsof"
+	output="$(run --dry-run)"
+	mv "$fixture/lsof" "$bin/lsof"
+	for path in "$tmp/busy" "$src/busyenv/.direnv"; do
+		if planned | grep -Fxq -- "$path"; then
+			fail "dry run without lsof lists busy path $path"
+		fi
+	done
+fi
+
 set +e
 run </dev/null >/dev/null 2>&1
 status=$?

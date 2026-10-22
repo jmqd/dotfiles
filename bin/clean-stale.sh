@@ -279,7 +279,8 @@ is_idle() {
 }
 
 # Lists every path our processes hold open or work in, plus all parents,
-# so a directory is in use exactly when its path appears.
+# so a directory is in use exactly when its path appears. Only absolute
+# paths count: /proc also links to sockets, pipes, and anonymous inodes.
 snapshot_open_paths() {
 	{
 		if command -v lsof >/dev/null 2>&1; then
@@ -293,8 +294,10 @@ snapshot_open_paths() {
 		else
 			warn "cannot list open files (no lsof or /proc); relying on timestamps alone"
 		fi
-	} | awk '{ p = $0; while (p != "" && p != "/") { print p; sub(/\/[^\/]*$/, "", p) } }' |
-		LC_ALL=C sort -u >"$open_paths"
+	} | awk '
+		!/^\// { next }
+		{ p = $0; sub(/ \(deleted\)$/, "", p); while (p != "" && p != "/") { print p; sub(/\/[^\/]*$/, "", p) } }
+	' | LC_ALL=C sort -u >"$open_paths"
 }
 
 in_use() {
