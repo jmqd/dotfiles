@@ -75,7 +75,8 @@ chmod +x "$bin/nix-store" "$bin/nix-env" "$bin/rustup" "$bin/docker"
 export HOME="$fixture/home"
 tmp="$fixture/tmp"
 mkdir -p "$HOME" "$tmp"
-unset XDG_CACHE_HOME CARGO_HOME RUSTUP_HOME GOPATH GOMODCACHE
+unset XDG_CACHE_HOME XDG_STATE_HOME CARGO_HOME RUSTUP_HOME GOPATH GOMODCACHE
+export XDG_DATA_HOME="$HOME/data"
 export CLEAN_STALE_TEMP_ROOTS="$tmp"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
@@ -140,6 +141,11 @@ cache_tag "$src/vendored/vendor/crate/docs" cargo
 file "$src/vendored/vendor/crate/docs/index.html"
 cache_tag "$HOME/.cargo/registry" cargo
 file "$HOME/.cargo/registry/cache/crate.crate"
+# Trashed projects stay restorable.
+cargo_target "$XDG_DATA_HOME/Trash/files/gone/target"
+file "$XDG_DATA_HOME/Trash/files/gone/target/debug/app"
+cargo_target "$src/.Trash-$(id -u)/files/gone/target"
+file "$src/.Trash-$(id -u)/files/gone/target/debug/app"
 
 file "$HOME/.cache/stale-app/data"
 file "$HOME/.cache/fresh-app/data"
@@ -331,6 +337,8 @@ expected_kept=(
 	"$src/app/.venv/lib/site.py"
 	"$src/vendored/vendor/crate/docs/index.html"
 	"$HOME/.cargo/registry/cache/crate.crate"
+	"$XDG_DATA_HOME/Trash/files/gone/target/debug/app"
+	"$src/.Trash-$(id -u)/files/gone/target/debug/app"
 	"$HOME/.cache/fresh-app/data"
 	"$HOME/.cache/read-app"
 	"$HOME/.cache/huggingface/hub/model"

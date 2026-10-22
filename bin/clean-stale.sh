@@ -128,6 +128,7 @@ uid="$(id -u)"
 os="$(uname -s)"
 home="$(canonical_dir "$HOME")" || die "cannot resolve HOME ($HOME)"
 cache_home="${XDG_CACHE_HOME:-$home/.cache}"
+data_home="${XDG_DATA_HOME:-$home/.local/share}"
 cargo_home="${CARGO_HOME:-$home/.cargo}"
 rustup_home="${RUSTUP_HOME:-$home/.rustup}"
 
@@ -549,7 +550,8 @@ discover() {
 	local prune=(
 		-name node_modules -o
 		-name deps -o -name .fingerprint -o -name incremental -o
-		-path "$home/Library" -o -path "$home/.Trash" -o -path "$home/.local/share/Trash" -o
+		-name .Trashes -o -name ".Trash-$uid" -o -path "$home/.Trash" -o -path "$data_home/Trash" -o
+		-path "$home/Library" -o
 		-path "$home/Pictures" -o -path "$home/Music" -o -path "$home/Movies" -o
 		-path "$cache_home" -o -path "$cargo_home" -o -path "$rustup_home" -o
 		-path "$home/.npm" -o -path "$home/.nix-defexpr"
