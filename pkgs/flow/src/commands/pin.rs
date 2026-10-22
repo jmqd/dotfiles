@@ -116,6 +116,16 @@ fn compare(pinned: &PinFile, release: Release) -> anyhow::Result<Comparison> {
                         .is_none_or(|hash| *hash == source.hash)
             })
         });
+    if release.version != pinned.version
+        && version_key(&release.version) < version_key(&pinned.version)
+    {
+        // A stale CDN or feed mirror must not silently roll a pin back.
+        bail!(
+            "upstream offers {}, older than the pinned {}",
+            release.version,
+            pinned.version
+        );
+    }
     match (release.version == pinned.version, same_artifacts) {
         (true, true) => Ok(Comparison::Current),
         (false, _) => Ok(Comparison::Outdated(release)),
@@ -126,6 +136,16 @@ fn compare(pinned: &PinFile, release: Release) -> anyhow::Result<Comparison> {
             release.version
         ),
     }
+}
+
+/// Orders versions by their numeric runs: `2.2.4-21120` -> [2, 2, 4, 21120].
+/// Every pinned upstream uses dot- or dash-separated numbers.
+fn version_key(version: &str) -> Vec<u64> {
+    version
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.parse().unwrap_or(u64::MAX))
+        .collect()
 }
 
 fn check(repo: &Repo, pin: &'static Pin) -> PinReport {
@@ -385,5 +405,21 @@ mod tests {
             error.to_string().contains("without a new version"),
             "{error}"
         );
+    }
+
+    #[test]
+    fn older_upstream_is_refused_numerically() {
+        let older = release("0.9", "https://example.com/0.9.dmg", None);
+        let error = compare(&pinned(), older).err().expect("refused");
+        assert!(error.to_string().contains("older than"), "{error}");
+
+        // 1.10 is newer than 1.9 even though it sorts lower as a string.
+        let mut nine = pinned();
+        nine.version = "1.9".to_owned();
+        let ten = release("1.10", "https://example.com/1.10.dmg", None);
+        assert!(matches!(
+            compare(&nine, ten).expect("compares"),
+            Comparison::Outdated(_)
+        ));
     }
 }

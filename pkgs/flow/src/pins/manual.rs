@@ -21,12 +21,16 @@ pub fn versions(repo: &Repo, manual: &Manual) -> anyhow::Result<Versions> {
         } => {
             #[derive(Deserialize)]
             struct Lock {
+                root: String,
                 nodes: BTreeMap<String, Node>,
             }
             #[derive(Deserialize)]
             struct Node {
                 /// Absent on the root node.
                 original: Option<Original>,
+                /// Node names; a `follows` input is a path array instead.
+                #[serde(default)]
+                inputs: BTreeMap<String, serde_json::Value>,
             }
             #[derive(Deserialize)]
             struct Original {
@@ -43,9 +47,17 @@ pub fn versions(repo: &Repo, manual: &Manual) -> anyhow::Result<Versions> {
                 &std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?,
             )
             .with_context(|| format!("parsing {}", path.display()))?;
+            // Nix may rename a node (`voxtype_2`) when another lock shares
+            // its name, so resolve it through the root's input map.
+            let node_name = lock
+                .nodes
+                .get(&lock.root)
+                .and_then(|root| root.inputs.get(*input))
+                .and_then(serde_json::Value::as_str)
+                .with_context(|| format!("flake.lock has no direct input {input}"))?;
             let pinned = lock
                 .nodes
-                .get(*input)
+                .get(node_name)
                 .and_then(|node| node.original.as_ref()?.git_ref.clone())
                 .with_context(|| format!("flake.lock pins no tag for input {input}"))?;
             let latest: GithubRelease = fetch::get_json(&format!(
