@@ -97,3 +97,16 @@ jq -e '
   and ([.data.results[] | select(.kind == "dirty")][0].path) == "src/main.rs"
   and ([.data.results[] | select(.kind == "dirty")][0].snippet | contains("dirty needle"))
 ' "$tmp_dir/dirty.json" >/dev/null
+
+# A reindex that cannot run git must fail before it replaces the existing
+# code index and commit database.
+if FLOW_SEARCH_GIT_BIN=/nonexistent flow search reindex >"$tmp_dir/reindex-broken.txt" 2>&1; then
+	echo "reindex succeeded without a usable git" >&2
+	exit 1
+fi
+
+flow --output json search code hello_world --repo demo >"$tmp_dir/code-after-failure.json"
+cmp "$tmp_dir/code.json" "$tmp_dir/code-after-failure.json"
+
+flow --output json search commits initial --repo demo >"$tmp_dir/commits-after-failure.json"
+cmp "$tmp_dir/commits.json" "$tmp_dir/commits-after-failure.json"

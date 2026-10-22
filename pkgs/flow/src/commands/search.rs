@@ -323,7 +323,7 @@ fn execute_reindex(
     let mut warnings = Vec::new();
 
     for repo in &discovered_repos {
-        if repo_has_head(tools.git_bin(), &repo.path) {
+        if repo_has_head(tools.git_bin(), &repo.path)? {
             indexable_repos.push(repo.clone());
         } else {
             warnings.push(format!(
