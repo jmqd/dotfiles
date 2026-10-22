@@ -230,6 +230,7 @@ trap 'rm -rf "$work"' EXIT
 plan="$work/plan"
 planned_dirs="$work/planned-dirs"
 open_paths="$work/open-paths"
+contained="$work/contained"
 notes="$work/notes"
 : >"$plan"
 : >"$planned_dirs"
@@ -483,34 +484,23 @@ ignored_regenerable() {
 	done <"$work/ignored"
 }
 
-contained=()
-
 is_contained() {
-	local c
-	for c in ${contained[@]+"${contained[@]}"}; do
-		if [ "$c" = "$1" ]; then
-			return 0
-		fi
-	done
-	return 1
+	grep -Fxq -- "$1" "$contained"
 }
 
 # Succeeds when deleting PATH would delete a checkout holding work; sets
 # blocker to that checkout and blocker_risk to why.
 blocks_work() {
 	local c
-	for c in ${contained[@]+"${contained[@]}"}; do
-		case "$c/" in
-		"$1"/*)
-			assess_cached "$c"
-			if [ -n "$checkout_risk" ]; then
-				blocker="$c"
-				blocker_risk="$checkout_risk"
-				return 0
-			fi
-			;;
-		esac
-	done
+	[ -s "$contained" ] || return 1
+	while IFS= read -r c; do
+		assess_cached "$c"
+		if [ -n "$checkout_risk" ]; then
+			blocker="$c"
+			blocker_risk="$checkout_risk"
+			return 0
+		fi
+	done < <(P="$1/" awk 'BEGIN { p = ENVIRON["P"] } index($0 "/", p) == 1' "$contained")
 	return 1
 }
 
@@ -606,17 +596,14 @@ classify_discoveries() {
 # Collects the checkouts inside directories this run may delete whole:
 # build output, temp directories, and omp task copies.
 find_contained_checkouts() {
-	local dir
 	{
 		cat "$work/rust-targets" "$work/build-caches"
 		printf '%s\n' "$home/.omp/wt" ${temp_roots[@]+"${temp_roots[@]}"}
 	} >"$work/containers"
-	while IFS= read -r dir; do
-		contained+=("$dir")
-	done < <(awk '
+	awk '
 		NR == FNR { container[$0] = 1; next }
 		{ p = $0; while (sub(/\/[^\/]*$/, "", p) && p != "") if (p in container) { print; next } }
-	' "$work/containers" "$work/checkouts")
+	' "$work/containers" "$work/checkouts" >"$contained"
 }
 
 # Plans an idle target dir whole; otherwise plans its idle profiles, task
@@ -789,7 +776,7 @@ plan_worktree_prunes() {
 			printf '%s\n' "$dir/.git" >>"$work/prune-repos.unsorted"
 		fi
 	done 3<"$work/checkouts"
-	for dir in ${contained[@]+"${contained[@]}"}; do
+	while IFS= read -r dir <&3; do
 		[ -f "$dir/.git" ] || continue
 		under_planned "$dir" || continue
 		assess_cached "$dir"
@@ -797,7 +784,7 @@ plan_worktree_prunes() {
 			printf '%s\n' "$checkout_common" >>"$work/prune-repos.unsorted"
 			printf '%s\n' "$checkout_common" >>"$work/affected-repos"
 		fi
-	done
+	done 3<"$contained"
 	LC_ALL=C sort -u "$work/prune-repos.unsorted" >"$work/prune-repos"
 	while IFS= read -r repo <&3; do
 		safe_path "$repo" || continue
