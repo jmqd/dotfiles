@@ -58,6 +58,11 @@ case "\$*" in
 show) printf 'Default host: test-host\n' ;;
 default) printf 'stable-test-host (default)\n' ;;
 "override list") printf 'no overrides\n' ;;
+"toolchain list")
+	for dir in "\$HOME/.rustup/toolchains"/*; do
+		printf '%s\n' "\${dir##*/}"
+	done
+	;;
 "toolchain uninstall "*)
 	printf 'rustup %s\n' "\$*" >>"$calls"
 	rm -rf "\$HOME/.rustup/toolchains/\$3"
@@ -78,7 +83,6 @@ if [ "\$1" = +nightly ] && [ ! -d "\$HOME/.rustup/toolchains/nightly-test-host" 
 	[ "\${RUSTUP_AUTO_INSTALL:-1}" != 0 ] || exit 1
 	printf 'rustup install nightly\n' >>"$calls"
 fi
-case " \$* " in *" --dry-run "*) exit 0 ;; esac
 printf 'cargo %s\n' "\$*" >>"$calls"
 EOF
 chmod +x "$bin/nix-store" "$bin/nix-env" "$bin/rustup" "$bin/docker" "$bin/cargo"

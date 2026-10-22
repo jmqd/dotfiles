@@ -1216,10 +1216,16 @@ plan_rustup_toolchains() {
 # clones, so they follow AGE; downloads stay under cargo's own auto-GC,
 # which waits months. `clean gc` still needs a nightly cargo, and
 # RUSTUP_AUTO_INSTALL=0 keeps a missing nightly from being installed just
-# to run it.
+# to run it. It waits for the package cache lock while any cargo builds,
+# so planning only checks that a nightly is installed.
 cargo_gc() {
-	(cd / && RUSTUP_AUTO_INSTALL=0 cargo +nightly -Zgc clean gc "$@" \
+	(cd / && RUSTUP_AUTO_INSTALL=0 cargo +nightly -Zgc clean gc \
 		--max-src-age="${age_minutes}minutes" --max-git-co-age="${age_minutes}minutes")
+}
+
+have_nightly() {
+	command -v cargo >/dev/null 2>&1 && command -v rustup >/dev/null 2>&1 &&
+		(cd / && rustup toolchain list 2>/dev/null) | grep -q '^nightly-[a-z]'
 }
 
 # Other tools' garbage collectors; they run after every deletion above.
@@ -1239,7 +1245,7 @@ plan_collectors() {
 			add buildcache gc docker
 		fi
 	done
-	if command -v cargo >/dev/null 2>&1 && cargo_gc --dry-run --quiet >/dev/null 2>&1; then
+	if have_nightly; then
 		add cargo-gc gc cargo
 	fi
 	if command -v flatpak >/dev/null 2>&1; then
