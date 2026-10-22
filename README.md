@@ -547,8 +547,9 @@ Once idle, it deletes Rust `target` dirs (or the idle profiles and per-task
 dirs inside a busy one), tagged build caches, per-app and package caches
 (`~/Library/Caches`, `~/.cache`, npm, bun, yarn, Go modules, rustup downloads),
 the caches of Chromium and Electron profiles (`Cache`, `Code Cache`,
-`Service Worker/CacheStorage`, `*_crx_cache` beside a `Local State` or
-`Preferences` file in `~/Library/Application Support` or `~/.config`),
+`Service Worker/CacheStorage`, `*_crx_cache` in a dir with Chromium's
+`Local State` or `Network Persistent State` file, in
+`~/Library/Application Support` or `~/.config`),
 Xcode DerivedData, your temp files, clean linked git worktrees, orphaned omp
 task copies, stale worktree entries, Nix `result*` out-links and `.direnv`
 dirs, profile generations past the newest five, idle dylint drivers (which

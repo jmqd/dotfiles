@@ -813,19 +813,25 @@ plan_cache_root() {
 }
 
 # Prints, NUL-separated, the caches of Chromium and Electron profiles
-# under DIR. Those apps keep caches beside profile data, so only a
-# directory holding a Local State or Preferences file counts as a
-# profile, and only its children with Chromium's cache names go. GPU and
-# shader caches stay: each holds under a megabyte, rebuilt on every
-# launch, so they would only crowd the plan.
+# under DIR. Those apps keep caches beside profile data, so only
+# Chromium's own markers make a directory a profile: a Local State file
+# (the user data dir), or a Preferences file beside a Network Persistent
+# State file, which newer versions keep in Network/. A bare Preferences
+# file is too common a name. Only children with Chromium's cache names
+# go. GPU and shader caches stay: they are small (about 30M in total on
+# a typical Mac), and recompiling them costs more than they free.
 chromium_cache_entries() {
-	local marker profile name
+	local marker profile name seen="$nl"
 	while IFS= read -r -d '' marker; do
 		profile="${marker%/*}"
-		# Each profile once, when it holds both markers.
-		if [ "${marker##*/}" = "Local State" ] && [ -f "$profile/Preferences" ]; then
-			continue
-		fi
+		case "${marker##*/}" in
+		"Network Persistent State")
+			case "$profile" in */Network) profile="${profile%/*}" ;; esac
+			[ "$profile" != "$1" ] && [ -f "$profile/Preferences" ] || continue
+			;;
+		esac
+		case "$seen" in *"$nl$profile$nl"*) continue ;; esac
+		seen="$seen$profile$nl"
 		for name in Cache "Code Cache" component_crx_cache extensions_crx_cache; do
 			if [ -d "$profile/$name" ] && [ ! -L "$profile/$name" ]; then
 				printf '%s\0' "$profile/$name"
@@ -835,7 +841,7 @@ chromium_cache_entries() {
 		if [ -d "$name/CacheStorage" ] && [ ! -L "$name" ] && [ ! -L "$name/CacheStorage" ]; then
 			printf '%s\0' "$name/CacheStorage"
 		fi
-	done < <(find "$1" -mindepth 2 -maxdepth 4 -xdev -type f \( -name "Local State" -o -name Preferences \) -print0 2>/dev/null)
+	done < <(find "$1" -mindepth 2 -maxdepth 5 -xdev -type f \( -name "Local State" -o -name "Network Persistent State" \) -print0 2>/dev/null)
 }
 
 plan_chromium_caches() {

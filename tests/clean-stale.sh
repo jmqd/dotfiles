@@ -175,8 +175,9 @@ if [ "$(uname -s)" = Darwin ]; then
 	file "$HOME/Library/Caches/com.apple.Safari/data"
 fi
 
-# Chromium and Electron apps keep caches beside profile data. Only a
-# directory with a Local State or Preferences file is a profile.
+# Chromium and Electron apps keep caches beside profile data. Only
+# Chromium's markers make a profile: Local State, or Preferences beside
+# Network Persistent State.
 if [ "$(uname -s)" = Darwin ]; then
 	app_data="$HOME/Library/Application Support"
 else
@@ -191,12 +192,18 @@ file "$app_data/Chat/Local Storage/leveldb/data"
 file "$app_data/Browser/Local State"
 file "$app_data/Browser/extensions_crx_cache/data"
 file "$app_data/Browser/Profile 1/Preferences"
+file "$app_data/Browser/Profile 1/Network/Network Persistent State"
 file "$app_data/Browser/Profile 1/Code Cache/js/data"
+file "$app_data/Team/Preferences"
+file "$app_data/Team/Network Persistent State"
+file "$app_data/Team/Cache/data"
 file "$app_data/Editor/Cache/data"
-file "$app_data/Busy/Preferences"
+file "$app_data/Notes/Preferences"
+file "$app_data/Notes/Cache/data"
+file "$app_data/Busy/Local State"
 file "$app_data/Busy/Cache/data"
 touch_recent "$app_data/Busy/Cache/data"
-# GPU caches are tiny and rebuilt on every launch.
+# GPU caches are small; recompiling them costs more than they free.
 file "$app_data/Chat/GPUCache/data"
 
 file "$tmp/old-build/out"
@@ -368,6 +375,7 @@ expected_gone=(
 	"$app_data/Chat/Service Worker/CacheStorage"
 	"$app_data/Browser/extensions_crx_cache"
 	"$app_data/Browser/Profile 1/Code Cache"
+	"$app_data/Team/Cache"
 	"$HOME/.omp/wt/dead"
 	"$HOME/.omp/wt/reused"
 	"$drivers/nightly-2026-02-02-test-host"
@@ -398,6 +406,7 @@ expected_kept=(
 	"$app_data/Chat/Service Worker/Database/data"
 	"$app_data/Chat/Local Storage/leveldb/data"
 	"$app_data/Editor/Cache/data"
+	"$app_data/Notes/Cache/data"
 	"$app_data/Busy/Cache/data"
 	"$app_data/Chat/GPUCache/data"
 	"$fixture/precious/data"
