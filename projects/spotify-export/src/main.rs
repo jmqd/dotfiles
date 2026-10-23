@@ -546,7 +546,7 @@ mod tests {
     #[test]
     fn pkce_challenge_matches_rfc7636_appendix_b() {
         assert_eq!(
-            pkce_challenge("dBjftJeZ4CVP-mJ92K9pt8T6v5pvDlL1NKRRNmc3yHI"),
+            pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
             "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
     }
