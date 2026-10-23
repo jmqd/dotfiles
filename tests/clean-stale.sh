@@ -14,7 +14,7 @@ cleanup() {
 		kill "$pid" 2>/dev/null || true
 		wait "$pid" 2>/dev/null || true
 	done
-	chmod -R u+w "$fixture" 2>/dev/null || true
+	chmod -R u+rwx "$fixture" 2>/dev/null || true
 	rm -rf "$fixture"
 }
 trap cleanup EXIT
@@ -170,6 +170,8 @@ mkdir -p "$HOME/.cache/empty-app"
 file "$HOME/.cache/nix/eval-cache-v6/old.sqlite"
 file "$HOME/.cache/nix/eval-cache-v6/new.sqlite"
 touch_recent "$HOME/.cache/nix/eval-cache-v6/new.sqlite"
+# An unreadable cache dir is skipped, not fatal.
+mkdir -m 000 "$HOME/.cache/nix/eval-cache-v7"
 file "$HOME/.cache/nix/tarball-cache/HEAD"
 file "$fixture/precious/data"
 ln -s "$fixture/precious" "$HOME/.cache/linked"

@@ -777,7 +777,8 @@ plan_each() {
 	local label="$1" list entry
 	shift
 	list="$(mktemp "$work/list.XXXXXX")"
-	"$@" >"$list"
+	# A tree find cannot fully read lists what it can; that is not fatal.
+	"$@" >"$list" || true
 	prefetch_plannable <"$list"
 	while IFS= read -r -d '' entry; do
 		safe_path "$entry" || continue
