@@ -1,9 +1,9 @@
 {
-  "version": "2.2.3-20963",
+  "version": "2.2.4-21120",
   "sources": {
     "x86_64-darwin": {
-      "url": "https://cdn-updates.orbstack.dev/amd64/OrbStack_v2.2.3_20963_amd64.dmg",
-      "hash": "sha256-0aqHI9Gaa8jbpLZJDplxDpJqpfIpkg2o4b4Pu6kDZB8="
+      "url": "https://cdn-updates.orbstack.dev/amd64/OrbStack_v2.2.4_21120_amd64.dmg",
+      "hash": "sha256-sYs5ev9+gat9Y5NKVp2mWexzsKGamfp1IdS3XJbbVUQ="
     }
   }
 }
