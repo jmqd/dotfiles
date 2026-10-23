@@ -6,7 +6,7 @@ license = "MIT"
 description = "Export a Spotify playlist's track metadata as TSV"
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 getrandom = "0.3"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "form", "rustls"] }
 serde = { version = "1", features = ["derive"] }
