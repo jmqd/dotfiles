@@ -66,91 +66,216 @@ options:
 EOF
 }
 
-die() {
-	printf 'clean-stale: %s\n' "$*" >&2
-	exit 2
+main() {
+	parse_args "$@"
+	detect_environment
+	prepare_run
+	printf 'clean-stale: looking for files idle for %s (untouched since %s)\n' \
+		"$age" "$(date_at "$cutoff_epoch" '+%Y-%m-%d %H:%M')"
+
+	section "scanning ${search_roots[*]}${temp_roots[*]:+ ${temp_roots[*]}}"
+	build_plan
+	local count total_kb
+	count="$(awk 'END { print NR }' "$work/sized")"
+	total_kb="$(awk -F '\t' '{ s += $1 } END { print s + 0 }' "$work/sized")"
+	if [ "$count" -eq 0 ]; then
+		section "nothing idle for $age"
+		print_notes
+		return 0
+	fi
+	section "plan: $count items, $(human_kb "$total_kb")"
+	print_plan
+	print_notes
+
+	if [ "$dry_run" -eq 1 ]; then
+		printf '\ndry run: nothing deleted\n'
+		return 0
+	fi
+	if [ "$assume_yes" -ne 1 ]; then
+		if [ ! -t 0 ]; then
+			printf 'clean-stale: stdin is not a terminal; rerun with --yes to delete\n' >&2
+			return 1
+		fi
+		local reply
+		printf '\nDelete these %s items? [y/N] ' "$count"
+		read -r reply || reply=""
+		case "$reply" in
+		y | Y | yes | YES) ;;
+		*)
+			printf 'nothing deleted\n'
+			return 0
+			;;
+		esac
+	fi
+
+	local free_before
+	free_before="$(free_kb)"
+	section "deleting"
+	execute_plan
+	section "summary"
+	printf 'done %s of %s items (%s); free space %s -> %s\n' \
+		"$done_items" "$count" "$(human_kb "$deleted_kb")" \
+		"$(human_kb "$free_before")" "$(human_kb "$(free_kb)")"
+	if [ "$failures" -gt 0 ]; then
+		printf 'failures: %s\n' "$failures"
+		return 1
+	fi
 }
 
-warn() {
-	printf 'warning: %s\n' "$*" >&2
+# Writes the sized plan to $work/sized. Each step sees what earlier ones
+# planned: worktrees come after the caches that may hold them, prunes
+# after the worktrees they cover, toolchains after the pins and drivers
+# that select them, and collectors last.
+build_plan() {
+	snapshot_open_paths
+	discover | classify_discoveries
+	find_contained_checkouts
+	plan_rust_targets
+	plan_build_caches
+	if [ "$os" = Darwin ]; then
+		plan_cache_root "$home/Library/Caches"
+		plan_chromium_caches "$home/Library/Application Support"
+	else
+		plan_chromium_caches "${XDG_CONFIG_HOME:-$home/.config}"
+	fi
+	plan_cache_root "$cache_home"
+	plan_package_caches
+	plan_each tmp temp_entries
+	plan_entries xcode "$home/Library/Developer/Xcode/DerivedData"
+	plan_omp_isolation
+	plan_worktrees
+	plan_worktree_prunes
+	plan_nix_roots
+	plan_nix_generations
+	plan_dylint_drivers
+	plan_rustup_toolchains
+	plan_collectors
+	dedupe_plan
+	size_plan
+	# Round up so our last planning reads fall before the mark.
+	set_mtime "$(($(current_epoch) + 1))" "$plan_done"
 }
 
-section() {
-	printf '\n==> %s\n' "$*"
-}
+# --- Options and environment ---
 
-# Parses N, Nh, or Nd (at most six digits) into minutes.
-parse_age_minutes() {
-	local value="$1" number factor=60
-	case "$value" in
-	*d)
-		number="${value%d}"
-		factor=1440
-		;;
-	*h) number="${value%h}" ;;
-	*) number="$value" ;;
-	esac
-	case "$number" in
-	'' | 0* | *[!0-9]* | ???????*) return 1 ;;
-	esac
-	printf '%s\n' "$((number * factor))"
-}
-
-canonical_dir() {
-	(cd -P -- "$1" 2>/dev/null && pwd)
-}
-
-dry_run=0
-assume_yes=0
-age="$default_age"
-roots=()
-while [ $# -gt 0 ]; do
-	case "$1" in
-	-n | --dry-run) dry_run=1 ;;
-	-y | --yes) assume_yes=1 ;;
-	--age)
-		[ $# -ge 2 ] || die "--age needs a value"
-		age="$2"
+parse_args() {
+	dry_run=0
+	assume_yes=0
+	age="$default_age"
+	roots=()
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		-n | --dry-run) dry_run=1 ;;
+		-y | --yes) assume_yes=1 ;;
+		--age)
+			[ $# -ge 2 ] || die "--age needs a value"
+			age="$2"
+			shift
+			;;
+		--age=*) age="${1#--age=}" ;;
+		--root)
+			[ $# -ge 2 ] || die "--root needs a directory"
+			roots+=("$2")
+			shift
+			;;
+		--root=*) roots+=("${1#--root=}") ;;
+		-h | --help)
+			usage
+			exit 0
+			;;
+		*)
+			usage >&2
+			exit 2
+			;;
+		esac
 		shift
-		;;
-	--age=*) age="${1#--age=}" ;;
-	--root)
-		[ $# -ge 2 ] || die "--root needs a directory"
-		roots+=("$2")
-		shift
-		;;
-	--root=*) roots+=("${1#--root=}") ;;
-	-h | --help)
-		usage
-		exit 0
-		;;
-	*)
-		usage >&2
-		exit 2
-		;;
-	esac
-	shift
-done
+	done
+	age_minutes="$(parse_age_minutes "$age")" || die "invalid --age '$age' (use N, Nh, or Nd)"
+}
 
-age_minutes="$(parse_age_minutes "$age")" || die "invalid --age '$age' (use N, Nh, or Nd)"
+# Resolves the directories this run searches and probes the platform's
+# tools.
+detect_environment() {
+	local root resolved
+	uid="$(id -u)"
+	os="$(uname -s)"
+	home="$(canonical_dir "$HOME")" || die "cannot resolve HOME ($HOME)"
+	cache_home="${XDG_CACHE_HOME:-$home/.cache}"
+	data_home="${XDG_DATA_HOME:-$home/.local/share}"
+	cargo_home="${CARGO_HOME:-$home/.cargo}"
+	rustup_home="${RUSTUP_HOME:-$home/.rustup}"
+	dylint_drivers="${DYLINT_DRIVER_PATH:-$home/.dylint_drivers}"
 
-uid="$(id -u)"
-os="$(uname -s)"
-home="$(canonical_dir "$HOME")" || die "cannot resolve HOME ($HOME)"
-cache_home="${XDG_CACHE_HOME:-$home/.cache}"
-data_home="${XDG_DATA_HOME:-$home/.local/share}"
-cargo_home="${CARGO_HOME:-$home/.cargo}"
-rustup_home="${RUSTUP_HOME:-$home/.rustup}"
-dylint_drivers="${DYLINT_DRIVER_PATH:-$home/.dylint_drivers}"
+	if [ ${#roots[@]} -eq 0 ]; then
+		roots=("$home")
+	fi
+	search_roots=()
+	for root in "${roots[@]}"; do
+		resolved="$(canonical_dir "$root")" || die "not a directory: $root"
+		search_roots+=("$resolved")
+	done
+	resolve_temp_roots
 
-if [ ${#roots[@]} -eq 0 ]; then
-	roots=("$home")
-fi
-search_roots=()
-for root in "${roots[@]}"; do
-	resolved="$(canonical_dir "$root")" || die "not a directory: $root"
-	search_roots+=("$resolved")
-done
+	if date --version >/dev/null 2>&1; then
+		gnu_date=1
+	else
+		gnu_date=0
+	fi
+	if stat -c %d / >/dev/null 2>&1; then
+		gnu_stat=1
+	else
+		gnu_stat=0
+	fi
+	if rm --version >/dev/null 2>&1; then
+		rm_one_fs=--one-file-system
+	else
+		rm_one_fs=-x
+	fi
+	have_git=0
+	if command -v git >/dev/null 2>&1; then
+		have_git=1
+	fi
+	# omp_owner_alive needs process start times; BusyBox ps has no lstart.
+	have_ps=0
+	if [ -n "$(ps -o lstart= -p $$ 2>/dev/null)" ]; then
+		have_ps=1
+	fi
+	# Filesystem walks run this many at a time.
+	parallel_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
+	case "$parallel_jobs" in '' | 0 | *[!0-9]*) parallel_jobs=4 ;; esac
+}
+
+# Sets temp_roots to the distinct temp dirs that neither hold HOME nor
+# sit in it: every idle entry of a temp root goes.
+resolve_temp_roots() {
+	local dir resolved existing known
+	temp_roots=()
+	while IFS= read -r dir; do
+		[ -n "$dir" ] || continue
+		resolved="$(canonical_dir "$dir")" || continue
+		case "$resolved" in
+		/ | "$home" | "$home"/*)
+			warn "skipping temp dir $resolved: it is / or inside HOME"
+			continue
+			;;
+		esac
+		case "$home/" in
+		"$resolved"/*)
+			warn "skipping temp dir $resolved: it contains HOME"
+			continue
+			;;
+		esac
+		known=0
+		for existing in ${temp_roots[@]+"${temp_roots[@]}"}; do
+			if [ "$existing" = "$resolved" ]; then
+				known=1
+			fi
+		done
+		if [ "$known" -eq 0 ]; then
+			temp_roots+=("$resolved")
+		fi
+	done < <(temp_candidates)
+}
 
 # System temp directories only: an arbitrary TMPDIR could be a project tree.
 # CLEAN_STALE_TEMP_ROOTS (colon-separated) replaces them for tests.
@@ -164,119 +289,46 @@ temp_candidates() {
 	fi
 	printf '%s\n' /tmp /var/tmp
 }
-temp_roots=()
-while IFS= read -r dir; do
-	[ -n "$dir" ] || continue
-	resolved="$(canonical_dir "$dir")" || continue
-	# Every idle entry of a temp root goes, so none may hold HOME or sit in it.
-	case "$resolved" in
-	/ | "$home" | "$home"/*)
-		warn "skipping temp dir $resolved: it is / or inside HOME"
-		continue
-		;;
-	esac
-	case "$home/" in
-	"$resolved"/*)
-		warn "skipping temp dir $resolved: it contains HOME"
-		continue
-		;;
-	esac
-	known=0
-	for existing in ${temp_roots[@]+"${temp_roots[@]}"}; do
-		if [ "$existing" = "$resolved" ]; then
-			known=1
-		fi
-	done
-	if [ "$known" -eq 0 ]; then
-		temp_roots+=("$resolved")
-	fi
-done < <(temp_candidates)
 
-if date --version >/dev/null 2>&1; then
-	gnu_date=1
-else
-	gnu_date=0
-fi
-if stat -c %d / >/dev/null 2>&1; then
-	gnu_stat=1
-else
-	gnu_stat=0
-fi
-if rm --version >/dev/null 2>&1; then
-	rm_one_fs=--one-file-system
-else
-	rm_one_fs=-x
-fi
-have_git=0
-if command -v git >/dev/null 2>&1; then
-	have_git=1
-fi
-# omp_owner_alive needs process start times; BusyBox ps has no lstart.
-have_ps=0
-if [ -n "$(ps -o lstart= -p $$ 2>/dev/null)" ]; then
-	have_ps=1
-fi
-# Filesystem walks run this many at a time.
-parallel_jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || true)"
-case "$parallel_jobs" in '' | 0 | *[!0-9]*) parallel_jobs=4 ;; esac
+# Creates the work dir, fixes the clock, and starts the run state empty.
+prepare_run() {
+	work="$(mktemp -d "${TMPDIR:-/tmp}/clean-stale.XXXXXX")"
+	trap 'rm -rf "$work"' EXIT
+	plan="$work/plan"
+	open_paths="$work/open-paths"
+	notes="$work/notes"
+	contained="$work/contained"
+	: >"$plan"
+	: >"$notes"
 
-# Runs date(1) for epoch second $1 with the remaining options and format.
-date_at() {
-	local epoch="$1"
-	shift
-	if [ "$gnu_date" -eq 1 ]; then
-		date -d "@$epoch" "$@"
-	else
-		date -r "$epoch" "$@"
-	fi
+	# CLEAN_STALE_NOW (epoch seconds) moves the clock for tests.
+	now="${CLEAN_STALE_NOW:-$(date +%s)}"
+	case "$now" in '' | *[!0-9]*) die "CLEAN_STALE_NOW must be epoch seconds" ;; esac
+	cutoff_epoch=$((now - age_minutes * 60))
+	git_expire="$(date_at "$cutoff_epoch" -u '+%Y-%m-%d %H:%M:%S +0000')"
+
+	# Reference files for find's -newer tests. A read counts as use only
+	# inside a window: from the cutoff to the start of the scan while
+	# planning, and after planning while deleting. Reads that git makes
+	# during this run (racily clean files, copied repos) then do not count.
+	cutoff="$work/cutoff"
+	scan_start="$work/scan-start"
+	plan_done="$work/plan-done"
+	set_mtime "$cutoff_epoch" "$cutoff"
+	set_mtime "$now" "$scan_start"
+	reads_after="$cutoff"
+	reads_before="$scan_start"
+
+	# Newline-delimited planned paths, for under_planned without a process.
+	planned_dirs="$nl"
+	forget_verdicts
+	forget_assessments
+	failures=0
+	done_items=0
+	deleted_kb=0
 }
 
-# Succeeds when PATH sits on its parent directory's filesystem, so it is
-# no mount point.
-on_parent_fs() {
-	local devices lf=$'\n'
-	if [ "$gnu_stat" -eq 1 ]; then
-		devices="$(stat -c %d -- "$1" "${1%/*}" 2>/dev/null)" || return 1
-	else
-		devices="$(stat -f %d -- "$1" "${1%/*}" 2>/dev/null)" || return 1
-	fi
-	[ "${devices%%"$lf"*}" = "${devices#*"$lf"}" ]
-}
-
-work="$(mktemp -d "${TMPDIR:-/tmp}/clean-stale.XXXXXX")"
-trap 'rm -rf "$work"' EXIT
-plan="$work/plan"
-open_paths="$work/open-paths"
-notes="$work/notes"
-contained="$work/contained"
-: >"$plan"
-: >"$notes"
-
-# CLEAN_STALE_NOW (epoch seconds) moves the clock for tests.
-now="${CLEAN_STALE_NOW:-$(date +%s)}"
-case "$now" in '' | *[!0-9]*) die "CLEAN_STALE_NOW must be epoch seconds" ;; esac
-cutoff_epoch=$((now - age_minutes * 60))
-git_expire="$(date_at "$cutoff_epoch" -u '+%Y-%m-%d %H:%M:%S +0000')"
-
-current_epoch() {
-	printf '%s\n' "${CLEAN_STALE_NOW:-$(date +%s)}"
-}
-
-set_mtime() {
-	touch -d "$(date_at "$1" -u +%Y-%m-%dT%H:%M:%SZ)" "$2"
-}
-
-# Reference files for find's -newer tests. A read counts as use only
-# inside a window: from the cutoff to the start of the scan while
-# planning, and after planning while deleting. Reads that git makes
-# during this run (racily clean files, copied repos) then do not count.
-cutoff="$work/cutoff"
-scan_start="$work/scan-start"
-plan_done="$work/plan-done"
-set_mtime "$cutoff_epoch" "$cutoff"
-set_mtime "$now" "$scan_start"
-reads_after="$cutoff"
-reads_before="$scan_start"
+# --- Idle and in-use checks ---
 
 # Succeeds when nothing at or below PATH was modified or changed after the
 # cutoff, no file there was read inside the read window, and no socket or
@@ -349,8 +401,10 @@ check_plannable() {
 # Results prefetch_plannable computed ahead, as newline-delimited sets.
 # execute_plan clears them, so each deletion rechecks its path just
 # before it acts.
-plannable_yes="$nl"
-plannable_no="$nl"
+forget_verdicts() {
+	plannable_yes="$nl"
+	plannable_no="$nl"
+}
 
 plannable() {
 	case "$plannable_yes" in *"$nl$1$nl"*) return 0 ;; esac
@@ -420,14 +474,21 @@ prefetch_listed() {
 	prefetch_plannable < <(tr '\n' '\0' <"$1")
 }
 
-# Newline-delimited planned paths, for under_planned without a process.
-planned_dirs="$nl"
+# --- The plan ---
 
 add() {
 	printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >>"$plan"
-	case "$1" in
-	path | worktree | merged-worktree) planned_dirs="$planned_dirs$3$nl" ;;
-	esac
+	if deletes_tree "$1"; then
+		planned_dirs="$planned_dirs$3$nl"
+	fi
+}
+
+# Plan methods whose row deletes the tree at its path, for bash and awk.
+readonly tree_methods="path worktree merged-worktree toolchain"
+readonly awk_trees='BEGIN { n = split(trees, m, " "); for (i = 1; i <= n; i++) tree[m[i]] = 1 }'
+
+deletes_tree() {
+	case " $tree_methods " in *" $1 "*) ;; *) return 1 ;; esac
 }
 
 # Records an idle path kept because deleting it could lose work.
@@ -446,6 +507,8 @@ under_planned() {
 children() {
 	find "$1" -mindepth 1 -maxdepth 1 "${@:2}" -print0 2>/dev/null
 }
+
+# --- Git checkouts ---
 
 # Runs git read-only in a checkout or repository: no optional locks (so no
 # index refresh), no fsmonitor daemon, and untranslated messages.
@@ -608,11 +671,14 @@ assess_checkout() {
 	fi
 }
 
-assessed=()
-assessed_risk=()
-assessed_linked=()
-assessed_common=()
-assessed_merged=()
+# What assess_cached has learned, one array entry per checkout.
+forget_assessments() {
+	assessed=()
+	assessed_risk=()
+	assessed_linked=()
+	assessed_common=()
+	assessed_merged=()
+}
 
 # assess_checkout, once per checkout per run.
 assess_cached() {
@@ -684,6 +750,8 @@ blocks_work() {
 	return 1
 }
 
+# --- Planning paths ---
+
 # Plans PATH when it is plannable. When deleting it would take a checkout
 # holding work with it, plans the rest of PATH around that checkout.
 plan_path() {
@@ -703,16 +771,28 @@ plan_path() {
 	done < <(children "$path")
 }
 
-# Plans each idle entry directly inside DIR.
-plan_entries() {
-	local label="$1" dir="$2" entry
-	[ -d "$dir" ] && [ ! -L "$dir" ] || return 0
-	prefetch_plannable < <(children "$dir")
+# Plans each NUL-separated path that COMMAND... prints, as LABEL, after
+# checking them all for idleness in parallel.
+plan_each() {
+	local label="$1" list entry
+	shift
+	list="$(mktemp "$work/list.XXXXXX")"
+	"$@" >"$list"
+	prefetch_plannable <"$list"
 	while IFS= read -r -d '' entry; do
 		safe_path "$entry" || continue
 		plan_path "$label" "$entry"
-	done < <(children "$dir")
+	done <"$list"
 }
+
+# Plans each idle entry directly inside DIR.
+plan_entries() {
+	local label="$1" dir="$2"
+	[ -d "$dir" ] && [ ! -L "$dir" ] || return 0
+	plan_each "$label" children "$dir"
+}
+
+# --- Discovery ---
 
 # Walks each directory argument, unless it is a mount point, with the
 # find expression in discover_expr, skipping the directory itself.
@@ -811,6 +891,8 @@ find_contained_checkouts() {
 	' "$work/containers" "$work/checkouts" >"$contained"
 }
 
+# --- Planners, in the order build_plan runs them ---
+
 # Prints, NUL-separated, the entries of each target dir not already
 # planned whole: the paths plan_rust_targets checks one by one.
 busy_target_entries() {
@@ -894,16 +976,11 @@ cache_root_entries() {
 }
 
 plan_cache_root() {
-	local entry
 	[ -d "$1" ] || return 0
 	if [ -e "$1/nix" ]; then
 		plan_nix_cache "$1/nix"
 	fi
-	prefetch_plannable < <(cache_root_entries "$1")
-	while IFS= read -r -d '' entry; do
-		safe_path "$entry" || continue
-		plan_path cache "$entry"
-	done < <(cache_root_entries "$1")
+	plan_each cache cache_root_entries "$1"
 }
 
 # Prints, NUL-separated, the caches of Chromium and Electron profiles
@@ -939,13 +1016,8 @@ chromium_cache_entries() {
 }
 
 plan_chromium_caches() {
-	local entry
 	[ -d "$1" ] && [ ! -L "$1" ] || return 0
-	prefetch_plannable < <(chromium_cache_entries "$1")
-	while IFS= read -r -d '' entry; do
-		safe_path "$entry" || continue
-		plan_path cache "$entry"
-	done < <(chromium_cache_entries "$1")
+	plan_each cache chromium_cache_entries "$1"
 }
 
 plan_package_caches() {
@@ -978,19 +1050,6 @@ temp_entries() {
 			esac
 		done < <(children "$dir" -user "$uid")
 	done
-}
-
-plan_temp() {
-	local entry
-	prefetch_plannable < <(temp_entries)
-	while IFS= read -r -d '' entry; do
-		safe_path "$entry" || continue
-		plan_path tmp "$entry"
-	done < <(temp_entries)
-}
-
-squeeze() {
-	printf '%s\n' "$1" | awk '{ $1 = $1; print }'
 }
 
 # Succeeds unless the owner file names a process that has exited or whose
@@ -1242,13 +1301,8 @@ searched_home() {
 # it again on its next run. Each driver keeps its toolchain installed,
 # so idle ones go first and free their toolchains in the same run.
 plan_dylint_drivers() {
-	local dir
 	[ -d "$dylint_drivers" ] && [ ! -L "$dylint_drivers" ] || return 0
-	prefetch_plannable < <(children "$dylint_drivers" -type d)
-	while IFS= read -r -d '' dir; do
-		safe_path "$dir" || continue
-		plan_path toolchain "$dir"
-	done < <(children "$dylint_drivers" -type d)
+	plan_each toolchain children "$dylint_drivers" -type d
 }
 
 # Uninstalls idle versioned toolchains (1.85.0, nightly-2026-04-15, ...)
@@ -1357,11 +1411,13 @@ plan_collectors() {
 	fi
 }
 
+# --- Sizing and printing the plan ---
+
 # Drops repeated entries and entries inside another planned directory:
 # deleting the parent covers them.
 dedupe_plan() {
-	awk -F '\t' '
-		NR == FNR { if ($1 == "path" || $1 == "worktree" || $1 == "merged-worktree") planned[$3] = 1; next }
+	awk -F '\t' -v trees="$tree_methods" "$awk_trees"'
+		NR == FNR { if ($1 in tree) planned[$3] = 1; next }
 		seen[$1 "\t" $3]++ { next }
 		{
 			p = $3
@@ -1390,12 +1446,14 @@ human_kb() {
 size_plan() {
 	local method label path arg
 	while IFS="$tab" read -r method label path arg; do
-		case "$method" in path | worktree | merged-worktree | toolchain) printf '%s\0' "$path" ;; esac
+		if deletes_tree "$method"; then
+			printf '%s\0' "$path"
+		fi
 	done <"$plan" | parallel_runs 1 'du -skx -- "$@" 2>/dev/null' >"$work/sizes"
-	awk -F '\t' '
+	awk -F '\t' -v trees="$tree_methods" "$awk_trees"'
 		FILENAME == ARGV[1] { kb[substr($0, index($0, "\t") + 1)] = $1; next }
 		{
-			size = ($1 == "path" || $1 == "worktree" || $1 == "merged-worktree" || $1 == "toolchain") ? kb[$3] + 0 : 0
+			size = ($1 in tree) ? kb[$3] + 0 : 0
 			if ($1 == "path" && size == 0) next
 			print size "\t" $0
 		}' "$work/sizes" "$plan" >"$work/sized"
@@ -1458,9 +1516,7 @@ print_notes() {
 	LC_ALL=C sort -u "$notes" | awk -F '\t' '{ printf "  %s: %s\n", $1, $2 }'
 }
 
-free_kb() {
-	df -Pk "$home" | awk 'NR == 2 { print $4 }'
-}
+# --- Execution ---
 
 delete_path() {
 	if rm -rf "$rm_one_fs" -- "$1" 2>/dev/null; then
@@ -1470,10 +1526,6 @@ delete_path() {
 	chmod -R u+w -- "$1" 2>/dev/null || true
 	rm -rf "$rm_one_fs" -- "$1"
 }
-
-failures=0
-done_items=0
-deleted_kb=0
 
 finished() {
 	done_items=$((done_items + 1))
@@ -1490,23 +1542,21 @@ failed() {
 still_planned() {
 	local method="$1" path="$2"
 	case "$method" in
-	path | worktree | merged-worktree | toolchain)
-		[ -e "$path" ] || return 1
-		if ! plannable "$path"; then
-			printf 'kept (used since planning): %s\n' "$path"
+	path) still_idle "$path" ;;
+	worktree | merged-worktree)
+		still_idle "$path" || return 1
+		assess_checkout "$path"
+		# A clean row that now needs --force changed since planning.
+		if [ -n "$checkout_risk" ] || { [ "$method" = worktree ] && [ "$checkout_merged" -eq 1 ]; } ||
+			! ignored_regenerable "$path"; then
+			printf 'kept (changed since planning): %s\n' "$path"
 			return 1
 		fi
-		if [ "$method" = worktree ] || [ "$method" = merged-worktree ]; then
-			assess_checkout "$path"
-			# A clean row that now needs --force changed since planning.
-			if [ -n "$checkout_risk" ] || { [ "$method" = worktree ] && [ "$checkout_merged" -eq 1 ]; } ||
-				! ignored_regenerable "$path"; then
-				printf 'kept (changed since planning): %s\n' "$path"
-				return 1
-			fi
-		fi
+		;;
+	toolchain)
+		still_idle "$path" || return 1
 		# Driver rows run first; one kept or rebuilt since keeps its toolchain.
-		if [ "$method" = toolchain ] && [ -e "$dylint_drivers/${path##*/}" ]; then
+		if [ -e "$dylint_drivers/${path##*/}" ]; then
 			printf 'kept (its dylint driver stays): %s\n' "$path"
 			return 1
 		fi
@@ -1519,6 +1569,15 @@ still_planned() {
 		fi
 		;;
 	esac
+}
+
+# Succeeds when PATH still exists and nothing has used it since planning.
+still_idle() {
+	[ -e "$1" ] || return 1
+	if ! plannable "$1"; then
+		printf 'kept (used since planning): %s\n' "$1"
+		return 1
+	fi
 }
 
 run_row() {
@@ -1568,13 +1627,8 @@ execute_plan() {
 	snapshot_open_paths
 	reads_after="$plan_done"
 	reads_before=""
-	assessed=()
-	assessed_risk=()
-	assessed_linked=()
-	assessed_common=()
-	assessed_merged=()
-	plannable_yes="$nl"
-	plannable_no="$nl"
+	forget_assessments
+	forget_verdicts
 	run_rows path worktree merged-worktree link toolchain
 	run_rows prune
 	run_rows generations
@@ -1582,84 +1636,79 @@ execute_plan() {
 	run_rows nix-gc
 }
 
-main() {
-	printf 'clean-stale: looking for files idle for %s (untouched since %s)\n' \
-		"$age" "$(date_at "$cutoff_epoch" '+%Y-%m-%d %H:%M')"
+# --- Utilities ---
 
-	section "scanning ${search_roots[*]}${temp_roots[*]:+ ${temp_roots[*]}}"
-	snapshot_open_paths
-	discover | classify_discoveries
-	find_contained_checkouts
-	plan_rust_targets
-	plan_build_caches
-	if [ "$os" = Darwin ]; then
-		plan_cache_root "$home/Library/Caches"
-		plan_chromium_caches "$home/Library/Application Support"
+die() {
+	printf 'clean-stale: %s\n' "$*" >&2
+	exit 2
+}
+
+warn() {
+	printf 'warning: %s\n' "$*" >&2
+}
+
+section() {
+	printf '\n==> %s\n' "$*"
+}
+
+# Parses N, Nh, or Nd (at most six digits) into minutes.
+parse_age_minutes() {
+	local value="$1" number factor=60
+	case "$value" in
+	*d)
+		number="${value%d}"
+		factor=1440
+		;;
+	*h) number="${value%h}" ;;
+	*) number="$value" ;;
+	esac
+	case "$number" in
+	'' | 0* | *[!0-9]* | ???????*) return 1 ;;
+	esac
+	printf '%s\n' "$((number * factor))"
+}
+
+canonical_dir() {
+	(cd -P -- "$1" 2>/dev/null && pwd)
+}
+
+# Runs date(1) for epoch second $1 with the remaining options and format.
+date_at() {
+	local epoch="$1"
+	shift
+	if [ "$gnu_date" -eq 1 ]; then
+		date -d "@$epoch" "$@"
 	else
-		plan_chromium_caches "${XDG_CONFIG_HOME:-$home/.config}"
-	fi
-	plan_cache_root "$cache_home"
-	plan_package_caches
-	plan_temp
-	plan_entries xcode "$home/Library/Developer/Xcode/DerivedData"
-	plan_omp_isolation
-	plan_worktrees
-	plan_worktree_prunes
-	plan_nix_roots
-	plan_nix_generations
-	plan_dylint_drivers
-	plan_rustup_toolchains
-	plan_collectors
-	dedupe_plan
-	size_plan
-	# Round up so our last planning reads fall before the mark.
-	set_mtime "$(($(current_epoch) + 1))" "$plan_done"
-
-	local count total_kb
-	count="$(awk 'END { print NR }' "$work/sized")"
-	total_kb="$(awk -F '\t' '{ s += $1 } END { print s + 0 }' "$work/sized")"
-	if [ "$count" -eq 0 ]; then
-		section "nothing idle for $age"
-		print_notes
-		return 0
-	fi
-	section "plan: $count items, $(human_kb "$total_kb")"
-	print_plan
-	print_notes
-
-	if [ "$dry_run" -eq 1 ]; then
-		printf '\ndry run: nothing deleted\n'
-		return 0
-	fi
-	if [ "$assume_yes" -ne 1 ]; then
-		if [ ! -t 0 ]; then
-			printf 'clean-stale: stdin is not a terminal; rerun with --yes to delete\n' >&2
-			return 1
-		fi
-		local reply
-		printf '\nDelete these %s items? [y/N] ' "$count"
-		read -r reply || reply=""
-		case "$reply" in
-		y | Y | yes | YES) ;;
-		*)
-			printf 'nothing deleted\n'
-			return 0
-			;;
-		esac
-	fi
-
-	local free_before
-	free_before="$(free_kb)"
-	section "deleting"
-	execute_plan
-	section "summary"
-	printf 'done %s of %s items (%s); free space %s -> %s\n' \
-		"$done_items" "$count" "$(human_kb "$deleted_kb")" \
-		"$(human_kb "$free_before")" "$(human_kb "$(free_kb)")"
-	if [ "$failures" -gt 0 ]; then
-		printf 'failures: %s\n' "$failures"
-		return 1
+		date -r "$epoch" "$@"
 	fi
 }
 
-main
+current_epoch() {
+	printf '%s\n' "${CLEAN_STALE_NOW:-$(date +%s)}"
+}
+
+set_mtime() {
+	touch -d "$(date_at "$1" -u +%Y-%m-%dT%H:%M:%SZ)" "$2"
+}
+
+# Succeeds when PATH sits on its parent directory's filesystem, so it is
+# no mount point.
+on_parent_fs() {
+	local devices lf=$'\n'
+	if [ "$gnu_stat" -eq 1 ]; then
+		devices="$(stat -c %d -- "$1" "${1%/*}" 2>/dev/null)" || return 1
+	else
+		devices="$(stat -f %d -- "$1" "${1%/*}" 2>/dev/null)" || return 1
+	fi
+	[ "${devices%%"$lf"*}" = "${devices#*"$lf"}" ]
+}
+
+squeeze() {
+	printf '%s\n' "$1" | awk '{ $1 = $1; print }'
+}
+
+free_kb() {
+	df -Pk "$home" | awk 'NR == 2 { print $4 }'
+}
+
+main "$@"
