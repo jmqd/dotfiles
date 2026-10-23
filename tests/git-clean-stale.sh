@@ -78,4 +78,19 @@ git worktree list | grep -q "$root/stuck " || fail "unmoved worktree was unregis
 [[ -f $root/blocked/Trash ]] || fail "the blocking file was replaced"
 ! find "$root/blocked" -name 'stuck-*.trashinfo' | grep -q . || fail "a failed move left a trash record"
 
+# A worktree whose state cannot be read is kept, however old: here a corrupt index
+# fails `git status`, and a broken per-worktree config fails the activity lookup.
+git worktree add -q "$root/corrupt" -b corrupt main
+printf 'notes\n' >"$root/corrupt/results.txt"
+printf 'garbage' >"$(git -C "$root/corrupt" rev-parse --absolute-git-dir)/index"
+git config extensions.worktreeConfig true
+git worktree add -q "$root/unreadable" -b unreadable main
+git -C "$root/unreadable" config --worktree log.date bogus
+report="$(bash "$script" --apply --days 0 2>/dev/null)"
+for kept in corrupt unreadable; do
+	grep -q "^unknown .*/$kept \[$kept\]" <<<"$report" || fail "$kept worktree not reported unknown: $report"
+	[[ -d $root/$kept ]] || fail "$kept worktree was removed"
+done
+grep -qx 'notes' "$root/corrupt/results.txt" || fail "corrupt worktree lost its untracked file"
+
 printf 'git-clean-stale: ok\n'

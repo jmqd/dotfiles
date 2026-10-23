@@ -330,11 +330,11 @@ Omit `--dry-run` to perform the cleanup.
 
 `git clean-stale` lists every linked worktree of the current repository and why it
 is kept: `unmerged`, `dirty` (including untracked files), `locked`, `recent`,
-`no-trash`, or `stale`. A stale worktree's HEAD is already in the base branch
-(default: the branch `origin/HEAD` names, else `main`), it has no changes, and its
-HEAD has not moved for `--days` (default 14). Age is the newest of the HEAD commit
-and the worktree's last checkout, commit or reset; index refreshes from prompts and
-editors do not count.
+`unknown` (its `git status` or activity lookup failed), `no-trash`, or `stale`. A
+stale worktree's HEAD is already in the base branch (default: the branch
+`origin/HEAD` names, else `main`), it has no changes, and its HEAD has not moved for
+`--days` (default 14). Age is the newest of the HEAD commit and the worktree's last
+checkout, commit or reset; index refreshes from prompts and editors do not count.
 
 ```bash
 git clean-stale            # dry run with sizes

@@ -16,6 +16,8 @@ stale. A worktree is stale when all of these hold:
   - it is not locked,
   - its newest activity (HEAD commit, checkout, index or reflog) is older
     than --days.
+A worktree whose status or activity cannot be read is reported unknown and
+kept.
 
   --apply    Move stale worktrees to the trash of their own filesystem, then
              run `git worktree prune`. Without it, nothing changes.
@@ -91,20 +93,23 @@ resolve_base() {
 	exit 1
 }
 
+# Fails when neither GNU nor BSD stat can read the file.
 mtime() {
-	stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || printf '0\n'
+	stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
 }
 
 # Newest of the HEAD commit time and the last time HEAD moved (checkout, commit,
 # reset). A branch made a minute ago has an old commit but a fresh HEAD. The index
-# is left out: shell prompts and editors refresh it with no real activity.
+# is left out: shell prompts and editors refresh it with no real activity. Fails,
+# printing nothing, when any lookup fails; callers test it in an `if`, which disables
+# errexit, so every step returns on failure.
 last_activity() {
 	local worktree="$1" admin newest stamp file
-	newest="$(git -C "$worktree" log -1 --format=%ct HEAD 2>/dev/null || printf '0')"
-	admin="$(git -C "$worktree" rev-parse --absolute-git-dir)"
+	newest="$(git -C "$worktree" log -1 --format=%ct HEAD)" || return
+	admin="$(git -C "$worktree" rev-parse --absolute-git-dir)" || return
 	for file in "$admin/HEAD" "$admin/logs/HEAD"; do
 		[[ -e $file ]] || continue
-		stamp="$(mtime "$file")"
+		stamp="$(mtime "$file")" || return
 		if ((stamp > newest)); then
 			newest="$stamp"
 		fi
@@ -203,12 +208,15 @@ main() {
 
 	printf 'base: %s; stale after %s days%s\n' "$base_ref" "$days" \
 		"$([[ $apply -eq 1 ]] && printf ', applying' || printf ', dry run')"
-	local index status age_days size_kb total_kb=0 count=0 failed=0 activity trash dest
+	local index status age_days size_kb total_kb=0 count=0 failed=0 activity porcelain trash dest
 	for index in "${!paths[@]}"; do
 		path="${paths[$index]}"
 		[[ $path == "$main_worktree" ]] && continue
 		size_kb=0
 		activity=""
+		if [[ -d $path ]] && ! activity="$(last_activity "$path")"; then
+			activity=""
+		fi
 		if [[ ! -d $path ]]; then
 			status="missing (git worktree prune removes it)"
 		elif [[ $path == "$current" ]]; then
@@ -217,18 +225,17 @@ main() {
 			status="locked"
 		elif ! git merge-base --is-ancestor "$(git -C "$path" rev-parse HEAD)" "$base_ref"; then
 			status="unmerged"
-		elif [[ -n "$(git -C "$path" status --porcelain 2>/dev/null | head -1)" ]]; then
+		elif ! porcelain="$(git -C "$path" status --porcelain)"; then
+			status="unknown"
+		elif [[ -n $porcelain ]]; then
 			status="dirty"
+		elif [[ -z $activity ]]; then
+			# last_activity failed and said why on stderr.
+			status="unknown"
+		elif ((activity > cutoff)); then
+			status="recent"
 		else
-			activity="$(last_activity "$path")"
-			if ((activity > cutoff)); then
-				status="recent"
-			else
-				status="stale"
-			fi
-		fi
-		if [[ -z $activity && -d $path ]]; then
-			activity="$(last_activity "$path")"
+			status="stale"
 		fi
 		age_days="-"
 		[[ -n $activity ]] && age_days=$(((now - activity) / 86400))
