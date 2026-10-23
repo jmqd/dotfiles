@@ -514,7 +514,7 @@ untracked_in_ref() {
 # touches must read the same on that branch, so one changed there since
 # keeps the worktree.
 diff_merged() {
-	local dir="$1" ref base
+	local dir="$1" ref base overlap
 	for ref in $(default_branch_refs "$dir"); do
 		base="$(git_in "$dir" merge-base HEAD "$ref" 2>/dev/null)" || continue
 		# Names stay one per line: git quotes any with a newline.
@@ -522,7 +522,8 @@ diff_merged() {
 			LC_ALL=C sort >"$work/diff-ours" || continue
 		git_in "$dir" diff --no-ext-diff --no-renames --name-only "$ref" -- 2>/dev/null |
 			LC_ALL=C sort >"$work/diff-theirs" || continue
-		[ -z "$(LC_ALL=C comm -12 "$work/diff-ours" "$work/diff-theirs")" ] || continue
+		overlap="$(LC_ALL=C comm -12 "$work/diff-ours" "$work/diff-theirs")" || continue
+		[ -z "$overlap" ] || continue
 		untracked_in_ref "$dir" "$ref" || continue
 		return 0
 	done
