@@ -465,6 +465,11 @@ fn random_urlsafe(bytes: usize) -> Result<String> {
     Ok(URL_SAFE_NO_PAD.encode(buf))
 }
 
+/// RFC 7636 S256 code challenge for a PKCE verifier.
+fn pkce_challenge(verifier: &str) -> String {
+    URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()))
+}
+
 fn authorize_interactively(http: &Client, args: &Args) -> Result<TokenResponse> {
     let redirect_uri = format!("http://127.0.0.1:{}/callback", args.port);
     // Bind before opening the browser so the redirect cannot race the listener.
@@ -472,7 +477,7 @@ fn authorize_interactively(http: &Client, args: &Args) -> Result<TokenResponse> 
         .map_err(|e| format!("cannot listen on 127.0.0.1:{}: {e}", args.port))?;
 
     let verifier = random_urlsafe(64)?;
-    let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
+    let challenge = pkce_challenge(&verifier);
     let state = random_urlsafe(16)?;
     let url = Url::parse_with_params(
         AUTHORIZE_URL,
@@ -537,6 +542,14 @@ fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pkce_challenge_matches_rfc7636_appendix_b() {
+        assert_eq!(
+            pkce_challenge("dBjftJeZ4CVP-mJ92K9pt8T6v5pvDlL1NKRRNmc3yHI"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+        );
+    }
 
     #[test]
     fn playlist_refs() {
