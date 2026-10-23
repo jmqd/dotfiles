@@ -578,10 +578,12 @@ the caches of Chromium and Electron profiles (`Cache`, `Code Cache`,
 `Service Worker/CacheStorage`, `*_crx_cache` in a dir with Chromium's
 `Local State` or `Network Persistent State` file, in
 `~/Library/Application Support` or `~/.config`),
-Xcode DerivedData, your temp files, clean linked git worktrees, orphaned omp
-task copies, stale worktree entries, Nix `result*` out-links and `.direnv`
-dirs, profile generations past the newest five, idle dylint drivers (which
-cargo-dylint rebuilds on demand), and versioned rustup toolchains that
+Xcode DerivedData, your temp files, clean linked git worktrees, linked
+worktrees whose whole diff (commits, uncommitted changes, untracked files) the
+default branch already holds locally or on origin, as after a squash merge,
+orphaned omp task copies, stale worktree entries, Nix `result*` out-links and
+`.direnv` dirs, profile generations past the newest five, idle dylint drivers
+(which cargo-dylint rebuilds on demand), and versioned rustup toolchains that
 nothing else selects.
 
 Then it runs `docker`/`podman image prune` for images no container uses that
@@ -605,7 +607,9 @@ It keeps:
 - caches that hold installs or models (playwright, puppeteer, huggingface, ...)
   and anything holding a socket or FIFO;
 - git checkouts with uncommitted changes, stashes, dependent worktrees, or
-  commits no remote or tag holds; the plan deletes around them and lists them
+  commits no remote or tag holds, except linked worktrees whose diff the
+  default branch holds; a worktree whose diff touches a path the default
+  branch has changed since stays. The plan deletes around them and lists them
   under "Kept or skipped";
 - linked worktrees with ignored files that are not build output, such as
   `.env`;

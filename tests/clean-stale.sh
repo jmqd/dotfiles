@@ -23,7 +23,7 @@ trap cleanup EXIT
 # cargo, or rustup.
 bin="$fixture/bin"
 mkdir -p "$bin"
-for tool in awk basename bash cat chmod date df du find getconf git grep head id ln lsof mkdir mkfifo mktemp mv ps readlink rm sed sleep sort stat touch tr uname xargs; do
+for tool in awk basename bash cat chmod comm date df du find getconf git grep head id ln lsof mkdir mkfifo mktemp mv ps readlink rm sed sleep sort stat touch tr uname xargs; do
 	path="$(command -v "$tool" 2>/dev/null || true)"
 	if [ -z "$path" ] && [ -x "/usr/sbin/$tool" ]; then
 		path="/usr/sbin/$tool"
@@ -238,7 +238,9 @@ file "$src/wt-clean/target/debug/app"
 worktree -b dirty "$src/wt-dirty"
 file "$src/wt-dirty/notes.txt"
 worktree --detach "$src/wt-detached"
-git -C "$src/wt-detached" commit -q --allow-empty -m "only here"
+file "$src/wt-detached/only-here.txt"
+git -C "$src/wt-detached" add only-here.txt
+git -C "$src/wt-detached" commit -qm "only here"
 worktree -b envwt "$src/wt-env"
 file "$src/wt-env/.env"
 worktree -b locked "$src/wt-locked"
@@ -246,6 +248,22 @@ git -C "$src/proj" worktree lock "$src/wt-locked"
 worktree -b gone "$src/wt-gone"
 rm -rf "$src/wt-gone"
 worktree -b scratch "$tmp/scratch/proj"
+
+# main squash-merges a branch's commit, uncommitted edit, and untracked
+# file; a worktree with other content at one of those paths stays.
+worktree -b squashed "$src/wt-squashed"
+printf 'feature\n' >"$src/wt-squashed/feature.txt"
+git -C "$src/wt-squashed" add feature.txt
+git -C "$src/wt-squashed" commit -qm feature
+printf 'target/\n.env\nlog/\n' >"$src/wt-squashed/.gitignore"
+printf 'docs\n' >"$src/wt-squashed/docs.txt"
+worktree -b diverged "$src/wt-diverged"
+printf 'draft\n' >"$src/wt-diverged/feature.txt"
+for name in feature.txt .gitignore docs.txt; do
+	cat "$src/wt-squashed/$name" >"$src/proj/$name"
+done
+git -C "$src/proj" add feature.txt .gitignore docs.txt
+git -C "$src/proj" commit -qm "squash feature"
 
 # A task dir in an idle target holds a probe repository with local-only
 # commits and a nested target dir. Planning around the probe reaches the
@@ -371,6 +389,7 @@ expected_gone=(
 	"$src/old3/target"
 	"$src/app/.pytest_cache"
 	"$src/wt-clean"
+	"$src/wt-squashed"
 	"$HOME/.cache/stale-app"
 	"$HOME/.cache/nix/eval-cache-v6/old.sqlite"
 	"$HOME/.cache/nix/tarball-cache"
@@ -420,6 +439,7 @@ expected_kept=(
 	"$tmp/dirty-clone/wip.txt"
 	"$src/old2/target/task/probe/a.txt"
 	"$src/wt-dirty/notes.txt"
+	"$src/wt-diverged/feature.txt"
 	"$src/wt-detached"
 	"$src/wt-env/.env"
 	"$src/wt-locked"
@@ -432,6 +452,7 @@ expected_kept=(
 )
 expected_notes=(
 	"$src/wt-dirty: uncommitted changes"
+	"$src/wt-diverged: uncommitted changes"
 	"$src/wt-detached: HEAD is on no branch, tag, or remote"
 	"$src/wt-env: ignored .env may not be regenerable"
 	"$src/wt-locked: locked worktree"
@@ -460,7 +481,7 @@ done
 
 # Paths the plan lists for deletion, without their sizes.
 planned() {
-	printf '%s\n' "$output" | awk '/^  / { sub(/^ +[^ ]+  /, ""); sub(/ \((git worktree remove|nix out-link)\)$/, ""); print }'
+	printf '%s\n' "$output" | awk '/^  / { sub(/^ +[^ ]+  /, ""); sub(/ \((git worktree remove|nix out-link)\)$/, ""); sub(/ \(git worktree remove --force: [^)]*\)$/, ""); print }'
 }
 
 # Fails when the plan deletes paths rather than only running collectors.
@@ -500,6 +521,7 @@ duplicate="$(planned | awk 'seen[$0]++ { print; exit }')"
 for line in "${expected_notes[@]}"; do
 	case "$output" in *"  $line$nl"* | *"  $line") ;; *) fail "dry run does not report kept $line${nl}$output" ;; esac
 done
+case "$output" in *"$src/wt-squashed (git worktree remove --force: diff already in the default branch)$nl"*) ;; *) fail "dry run does not force-remove the squash-merged worktree${nl}$output" ;; esac
 case "$output" in *"$src/proj/.git: prune 1 stale worktree entries"*) ;; *) fail "dry run does not prune the gone worktree${nl}$output" ;; esac
 case "$output" in *"$profiles/profile: delete generations 1 2 3$nl"*) ;; *) fail "dry run does not delete old generations${nl}$output" ;; esac
 case "$output" in *"$profiles/channels:"*) fail "dry run deletes recent generations" ;; esac
@@ -576,14 +598,14 @@ nix-store --gc"
 
 # Removal kept the branches, pruned entries for gone directories, and left
 # every protected worktree registered.
-for branch in feature scratch gone; do
+for branch in feature scratch gone squashed; do
 	git -C "$src/proj" rev-parse -q --verify "refs/heads/$branch" >/dev/null || fail "branch $branch was deleted"
 done
 registered="$(git -C "$src/proj" worktree list --porcelain | sed -n 's/^worktree //p')"
-for path in "$src/wt-clean" "$src/wt-gone" "$tmp/scratch/proj"; do
+for path in "$src/wt-clean" "$src/wt-gone" "$tmp/scratch/proj" "$src/wt-squashed"; do
 	case "$nl$registered$nl" in *"$nl$path$nl"*) fail "worktree $path is still registered" ;; esac
 done
-for path in "$src/wt-dirty" "$src/wt-detached" "$src/wt-env" "$src/wt-locked"; do
+for path in "$src/wt-dirty" "$src/wt-detached" "$src/wt-env" "$src/wt-locked" "$src/wt-diverged"; do
 	case "$nl$registered$nl" in *"$nl$path$nl"*) ;; *) fail "worktree $path was unregistered" ;; esac
 done
 

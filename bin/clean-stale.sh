@@ -27,6 +27,10 @@ Deletes, once idle for AGE:
   - your files in the temp directories
   - linked git worktrees that are clean, whose HEAD a branch, tag, or
     remote holds, and whose ignored files are all build output
+  - linked git worktrees whose whole diff from the default branch
+    (commits, uncommitted changes, untracked files) that branch already
+    holds, locally or on origin, as after a squash merge (git worktree
+    remove --force); a path changed there since keeps the worktree
   - omp task copies whose owning process has exited
   - git worktree entries whose directories are gone
   - nix result* out-links and direnv layout dirs (.direnv), except dev
@@ -48,7 +52,8 @@ Keeps anything written, renamed, or held open by a process within AGE;
 anything containing a socket or FIFO; empty files and directories; caches
 that hold installs or models (playwright, puppeteer, huggingface, ...);
 anything in the trash; and any git checkout with uncommitted changes,
-stashes, or commits no remote or tag holds. Reads count only where the
+stashes, or commits no remote or tag holds, unless it is a linked
+worktree whose diff the default branch holds. Reads count only where the
 filesystem records them: Linux relatime records at most one read a day,
 and macOS records only the first read after each change.
 
@@ -421,7 +426,7 @@ planned_dirs="$nl"
 add() {
 	printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "${4:-}" >>"$plan"
 	case "$1" in
-	path | worktree) planned_dirs="$planned_dirs$3$nl" ;;
+	path | worktree | merged-worktree) planned_dirs="$planned_dirs$3$nl" ;;
 	esac
 }
 
@@ -456,14 +461,85 @@ git_repo() {
 	LC_ALL=C GIT_OPTIONAL_LOCKS=0 git --git-dir="$repo" -c core.fsmonitor=false "$@"
 }
 
+# Prints the refs of the default branch of the checkout at DIR that
+# exist, local first, then origin's: the branch origin/HEAD names, else
+# main, else master.
+default_branch_refs() {
+	local dir="$1" name="" candidate ref
+	name="$(git_in "$dir" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null || true)"
+	name="${name#origin/}"
+	if [ -z "$name" ]; then
+		for candidate in main master; do
+			if git_in "$dir" rev-parse -q --verify "refs/heads/$candidate^{commit}" >/dev/null 2>&1 ||
+				git_in "$dir" rev-parse -q --verify "refs/remotes/origin/$candidate^{commit}" >/dev/null 2>&1; then
+				name="$candidate"
+				break
+			fi
+		done
+	fi
+	[ -n "$name" ] || return 0
+	for ref in "refs/heads/$name" "refs/remotes/origin/$name"; do
+		if git_in "$dir" rev-parse -q --verify "$ref^{commit}" >/dev/null 2>&1; then
+			printf '%s\n' "$ref"
+		fi
+	done
+}
+
+# Succeeds when REF holds every untracked, unignored file in the checkout
+# at DIR with the same content and mode. Anything but a regular file
+# (a symlink, a nested repository) does not count as held.
+untracked_in_ref() {
+	local dir="$1" ref="$2" path mode entry
+	git_in "$dir" ls-files -z --others --exclude-standard >"$work/untracked" 2>/dev/null || return 1
+	while IFS= read -r -d '' path <&4; do
+		if [ ! -f "$dir/$path" ] || [ -L "$dir/$path" ]; then
+			return 1
+		fi
+		mode=100644
+		if [ -x "$dir/$path" ]; then
+			mode=100755
+		fi
+		entry="$(git_in "$dir" --literal-pathspecs ls-tree "$ref" -- "$path" 2>/dev/null)" || return 1
+		case "$entry" in
+		"$mode blob $(git_in "$dir" hash-object -- "$path" 2>/dev/null)$tab"*) ;;
+		*) return 1 ;;
+		esac
+	done 4<"$work/untracked"
+}
+
+# Succeeds when the default branch, local or on origin, already holds the
+# whole diff of the linked worktree at DIR since their merge base:
+# commits, staged and unstaged edits, and untracked files. Squash merges,
+# rebases, and patches applied by hand all count. Every path the diff
+# touches must read the same on that branch, so one changed there since
+# keeps the worktree.
+diff_merged() {
+	local dir="$1" ref base
+	for ref in $(default_branch_refs "$dir"); do
+		base="$(git_in "$dir" merge-base HEAD "$ref" 2>/dev/null)" || continue
+		# Names stay one per line: git quotes any with a newline.
+		git_in "$dir" diff --no-ext-diff --no-renames --name-only "$base" -- 2>/dev/null |
+			LC_ALL=C sort >"$work/diff-ours" || continue
+		git_in "$dir" diff --no-ext-diff --no-renames --name-only "$ref" -- 2>/dev/null |
+			LC_ALL=C sort >"$work/diff-theirs" || continue
+		[ -z "$(LC_ALL=C comm -12 "$work/diff-ours" "$work/diff-theirs")" ] || continue
+		untracked_in_ref "$dir" "$ref" || continue
+		return 0
+	done
+	return 1
+}
+
 # Sets checkout_risk to why deleting the checkout at DIR could lose work,
 # or to "" when git holds all of it elsewhere. Also sets checkout_linked
-# (1 for a linked worktree) and checkout_common (its repository's git dir).
+# (1 for a linked worktree), checkout_common (its repository's git dir),
+# and checkout_merged (1 when only diff_merged shows that nothing is lost,
+# so removal needs --force).
 assess_checkout() {
 	local dir="$1" git_dir="" line="" status unique
 	checkout_risk=""
 	checkout_linked=0
 	checkout_common=""
+	checkout_merged=0
 	# A linked worktree's metadata lives in its repository; check it for
 	# use before git reads it.
 	if [ -f "$dir/.git" ]; then
@@ -495,17 +571,31 @@ assess_checkout() {
 	fi
 	if ! status="$(git_in "$dir" status --porcelain --untracked-files=normal --ignore-submodules=none 2>/dev/null)"; then
 		checkout_risk="git status failed"
+	elif [ "$checkout_linked" -eq 1 ]; then
+		# Branches and stashes stay in the repository; only HEAD and
+		# uncommitted changes can be lost, and neither is once the default
+		# branch holds the worktree's whole diff.
+		if [ -e "$dir/.gitmodules" ]; then
+			checkout_risk="has submodules"
+		elif [ -e "$git_dir/locked" ]; then
+			checkout_risk="locked worktree"
+		elif [ -n "$status" ]; then
+			checkout_risk="uncommitted changes"
+		elif [ -z "$(git_in "$dir" for-each-ref --count=1 --contains HEAD --format=x refs/heads refs/remotes refs/tags 2>/dev/null || true)" ]; then
+			checkout_risk="HEAD is on no branch, tag, or remote"
+		fi
+		case "$checkout_risk" in
+		"uncommitted changes" | "HEAD is on no branch, tag, or remote")
+			if diff_merged "$dir"; then
+				checkout_risk=""
+				checkout_merged=1
+			fi
+			;;
+		esac
 	elif [ -n "$status" ]; then
 		checkout_risk="uncommitted changes"
 	elif [ -e "$dir/.gitmodules" ]; then
 		checkout_risk="has submodules"
-	elif [ "$checkout_linked" -eq 1 ]; then
-		# Branches and stashes stay in the repository; only HEAD can be lost.
-		if [ -e "$git_dir/locked" ]; then
-			checkout_risk="locked worktree"
-		elif [ -z "$(git_in "$dir" for-each-ref --count=1 --contains HEAD --format=x refs/heads refs/remotes refs/tags 2>/dev/null || true)" ]; then
-			checkout_risk="HEAD is on no branch, tag, or remote"
-		fi
 	elif git_in "$dir" rev-parse -q --verify refs/stash >/dev/null 2>&1; then
 		checkout_risk="stashed changes"
 	elif [ -n "$(find "$git_dir/worktrees" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then
@@ -521,6 +611,7 @@ assessed=()
 assessed_risk=()
 assessed_linked=()
 assessed_common=()
+assessed_merged=()
 
 # assess_checkout, once per checkout per run.
 assess_cached() {
@@ -530,6 +621,7 @@ assess_cached() {
 			checkout_risk="${assessed_risk[$i]}"
 			checkout_linked="${assessed_linked[$i]}"
 			checkout_common="${assessed_common[$i]}"
+			checkout_merged="${assessed_merged[$i]}"
 			return 0
 		fi
 		i=$((i + 1))
@@ -539,6 +631,7 @@ assess_cached() {
 	assessed_risk+=("$checkout_risk")
 	assessed_linked+=("$checkout_linked")
 	assessed_common+=("$checkout_common")
+	assessed_merged+=("$checkout_merged")
 }
 
 # Succeeds when every ignored path in the checkout at DIR is build output
@@ -969,7 +1062,11 @@ plan_worktrees() {
 			note "$dir" "$checkout_risk"
 			continue
 		fi
-		add worktree worktree "$dir" "$checkout_common"
+		if [ "$checkout_merged" -eq 1 ]; then
+			add merged-worktree worktree "$dir" "$checkout_common"
+		else
+			add worktree worktree "$dir" "$checkout_common"
+		fi
 	done 3<"$work/worktree-candidates"
 }
 
@@ -1263,7 +1360,7 @@ plan_collectors() {
 # deleting the parent covers them.
 dedupe_plan() {
 	awk -F '\t' '
-		NR == FNR { if ($1 == "path" || $1 == "worktree") planned[$3] = 1; next }
+		NR == FNR { if ($1 == "path" || $1 == "worktree" || $1 == "merged-worktree") planned[$3] = 1; next }
 		seen[$1 "\t" $3]++ { next }
 		{
 			p = $3
@@ -1292,12 +1389,12 @@ human_kb() {
 size_plan() {
 	local method label path arg
 	while IFS="$tab" read -r method label path arg; do
-		case "$method" in path | worktree | toolchain) printf '%s\0' "$path" ;; esac
+		case "$method" in path | worktree | merged-worktree | toolchain) printf '%s\0' "$path" ;; esac
 	done <"$plan" | parallel_runs 1 'du -skx -- "$@" 2>/dev/null' >"$work/sizes"
 	awk -F '\t' '
 		FILENAME == ARGV[1] { kb[substr($0, index($0, "\t") + 1)] = $1; next }
 		{
-			size = ($1 == "path" || $1 == "worktree" || $1 == "toolchain") ? kb[$3] + 0 : 0
+			size = ($1 == "path" || $1 == "worktree" || $1 == "merged-worktree" || $1 == "toolchain") ? kb[$3] + 0 : 0
 			if ($1 == "path" && size == 0) next
 			print size "\t" $0
 		}' "$work/sizes" "$plan" >"$work/sized"
@@ -1331,6 +1428,7 @@ print_plan() {
 		awk -F '\t' -v age_m="$age_minutes" '
 			function show(method, path, arg) {
 				if (method == "worktree") return path " (git worktree remove)"
+				if (method == "merged-worktree") return path " (git worktree remove --force: diff already in the default branch)"
 				if (method == "prune") return path (arg > 0 ? ": prune " arg " stale worktree entries" : ": prune worktree entries after deletions")
 				if (method == "link") return path " (nix out-link)"
 				if (method == "generations") return path ": delete generations " arg
@@ -1391,15 +1489,17 @@ failed() {
 still_planned() {
 	local method="$1" path="$2"
 	case "$method" in
-	path | worktree | toolchain)
+	path | worktree | merged-worktree | toolchain)
 		[ -e "$path" ] || return 1
 		if ! plannable "$path"; then
 			printf 'kept (used since planning): %s\n' "$path"
 			return 1
 		fi
-		if [ "$method" = worktree ]; then
+		if [ "$method" = worktree ] || [ "$method" = merged-worktree ]; then
 			assess_checkout "$path"
-			if [ -n "$checkout_risk" ] || ! ignored_regenerable "$path"; then
+			# A clean row that now needs --force changed since planning.
+			if [ -n "$checkout_risk" ] || { [ "$method" = worktree ] && [ "$checkout_merged" -eq 1 ]; } ||
+				! ignored_regenerable "$path"; then
 				printf 'kept (changed since planning): %s\n' "$path"
 				return 1
 			fi
@@ -1426,6 +1526,7 @@ run_row() {
 	path) delete_path "$path" ;;
 	link) rm -f -- "$path" ;;
 	worktree) git_repo "$arg" worktree remove "$path" ;;
+	merged-worktree) git_repo "$arg" worktree remove --force "$path" ;;
 	toolchain) rustup toolchain uninstall "$arg" ;;
 	prune)
 		printf 'pruning worktree entries in %s\n' "$path"
@@ -1470,9 +1571,10 @@ execute_plan() {
 	assessed_risk=()
 	assessed_linked=()
 	assessed_common=()
+	assessed_merged=()
 	plannable_yes="$nl"
 	plannable_no="$nl"
-	run_rows path worktree link toolchain
+	run_rows path worktree merged-worktree link toolchain
 	run_rows prune
 	run_rows generations
 	run_rows images buildcache cargo-gc flatpak simctl
