@@ -137,6 +137,7 @@ in
       shellcheck
       shfmt
       sqlite
+      supabase-cli
       tealdeer
       tree-sitter
       typescript-language-server
