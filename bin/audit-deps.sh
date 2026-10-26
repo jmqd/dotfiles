@@ -396,8 +396,7 @@ main() {
 
 	check_pins
 
-	# GHSA-vfj7-8cjw-p6xm: braces 3.0.3 nested-pattern DoS, no fixed release.
-	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json" GHSA-vfj7-8cjw-p6xm
+	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json"
 
 	local gws_src trueflow_src notion_src
 	# Build the source so the lockfile exists even when the store lacks it.
