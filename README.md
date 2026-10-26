@@ -437,7 +437,9 @@ open **Raycast Settings → General** and set **Raycast Hotkey** to Option-Space
 Raycast does not provide a supported noninteractive hotkey setter. Home Manager
 owns the running Raycast process so old Nix-store versions cannot compete for
 the global shortcut; the agent sets `KeepAlive`, so launchd relaunches Raycast
-after a crash, quit, or activation restart. The agent uses `open -W -g`, not
+after a crash or quit. launchd may defer `RunAtLoad`/`KeepAlive` spawns
+indefinitely, so activation also `kickstart`s the agent after reloading it.
+The agent uses `open -W -g`, not
 `-j` (launch hidden): hidden launch can leave Raycast's window off-screen even
 when it receives the hotkey. After changing the agent, run `bin/hm-switch.sh`
 to restart it.

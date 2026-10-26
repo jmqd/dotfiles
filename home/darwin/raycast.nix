@@ -40,4 +40,11 @@ in
     run /bin/launchctl bootout "gui/$(/usr/bin/id -u)/org.nix-community.home.raycast" >/dev/null 2>&1 || true
     run /usr/bin/killall Raycast >/dev/null 2>&1 || true
   '';
+
+  # RunAtLoad/KeepAlive spawns are "speculative": launchd may defer them
+  # indefinitely (e.g. under load), leaving the freshly bootstrapped job
+  # with zero runs and Option-Space unbound. Demand the launch explicitly.
+  home.activation.startRaycast = lib.hm.dag.entryAfter [ "setupLaunchAgents" ] ''
+    run /bin/launchctl kickstart "gui/$(/usr/bin/id -u)/org.nix-community.home.raycast"
+  '';
 }
