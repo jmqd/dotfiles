@@ -118,15 +118,15 @@ pub fn search(
         }
         let file_match: ZoektFileMatch = serde_json::from_str(line)
             .with_context(|| format!("failed to parse zoekt result line: {line}"))?;
-        if let Some(expected_repo) = repo_filter {
-            if file_match.repository != expected_repo {
-                continue;
-            }
+        if let Some(expected_repo) = repo_filter
+            && file_match.repository != expected_repo
+        {
+            continue;
         }
-        if let Some(filter) = &path_filter {
-            if !file_match.file_name.to_lowercase().contains(filter) {
-                continue;
-            }
+        if let Some(filter) = &path_filter
+            && !file_match.file_name.to_lowercase().contains(filter)
+        {
+            continue;
         }
 
         for line_match in file_match.line_matches {

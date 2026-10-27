@@ -37,14 +37,13 @@ pub fn search_repo(
             break;
         }
 
-        if let Some(filter) = &path_filter {
-            if !relative_path
+        if let Some(filter) = &path_filter
+            && !relative_path
                 .to_string_lossy()
                 .to_lowercase()
                 .contains(filter)
-            {
-                continue;
-            }
+        {
+            continue;
         }
 
         if relative_path
