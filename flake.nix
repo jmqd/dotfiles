@@ -73,7 +73,9 @@
       # Packages that fail on current nixpkgs-unstable come from the pre-GCC 16
       # revision until their fixes land. Drop each use once it builds on
       # unstable, then drop this input:
-      # - semgrep: requires pyjwt 2.13, NixOS/nixpkgs#569851
+      # - semgrep: the pyjwt fix (NixOS/nixpkgs#569851) landed, but its tests
+      #   now fail importing mcp.server.fastmcp, removed in mcp 2.x
+      #   (NixOS/nixpkgs#575004)
       # - prowler: depends on kingfisher 1.113.0, whose version check fails;
       #   fixed by NixOS/nixpkgs#569147, but Hydra has no aarch64-linux build
       #   on unstable yet
