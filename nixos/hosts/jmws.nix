@@ -14,9 +14,19 @@ let
     # iphone-15
     "100.106.214.30"
   ];
-  vncTailnetFirewallRules = lib.concatMapStringsSep "\n" (
-    addr: "iptables -w -A tailscale-vnc -s ${addr}/32 -j ACCEPT"
-  ) vncAllowedTailnetIpv4;
+  # NFSv4 clients: glass and Jordan's MacBook Pro (the `nas` helper).
+  nfsAllowedTailnetIpv4 = [
+    "100.97.225.21"
+    "100.125.227.125"
+  ];
+  # Appended to nixos-fw, so each firewall reload rebuilds them, ahead of
+  # its final refuse rule.
+  tailnetAllowRules =
+    port: addrs:
+    lib.concatMapStringsSep "\n" (
+      addr:
+      "iptables -w -A nixos-fw -i tailscale0 -p tcp --dport ${toString port} -s ${addr}/32 -j nixos-fw-accept"
+    ) addrs;
 
   texliveOrgPdf = pkgs.texlive.combine {
     # Enough for normal Org LaTeX/PDF export, latexmk workflows, and CJK
@@ -135,16 +145,19 @@ in
     enableIPv6 = true;
     internalInterfaces = [ "tailscale0" ];
   };
+  # The tailnet policy decides which peers reach jmws; this firewall
+  # also limits them to the services below, so a policy mistake does not
+  # expose every listening port.
   networking.firewall = {
-    trustedInterfaces = [ "tailscale0" ];
+    interfaces.tailscale0.allowedTCPPorts = [ 22 ];
     extraCommands = ''
+      # Earlier generations inserted this chain into INPUT; remove it so
+      # it cannot override the rules below before the next reboot.
       iptables -w -D INPUT -i tailscale0 -p tcp --dport 5900 -j tailscale-vnc 2>/dev/null || true
       iptables -w -F tailscale-vnc 2>/dev/null || true
       iptables -w -X tailscale-vnc 2>/dev/null || true
-      iptables -w -N tailscale-vnc
-      ${vncTailnetFirewallRules}
-      iptables -w -A tailscale-vnc -j DROP
-      iptables -w -I INPUT 1 -i tailscale0 -p tcp --dport 5900 -j tailscale-vnc
+      ${tailnetAllowRules 5900 vncAllowedTailnetIpv4}
+      ${tailnetAllowRules 2049 nfsAllowedTailnetIpv4}
     '';
   };
   services.timesyncd.enable = true;
