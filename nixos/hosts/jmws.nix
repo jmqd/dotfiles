@@ -146,14 +146,7 @@ in
   # mistake does not expose every listening port.
   networking.firewall = {
     interfaces.tailscale0.allowedTCPPorts = [ 22 ];
-    extraCommands = ''
-      # Earlier generations inserted this chain into INPUT; remove it so
-      # it cannot override the rules below before the next reboot.
-      iptables -w -D INPUT -i tailscale0 -p tcp --dport 5900 -j tailscale-vnc 2>/dev/null || true
-      iptables -w -F tailscale-vnc 2>/dev/null || true
-      iptables -w -X tailscale-vnc 2>/dev/null || true
-      ${tailnetAllowRules 5900 vncAllowedTailnetIpv4}
-    '';
+    extraCommands = tailnetAllowRules 5900 vncAllowedTailnetIpv4;
   };
   services.timesyncd.enable = true;
 
