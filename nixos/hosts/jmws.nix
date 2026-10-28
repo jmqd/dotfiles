@@ -7,10 +7,8 @@
 let
   enableTexliveOrgPdf = false;
   vncAllowedTailnetIpv4 = [
-    # jmws desktop
-    "100.80.51.119"
-    # Jordans-MacBook-Pro
-    "100.94.227.118"
+    # Jordan's MacBook Pro
+    "100.125.227.125"
     # iphone-15
     "100.106.214.30"
   ];
