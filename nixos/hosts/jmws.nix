@@ -123,13 +123,16 @@ in
     # jmws is an exit node and advertises a subnet route.
     useRoutingFeatures = "both";
     # With the default netfilter mode, tailscaled inserts its ts-input
-    # chain first in INPUT, and that chain accepts everything arriving on
-    # tailscale0, so no NixOS rule for the tailnet could ever drop a
-    # packet. nodivert keeps tailscaled out of INPUT/FORWARD/POSTROUTING
-    # and leaves the NixOS firewall in charge. Peerapi (Taildrop,
-    # exit-node DNS) is answered by tailscaled's netstack before the
-    # kernel firewall sees it.
+    # chain at the top of INPUT, and that chain accepts everything arriving
+    # on tailscale0, so NixOS rules for the tailnet held only while they
+    # happened to sit above it. nodivert keeps tailscaled out of
+    # INPUT/FORWARD/POSTROUTING and leaves the NixOS firewall in charge.
+    # Peerapi (Taildrop, exit-node DNS) is answered by tailscaled's
+    # netstack before the kernel firewall sees it.
     extraSetFlags = [ "--netfilter-mode=nodivert" ];
+    # ts-input also accepted tailscaled's WireGuard port; without it,
+    # peers that would connect directly fall back to DERP relays.
+    openFirewall = true;
   };
   # tailscaled's ts-postrouting chain masqueraded exit-node and subnet-route
   # traffic; nodivert unhooks it, so NAT forwarded tailnet traffic here.
