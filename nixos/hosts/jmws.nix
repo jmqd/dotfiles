@@ -12,11 +12,6 @@ let
     # iphone-15
     "100.106.214.30"
   ];
-  # NFSv4 clients: glass and Jordan's MacBook Pro (the `nas` helper).
-  nfsAllowedTailnetIpv4 = [
-    "100.97.225.21"
-    "100.125.227.125"
-  ];
   # Appended to nixos-fw, so each firewall reload rebuilds them, ahead of
   # its final refuse rule.
   tailnetAllowRules =
@@ -144,8 +139,8 @@ in
     internalInterfaces = [ "tailscale0" ];
   };
   # The tailnet policy decides which peers reach jmws; this firewall
-  # also limits them to the services below, so a policy mistake does not
-  # expose every listening port.
+  # also limits them to SSH, VNC and (in jmws-nas.nix) NFS, so a policy
+  # mistake does not expose every listening port.
   networking.firewall = {
     interfaces.tailscale0.allowedTCPPorts = [ 22 ];
     extraCommands = ''
@@ -155,7 +150,6 @@ in
       iptables -w -F tailscale-vnc 2>/dev/null || true
       iptables -w -X tailscale-vnc 2>/dev/null || true
       ${tailnetAllowRules 5900 vncAllowedTailnetIpv4}
-      ${tailnetAllowRules 2049 nfsAllowedTailnetIpv4}
     '';
   };
   services.timesyncd.enable = true;

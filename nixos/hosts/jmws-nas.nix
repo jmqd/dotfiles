@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 
 let
   nasDevice = "/dev/disk/by-label/nas16";
@@ -9,6 +9,10 @@ let
     "nofail"
     "x-systemd.device-timeout=10s"
   ];
+  # NFS clients by Tailscale address. The firewall admits only these to
+  # nfsd, and each export lists the clients that need it.
+  glass = "100.97.225.21";
+  macbook = "100.125.227.125";
 in
 {
   users.groups.nas.gid = 2000;
@@ -80,21 +84,32 @@ in
   };
 
   # glass (homelab repo, hosts/glass) keeps its media, Frigate recordings and
-  # backups here, so those shares accept only glass's tailnet address: NFS
-  # trusts the client's claimed uid, and any other tailnet device (tagged
-  # family devices included) could otherwise write as anyone. Frigate writes
-  # as root, so its share maps every write to jmq:nas (all_squash). Acknowledge
-  # writes only once committed, so an NAS interruption cannot lose accepted data.
+  # backups here; the MacBook mounts shared through the `nas` helper. NFS
+  # trusts the client's claimed uid, so every export names its clients:
+  # any other tailnet device (tagged family devices included) could
+  # otherwise write as anyone. Frigate writes as root, so its share maps
+  # every write to jmq:nas (all_squash). Acknowledge writes only once
+  # committed, so an NAS interruption cannot lose accepted data.
   services.nfs.server = {
     enable = true;
     exports = ''
-      /srv/nas         100.64.0.0/10(ro,fsid=0,no_subtree_check,crossmnt)
-      /srv/nas/shared  100.64.0.0/10(rw,sync,no_subtree_check)
-      /srv/nas/backups 100.97.225.21(rw,sync,no_subtree_check)
-      /srv/nas/media   100.97.225.21(rw,sync,no_subtree_check)
-      /srv/nas/frigate 100.97.225.21(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=2000)
+      /srv/nas         ${glass}(ro,fsid=0,no_subtree_check,crossmnt) ${macbook}(ro,fsid=0,no_subtree_check,crossmnt)
+      /srv/nas/shared  ${glass}(rw,sync,no_subtree_check) ${macbook}(rw,sync,no_subtree_check)
+      /srv/nas/backups ${glass}(rw,sync,no_subtree_check)
+      /srv/nas/media   ${glass}(rw,sync,no_subtree_check)
+      /srv/nas/frigate ${glass}(rw,sync,no_subtree_check,all_squash,anonuid=1000,anongid=2000)
     '';
   };
+  # Every client mounts NFSv4, which needs only nfsd's TCP port. Without v3,
+  # mountd, statd and lockd serve no clients over the network.
+  services.nfs.settings.nfsd.vers3 = false;
+  networking.firewall.extraCommands =
+    lib.concatMapStringsSep "\n"
+      (addr: "iptables -w -A nixos-fw -i tailscale0 -p tcp --dport 2049 -s ${addr}/32 -j nixos-fw-accept")
+      [
+        glass
+        macbook
+      ];
 
   # Never serve an empty directory from the system disk if the NAS is absent:
   # every exported subvolume must be mounted.
