@@ -12,7 +12,7 @@
 - Follow system and user instructions first. Read applicable repository instructions and `~/.WORK.md` when it exists. More-specific instructions override these defaults.
 - Inspect the real code and current state before you plan or edit.
 - Put correctness first. Then optimize for maintainability, simplicity, and speed.
-- Reuse existing patterns. Use direct edits for small changes. Use scripts only for repeated mechanical work. Do not add a second convention.
+- Reuse existing patterns. For your own edits, use direct changes for small work and scripts only for repeated mechanical work. Do not add a second convention.
 - Edit the declarative source or generator, not its managed output.
 - Fix the source of a problem. Do not hide a symptom.
 - Choose the simplest design that meets the current need. Explain good options that differ in important ways. Recommend one.
@@ -30,6 +30,8 @@
 - Name the authority for each state domain. Preserve append-only logs. Replace shared snapshots atomically under a stable lock.
 - Remove obsolete code after a clean cutover. Do not leave aliases, shims, or dead paths.
 - Consider what the code compiles to. Avoid needless allocations, copies, and repeated work. Profile the complete user path before optimization. Compare one change with an unchanged baseline.
+- When the user needs to run something, write it as a durable script in the right repository and give a one-line invocation. Do not hand over multi-line code to copy and paste, and do not leave scripts in `/tmp`. Give each script a clear name, arguments instead of hard-coded values, and safe defaults. Ask where it belongs if the location is unclear. Use the `shell-scripts` skill for shell.
+- Keep work-specific scripts and notes out of the dotfiles repository (`~/src/dotfiles`). Follow `~/.WORK.md` for where they belong.
 
 ## Code
 
