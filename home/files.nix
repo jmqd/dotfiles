@@ -34,14 +34,17 @@ in
 
     ".claude/CLAUDE.md".source = agentInstructions;
     ".claude/commands/caveman.md".source = ./.pi/agent/skills/caveman.md;
+    ".claude/skills/shell-scripts".source = ./.pi/agent/skills/shell-scripts;
     ".codex/AGENTS.md".source = agentInstructions;
     ".codex/config.toml".source = ./codex/config.toml;
     ".codex/prompts/commit.md".source = "${agentPrompts}/commit.md";
     ".codex/prompts/oracle.md".source = ./codex/prompts/oracle.md;
+    ".codex/skills/shell-scripts".source = ./.pi/agent/skills/shell-scripts;
     ".omp/agent/AGENTS.md".source = agentInstructions;
     ".omp/agent/commands/suggest.md".source = "${agentPrompts}/suggest.md";
     ".omp/agent/PERSONALITY.md".text = "${writingStyle}\n";
     ".omp/agent/config.yml".source = ./.omp/agent/config.yml;
+    ".omp/agent/skills/shell-scripts".source = ./.pi/agent/skills/shell-scripts;
     ".omp/agent/extensions".source = ./.pi/agent/extensions;
     ".omp/agent/extensions".recursive = true;
     ".pi/agent/AGENTS.md".source = agentInstructions;
