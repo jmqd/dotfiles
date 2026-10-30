@@ -1,13 +1,13 @@
 {
-  "version": "1.6.1264",
+  "version": "1.6.1324",
   "sources": {
     "aarch64-darwin": {
-      "url": "https://dl.wisprflow.com/wispr-flow/darwin/arm64/dmgs/Flow-v1.6.1264.dmg",
-      "hash": "sha256-pAX4DnJESSrVnibGZ69K6uDylP/iLCp5pxOlrexuntg="
+      "url": "https://dl.wisprflow.com/wispr-flow/darwin/arm64/dmgs/Flow-v1.6.1324.dmg",
+      "hash": "sha256-NVvE5/O5QI55qLYX/aNnkdqSe7FA2+kjwsOL7CEttRk="
     },
     "x86_64-darwin": {
-      "url": "https://dl.wisprflow.com/wispr-flow/darwin/x64/dmgs/Flow-v1.6.1264.dmg",
-      "hash": "sha256-DQVJeO6eQcP+9xTfYJteC2EuXmbBHiSkOFOxUbZZcto="
+      "url": "https://dl.wisprflow.com/wispr-flow/darwin/x64/dmgs/Flow-v1.6.1324.dmg",
+      "hash": "sha256-lOIxxjycH8IzxIUmQwRIP1T4yUz8foP2Mti+PQBgTd0="
     }
   }
 }
