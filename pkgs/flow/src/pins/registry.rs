@@ -44,9 +44,6 @@ pub enum Upstream {
     WisprReleases {
         feeds: &'static [(System, &'static str)],
     },
-    /// OrbStack's download endpoint redirects to
-    /// `OrbStack_v<version>_<build>_<arch>.dmg`.
-    OrbStackRedirect { system: System, url: &'static str },
     /// Tailscale's stable package index; one universal macOS installer.
     TailscaleStable { systems: &'static [System] },
     /// A URL that always serves the newest DMG; the version is read from the
@@ -89,8 +86,6 @@ impl Manual {
     }
 }
 
-const DARWIN: &[System] = &["aarch64-darwin", "x86_64-darwin"];
-
 pub const PINS: &[Pin] = &[
     Pin {
         name: "claude-code",
@@ -99,7 +94,6 @@ pub const PINS: &[Pin] = &[
                 version_package: "@anthropic-ai/claude-code",
                 packages: &[
                     ("aarch64-darwin", "@anthropic-ai/claude-code-darwin-arm64"),
-                    ("x86_64-darwin", "@anthropic-ai/claude-code-darwin-x64"),
                     ("aarch64-linux", "@anthropic-ai/claude-code-linux-arm64"),
                     ("x86_64-linux", "@anthropic-ai/claude-code-linux-x64"),
                 ],
@@ -112,16 +106,10 @@ pub const PINS: &[Pin] = &[
         name: "codex-desktop",
         kind: Kind::Managed(Managed {
             upstream: Upstream::Sparkle {
-                feeds: &[
-                    (
-                        "aarch64-darwin",
-                        "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
-                    ),
-                    (
-                        "x86_64-darwin",
-                        "https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml",
-                    ),
-                ],
+                feeds: &[(
+                    "aarch64-darwin",
+                    "https://persistent.oaistatic.com/codex-app-prod/appcast.xml",
+                )],
                 version: SparkleVersion::ShortVersionString,
             },
             artifact: Artifact::File,
@@ -135,24 +123,12 @@ pub const PINS: &[Pin] = &[
                 repo: "can1357/oh-my-pi",
                 assets: &[
                     ("aarch64-darwin", "omp-darwin-arm64"),
-                    ("x86_64-darwin", "omp-darwin-x64"),
                     ("aarch64-linux", "omp-linux-arm64"),
                     ("x86_64-linux", "omp-linux-x64"),
                 ],
             },
             artifact: Artifact::File,
             flake_attr: Some("omp"),
-        }),
-    },
-    Pin {
-        name: "orbstack",
-        kind: Kind::Managed(Managed {
-            upstream: Upstream::OrbStackRedirect {
-                system: "x86_64-darwin",
-                url: "https://orbstack.dev/download/stable/latest/amd64",
-            },
-            artifact: Artifact::File,
-            flake_attr: Some("orbstack"),
         }),
     },
     Pin {
@@ -170,7 +146,9 @@ pub const PINS: &[Pin] = &[
     Pin {
         name: "tailscale",
         kind: Kind::Managed(Managed {
-            upstream: Upstream::TailscaleStable { systems: DARWIN },
+            upstream: Upstream::TailscaleStable {
+                systems: &["aarch64-darwin"],
+            },
             artifact: Artifact::File,
             flake_attr: None,
         }),
@@ -179,16 +157,10 @@ pub const PINS: &[Pin] = &[
         name: "whatsapp",
         kind: Kind::Managed(Managed {
             upstream: Upstream::Sparkle {
-                feeds: &[
-                    (
-                        "aarch64-darwin",
-                        "https://web.whatsapp.com/desktop/mac_native/updates/?branch=master&configuration=Release",
-                    ),
-                    (
-                        "x86_64-darwin",
-                        "https://web.whatsapp.com/desktop/mac_native/updates/?branch=master&configuration=Release",
-                    ),
-                ],
+                feeds: &[(
+                    "aarch64-darwin",
+                    "https://web.whatsapp.com/desktop/mac_native/updates/?branch=master&configuration=Release",
+                )],
                 version: SparkleVersion::EnclosureQuery("version"),
             },
             // Matches `name` in pkgs/whatsapp/default.nix.
@@ -202,16 +174,10 @@ pub const PINS: &[Pin] = &[
         name: "wispr-flow",
         kind: Kind::Managed(Managed {
             upstream: Upstream::WisprReleases {
-                feeds: &[
-                    (
-                        "aarch64-darwin",
-                        "https://dl.wisprflow.com/wispr-flow/darwin/arm64/RELEASES.json",
-                    ),
-                    (
-                        "x86_64-darwin",
-                        "https://dl.wisprflow.com/wispr-flow/darwin/x64/RELEASES.json",
-                    ),
-                ],
+                feeds: &[(
+                    "aarch64-darwin",
+                    "https://dl.wisprflow.com/wispr-flow/darwin/arm64/RELEASES.json",
+                )],
             },
             artifact: Artifact::File,
             flake_attr: Some("wispr-flow"),

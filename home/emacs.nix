@@ -6,15 +6,6 @@
   ...
 }:
 let
-  isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
-  # The Intel Darwin package set has no Emacs 31; retain its supported Mac port.
-  emacsPkg =
-    if pkgs ? emacs31 then
-      pkgs.emacs31
-    else if isDarwin then
-      pkgs.emacs-macport
-    else
-      pkgs.emacs;
   handcraftedBinDir = "${config.home.homeDirectory}/.local/bin";
   handcraftedClient = "${handcraftedBinDir}/emacs-handcrafted-client";
   latexExportEnvironment = {
@@ -26,7 +17,7 @@ in
 {
   programs.emacs = {
     enable = true;
-    package = emacsPkg;
+    package = pkgs.emacs31;
   };
 
   # Every package the handcrafted config loads, pinned by flake.lock. Emacs
@@ -69,7 +60,7 @@ in
   ];
 
   # Defaults to programs.emacs.finalPackage, which carries extraPackages such
-  # as sops; the bare emacsPkg would abort init on (use-package sops).
+  # as sops; the bare pkgs.emacs31 would abort init on (use-package sops).
   services.emacs.enable = true;
 
   launchd.agents.emacs.config.EnvironmentVariables =

@@ -9,7 +9,7 @@ uname() {
 		printf '%s\n' "${test_os:-Darwin}"
 		;;
 	-m)
-		printf '%s\n' "${test_arch:-x86_64}"
+		printf '%s\n' "${test_arch:-arm64}"
 		;;
 	*)
 		return 64

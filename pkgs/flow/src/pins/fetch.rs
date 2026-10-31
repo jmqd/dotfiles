@@ -78,19 +78,6 @@ pub fn get_json<T: for<'de> Deserialize<'de>>(url: &str) -> anyhow::Result<T> {
     serde_json::from_slice(&body).with_context(|| format!("parsing JSON from {url}"))
 }
 
-/// Returns the `Location` of a single redirect without following it.
-pub fn redirect_target(url: &str) -> anyhow::Result<String> {
-    let body = curl(
-        &["--output", "/dev/null", "--write-out", "%{redirect_url}"],
-        url,
-    )?;
-    let target = String::from_utf8(body).context("redirect URL is not UTF-8")?;
-    if target.is_empty() {
-        bail!("{url} did not redirect");
-    }
-    Ok(target)
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Prefetched {
@@ -158,7 +145,6 @@ pub fn nix_build(repo_root: &Path, attr: &str) -> anyhow::Result<()> {
 pub fn current_system() -> anyhow::Result<&'static str> {
     Ok(match (std::env::consts::ARCH, std::env::consts::OS) {
         ("aarch64", "macos") => "aarch64-darwin",
-        ("x86_64", "macos") => "x86_64-darwin",
         ("aarch64", "linux") => "aarch64-linux",
         ("x86_64", "linux") => "x86_64-linux",
         (arch, os) => bail!("no Nix system for {arch}-{os}"),

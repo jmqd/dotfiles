@@ -63,14 +63,6 @@ pub fn latest(upstream: &Upstream, artifact: Artifact) -> anyhow::Result<Release
             }
             same_version(per_system)
         }
-        Upstream::OrbStackRedirect { system, url } => {
-            let target = fetch::redirect_target(url)?;
-            let version = orbstack_version(&target)?;
-            Ok(Release {
-                version,
-                sources: BTreeMap::from([((*system).to_owned(), Candidate::unhashed(target))]),
-            })
-        }
         Upstream::TailscaleStable { systems } => {
             #[derive(Deserialize)]
             struct Index {
@@ -278,19 +270,6 @@ fn query_param<'a>(url: &'a str, key: &str) -> Option<&'a str> {
         .find_map(|(name, value)| (name == key).then_some(value))
 }
 
-/// `.../OrbStack_v2.2.4_21120_amd64.dmg` -> `2.2.4-21120`.
-fn orbstack_version(url: &str) -> anyhow::Result<String> {
-    let file = url.rsplit('/').next().unwrap_or(url);
-    let parts = file
-        .strip_prefix("OrbStack_v")
-        .and_then(|rest| rest.strip_suffix(".dmg"))
-        .map(|rest| rest.split('_').collect::<Vec<_>>());
-    match parts.as_deref() {
-        Some([version, build, _arch]) => Ok(format!("{version}-{build}")),
-        _ => bail!("unexpected OrbStack download name {file}"),
-    }
-}
-
 /// GitHub reports `sha256:<hex>`; Nix wants `sha256-<base64>`.
 fn sri_from_github_digest(digest: &str) -> anyhow::Result<String> {
     let hex = digest
@@ -322,9 +301,7 @@ fn bundle_short_version(info_plist: &[u8]) -> anyhow::Result<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        SparkleItem, SparkleVersion, newest_sparkle_item, orbstack_version, sri_from_github_digest,
-    };
+    use super::{SparkleItem, SparkleVersion, newest_sparkle_item, sri_from_github_digest};
 
     const FEED: &str = r#"<?xml version="1.0"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
@@ -358,16 +335,6 @@ mod tests {
         let item =
             newest_sparkle_item(FEED, SparkleVersion::EnclosureQuery("version")).expect("parses");
         assert_eq!(item.version, "2.26.2");
-    }
-
-    #[test]
-    fn orbstack_download_name_yields_version_and_build() {
-        assert_eq!(
-            orbstack_version("https://cdn.example/amd64/OrbStack_v2.2.4_21120_amd64.dmg")
-                .expect("parses"),
-            "2.2.4-21120"
-        );
-        assert!(orbstack_version("https://cdn.example/OrbStack.dmg").is_err());
     }
 
     #[test]

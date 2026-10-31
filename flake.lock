@@ -54,27 +54,6 @@
         "type": "github"
       }
     },
-    "home-manager-darwin-x86": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs-darwin-x86"
-        ]
-      },
-      "locked": {
-        "lastModified": 1792818383,
-        "narHash": "sha256-199i7ubVSXTMl+0AAlL7cVCXSjcI+jWByMcimYjeMX0=",
-        "owner": "nix-community",
-        "repo": "home-manager",
-        "rev": "24f2190587513b9c2f73db112a17844ae912d965",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-community",
-        "ref": "release-26.05",
-        "repo": "home-manager",
-        "type": "github"
-      }
-    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1793345420,
@@ -87,22 +66,6 @@
       "original": {
         "owner": "NixOS",
         "ref": "nixpkgs-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
-    "nixpkgs-darwin-x86": {
-      "locked": {
-        "lastModified": 1793147889,
-        "narHash": "sha256-+//qXhkXCKTFoVCHAYhoEP1ZnPSx/b4IHdLI1ZMz3UU=",
-        "owner": "NixOS",
-        "repo": "nixpkgs",
-        "rev": "36173dbc6ff2b383c4d03b002fd1ea58e2e4dbcd",
-        "type": "github"
-      },
-      "original": {
-        "owner": "NixOS",
-        "ref": "nixpkgs-26.05-darwin",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -145,14 +108,11 @@
         "emacs-sops": "emacs-sops",
         "flake-utils": "flake-utils",
         "home-manager": "home-manager",
-        "home-manager-darwin-x86": "home-manager-darwin-x86",
         "nixpkgs": "nixpkgs",
-        "nixpkgs-darwin-x86": "nixpkgs-darwin-x86",
         "nixpkgs-pre-gcc16": "nixpkgs-pre-gcc16",
         "notion-cli": "notion-cli",
         "rust-overlay": "rust-overlay",
         "trueflow": "trueflow",
-        "trueflow-darwin-x86": "trueflow-darwin-x86",
         "voxtype": "voxtype"
       }
     },
@@ -214,33 +174,6 @@
       "original": {
         "owner": "trueflow-dev",
         "repo": "trueflow",
-        "type": "github"
-      }
-    },
-    "trueflow-darwin-x86": {
-      "inputs": {
-        "flake-utils": [
-          "flake-utils"
-        ],
-        "nixpkgs": [
-          "nixpkgs-darwin-x86"
-        ],
-        "rust-overlay": [
-          "rust-overlay"
-        ]
-      },
-      "locked": {
-        "lastModified": 1792563513,
-        "narHash": "sha256-a7v4b2BAzffGRRVGnEVt7Z33gxHc0uxFMjAYEHmHeKE=",
-        "owner": "trueflow-dev",
-        "repo": "trueflow",
-        "rev": "473fec184e1901db76081c6002a115c07cab2a94",
-        "type": "github"
-      },
-      "original": {
-        "owner": "trueflow-dev",
-        "repo": "trueflow",
-        "rev": "473fec184e1901db76081c6002a115c07cab2a94",
         "type": "github"
       }
     },

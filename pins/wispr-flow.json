@@ -4,10 +4,6 @@
     "aarch64-darwin": {
       "url": "https://dl.wisprflow.com/wispr-flow/darwin/arm64/dmgs/Flow-v1.6.1337.dmg",
       "hash": "sha256-VHG2gOp7aRfVlBKGfHX3526SC2ZR4E+kI+XWnXWlfMA="
-    },
-    "x86_64-darwin": {
-      "url": "https://dl.wisprflow.com/wispr-flow/darwin/x64/dmgs/Flow-v1.6.1337.dmg",
-      "hash": "sha256-qeM3j7OHeg2O7yIVMa2gEudzz491MmUDX/H44dtVU8o="
     }
   }
 }

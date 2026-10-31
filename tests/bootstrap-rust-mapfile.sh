@@ -26,9 +26,9 @@ rustup() {
 			return
 		fi
 		printf '%s\n' \
-			'cargo-x86_64-apple-darwin' \
-			'rust-std-x86_64-apple-darwin' \
-			'rustc-x86_64-apple-darwin'
+			'cargo-aarch64-apple-darwin' \
+			'rust-std-aarch64-apple-darwin' \
+			'rustc-aarch64-apple-darwin'
 		;;
 	'component add --toolchain stable rustfmt clippy rust-analyzer rust-src')
 		component_add_seen=1

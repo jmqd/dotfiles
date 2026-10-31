@@ -58,9 +58,6 @@ detect_flake_ref() {
 	Darwin:arm64)
 		printf '%s\n' "${repo_root}#macos-aarch64"
 		;;
-	Darwin:x86_64)
-		printf '%s\n' "${repo_root}#macos-x86_64"
-		;;
 	Linux:aarch64)
 		profile_suffix="$(linux_profile_suffix)" || return
 		printf '%s\n' "${repo_root}#linux-aarch64${profile_suffix}"

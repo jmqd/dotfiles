@@ -49,7 +49,6 @@ stdenvNoCC.mkDerivation {
     license = lib.licenses.unfree;
     platforms = [
       "aarch64-darwin"
-      "x86_64-darwin"
     ];
     sourceProvenance = [ lib.sourceTypes.binaryNativeCode ];
   };

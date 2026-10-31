@@ -26,9 +26,6 @@ detect_flake_ref() {
 	arm64)
 		printf '%s#macos-aarch64\n' "$checkout_dir"
 		;;
-	x86_64)
-		printf '%s#macos-x86_64\n' "$checkout_dir"
-		;;
 	*)
 		echo "Unsupported macOS architecture: $arch_name" >&2
 		exit 1

@@ -8,7 +8,6 @@ let
     echo "brew: this system is managed by Nix — install packages there instead." >&2
     exit 1
   '';
-  orbstackPackage = pkgs.callPackage ../../pkgs/orbstack { };
   spotifyPackage = pkgs.callPackage ../../pkgs/spotify { };
   whatsappPackage = pkgs.callPackage ../../pkgs/whatsapp { };
 in
@@ -32,7 +31,7 @@ in
   home.packages = [
     fakeBrew
     pkgs.google-cloud-sdk
-    orbstackPackage
+    pkgs.orbstack
     spotifyPackage
     whatsappPackage
   ];

@@ -245,9 +245,6 @@ the Nixpkgs revision pinned in `flake.lock`. It is also available in
 nix run .#gogcli -- --version
 ```
 
-Intel macOS uses the repository's separate Nixpkgs pin and may have an older
-CLI; consult `gog --help` for the installed version's options.
-
 ### One-time authorization
 
 1. Create a [Google Cloud project](https://console.cloud.google.com/projectcreate)
@@ -550,12 +547,12 @@ flow pin bump omp claude-code
 flow pin bump
 ```
 
-Managed pins: Claude Code, Codex desktop, OMP, OrbStack (Intel), Spotify (Apple
-Silicon), Tailscale, WhatsApp, and Wispr Flow. Spotify's URL is unversioned, so
-checking it downloads the DMG and reads the version from its `Info.plist`. A
-release whose artifact changes without a new version fails instead of moving
-the pin. `notion-cli`, `oracle`, and `voxtype` are reported but need lock-file
-work, so `flow pin` prints the manual step instead of bumping them.
+Managed pins: Claude Code, Codex desktop, OMP, Spotify, Tailscale, WhatsApp,
+and Wispr Flow. Spotify's URL is unversioned, so checking it downloads the DMG
+and reads the version from its `Info.plist`. A release whose artifact changes
+without a new version fails instead of moving the pin. `notion-cli`, `oracle`,
+and `voxtype` are reported but need lock-file work, so `flow pin` prints the
+manual step instead of bumping them.
 `just audit-deps` runs `flow pin check`. Bumped apps reach the machine on the
 next `bin/hm-switch.sh`.
 
@@ -682,9 +679,6 @@ is managed through `sudo nixos-rebuild switch --flake ~/src/dotfiles#jmws`.
 # Apple Silicon macOS (uses current user/home)
 HM_BOOTSTRAP_USER="$USER" nix run github:nix-community/home-manager -- switch --impure --flake ~/src/dotfiles#macos-aarch64
 
-# Intel macOS (uses current user/home)
-HM_BOOTSTRAP_USER="$USER" nix run github:nix-community/home-manager -- switch --impure --flake ~/src/dotfiles#macos-x86_64
-
 # Linux x86_64
 nix run github:nix-community/home-manager -- switch --flake ~/src/dotfiles#linux-x86_64
 
@@ -700,7 +694,7 @@ to abort the switch.
 ## tailscale on macOS
 
 `home/darwin/tailscale.nix` pins the official signed, notarized standalone `.pkg`
-for Apple Silicon and Intel. The official installer places the GUI in
+for Apple Silicon. The official installer places the GUI in
 `/Applications/Tailscale.app`; the Nix `tailscale` command runs that app's bundled
 CLI. There is no separate `tailscaled` service or Nix-store GUI installation.
 
@@ -747,7 +741,7 @@ competing with Nix; otherwise the next switch restores the pinned version.
 
 ## wispr flow on macOS
 
-`pkgs/wispr-flow` pins Wispr's signed DMGs for Apple Silicon and Intel.
+`pkgs/wispr-flow` pins Wispr's signed DMG for Apple Silicon.
 `home/darwin/wispr-flow.nix` copies the app to `~/Applications/Wispr Flow.app`
 during the normal `hm-switch`. It does not use `copyApps`: Wispr Flow asks to be
 moved unless its bundle sits directly in an Applications folder, which rules out

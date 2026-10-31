@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    nixpkgs-darwin-x86.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
     # Last nixpkgs-unstable revision before the GCC 16 / pyjwt 2.14 breakage;
     # see pkgsPreGcc16For below.
     nixpkgs-pre-gcc16.url = "github:NixOS/nixpkgs/00455b0a3690d3f5dc61e9aef4277dc86235b73f";
@@ -26,13 +25,6 @@
       inputs.rust-overlay.follows = "rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    trueflow-darwin-x86 = {
-      # Same source as `trueflow`; only the Nixpkgs edge differs for Intel Darwin.
-      url = "github:trueflow-dev/trueflow/473fec184e1901db76081c6002a115c07cab2a94";
-      inputs.flake-utils.follows = "flake-utils";
-      inputs.rust-overlay.follows = "rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
-    };
     voxtype = {
       url = "github:peteonrails/voxtype/v1.1.1";
       inputs.flake-utils.follows = "flake-utils";
@@ -42,34 +34,22 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    home-manager-darwin-x86 = {
-      url = "github:nix-community/home-manager/release-26.05";
-      inputs.nixpkgs.follows = "nixpkgs-darwin-x86";
-    };
   };
 
   outputs =
     {
       nixpkgs,
-      nixpkgs-darwin-x86,
       nixpkgs-pre-gcc16,
       flake-utils,
       rust-overlay,
       notion-cli,
       trueflow,
-      trueflow-darwin-x86,
       voxtype,
       emacs-sops,
       home-manager,
-      home-manager-darwin-x86,
       ...
     }:
     let
-      nixpkgsFor = system: if system == "x86_64-darwin" then nixpkgs-darwin-x86 else nixpkgs;
-      trueflowFor = system: if system == "x86_64-darwin" then trueflow-darwin-x86 else trueflow;
-      homeManagerFor =
-        system: if system == "x86_64-darwin" then home-manager-darwin-x86 else home-manager;
-
       # Packages that fail on current nixpkgs-unstable come from the pre-GCC 16
       # revision until their fixes land. Drop each use once it builds on
       # unstable, then drop this input:
@@ -80,19 +60,14 @@
       #   fixed by NixOS/nixpkgs#569147, but Hydra has no aarch64-linux build
       #   on unstable yet
       # - cutter: uic in Qt 6.12 rejects its .ui files, NixOS/nixpkgs#576576
-      # Intel Darwin stays on its own 26.05 release branch.
-      pkgsPreGcc16For =
-        system:
-        import (if system == "x86_64-darwin" then nixpkgs-darwin-x86 else nixpkgs-pre-gcc16) {
-          inherit system;
-        };
+      pkgsPreGcc16For = system: import nixpkgs-pre-gcc16 { inherit system; };
 
       # Local crates build with the newest stable Rust in the locked rust-overlay
       # rather than whichever rustc the Nixpkgs revision happens to ship.
       rustPlatformFor =
         system:
         let
-          pkgs = import (nixpkgsFor system) {
+          pkgs = import nixpkgs {
             inherit system;
             overlays = [ rust-overlay.overlays.default ];
           };
@@ -106,7 +81,7 @@
       mkNotionCliPkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
         in
         pkgs.buildGoModule {
           pname = "notion-cli";
@@ -130,21 +105,21 @@
       mkTrueflowPkg =
         system:
         let
-          packages = (trueflowFor system).packages.${system};
+          packages = trueflow.packages.${system};
         in
         if packages ? native then packages.native else packages.default;
 
       mkPiPkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
         in
         pkgs.callPackage ./pkgs/omp { };
 
       mkOraclePkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
         in
         # Node 24 in nixpkgs still links brotli without the CVE-2026-111497
         # fix; other majors carry it. Return to the default nodejs once
@@ -157,7 +132,7 @@
       mkClaudeCodePkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) {
+          pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
           };
@@ -167,7 +142,7 @@
       mkCodexDesktopPkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) {
+          pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
           };
@@ -177,7 +152,7 @@
       mkWisprFlowPkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) {
+          pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
           };
@@ -189,7 +164,7 @@
       mkPinnedAppPkg =
         name: system:
         let
-          pkgs = import (nixpkgsFor system) {
+          pkgs = import nixpkgs {
             inherit system;
             config.allowUnfree = true;
           };
@@ -199,7 +174,7 @@
       mkFlowPkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
         in
         pkgs.callPackage ./pkgs/flow {
           rustPlatform = rustPlatformFor system;
@@ -209,14 +184,14 @@
       mkOmpPhonePkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
         in
         pkgs.callPackage ./projects/omp-phone { rustPlatform = rustPlatformFor system; };
 
       mkVoxtypePkg =
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
           upstream = voxtype.packages.${system};
           # Upstream's lock keeps webpki-roots and rustls-webpki releases that
           # trust the compromised eMudhra intermediates (RUSTSEC-2026-0381 to
@@ -300,10 +275,10 @@
           };
         };
 
-      perSystem = flake-utils.lib.eachDefaultSystem (
+      perSystem = flake-utils.lib.eachSystem [ "aarch64-darwin" "aarch64-linux" "x86_64-linux" ] (
         system:
         let
-          pkgs = import (nixpkgsFor system) { inherit system; };
+          pkgs = import nixpkgs { inherit system; };
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
@@ -611,7 +586,7 @@
             flow = flowPkg;
             gogcli = pkgs.gogcli;
             googleworkspace-cli = pkgs.gws;
-            home-manager = (homeManagerFor system).packages.${system}.home-manager;
+            home-manager = home-manager.packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             omp = piPkg;
             omp-phone = mkOmpPhonePkg system;
@@ -625,7 +600,6 @@
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = codexDesktopPkg;
-            orbstack = mkPinnedAppPkg "orbstack" system;
             spotify = mkPinnedAppPkg "spotify" system;
             whatsapp = mkPinnedAppPkg "whatsapp" system;
             wispr-flow = wisprFlowPkg;
@@ -672,7 +646,7 @@
             };
             home-manager = {
               type = "app";
-              program = "${(homeManagerFor system).packages.${system}.home-manager}/bin/home-manager";
+              program = "${home-manager.packages.${system}.home-manager}/bin/home-manager";
               meta.description = "Run Home Manager";
             };
             omp = {
@@ -726,12 +700,12 @@
           nixpkgsConfig ? { },
         }:
         let
-          pkgs = import (nixpkgsFor system) {
+          pkgs = import nixpkgs {
             inherit system;
             config = nixpkgsConfig;
           };
         in
-        (homeManagerFor system).lib.homeManagerConfiguration {
+        home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
             inherit emacs-sops;
@@ -845,13 +819,8 @@
     // {
       homeConfigurations = {
         "macos-aarch64" = mkMacosHome { system = "aarch64-darwin"; };
-        "macos-x86_64" = mkMacosHome { system = "x86_64-darwin"; };
         "work-macos-aarch64" = mkMacosHome {
           system = "aarch64-darwin";
-          extraModules = [ ./home/hosts/work-macos.nix ];
-        };
-        "work-macos-x86_64" = mkMacosHome {
-          system = "x86_64-darwin";
           extraModules = [ ./home/hosts/work-macos.nix ];
         };
         "linux-aarch64" = mkHome {

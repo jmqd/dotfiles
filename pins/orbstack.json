@@ -1,9 +1,0 @@
-{
-  "version": "2.2.5-21124",
-  "sources": {
-    "x86_64-darwin": {
-      "url": "https://cdn-updates.orbstack.dev/amd64/OrbStack_v2.2.5_21124_amd64.dmg",
-      "hash": "sha256-SPZt9CNXugKU6pxiXdqErHLhDw0jcQ1a/PB5vLauhls="
-    }
-  }
-}

@@ -4,10 +4,6 @@
     "aarch64-darwin": {
       "url": "https://web.whatsapp.com/desktop/mac_native/release/?version=2.26.43.27&extension=zip&configuration=Release&branch=master&is_buck=true",
       "hash": "sha256-4tuklWGelUkHR9i3CppQVbj/238W/REOyXuiaTGncxs="
-    },
-    "x86_64-darwin": {
-      "url": "https://web.whatsapp.com/desktop/mac_native/release/?version=2.26.43.27&extension=zip&configuration=Release&branch=master&is_buck=true",
-      "hash": "sha256-4tuklWGelUkHR9i3CppQVbj/238W/REOyXuiaTGncxs="
     }
   }
 }
