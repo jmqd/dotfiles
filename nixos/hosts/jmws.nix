@@ -43,6 +43,7 @@ in
   imports = [
     ../hardware-configuration.nix
     ./jmws-nas.nix
+    ./jmws-thermal.nix
   ];
 
   # Use the systemd-boot EFI boot loader.

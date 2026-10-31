@@ -39,6 +39,15 @@ block = "load"
 format = " LOAD $1m "
 interval = 1
 
+# Hottest sensor relative to its limit, from the flow-thermal sampler's log;
+# warning within 10 °C of the limit, critical at it. Hidden without a sampler.
+[[block]]
+block = "custom"
+json = true
+command = "flow thermal bar"
+interval = 30
+hide_when_empty = true
+
 [[block]]
 block = "time"
 format = " $timestamp.datetime(f:'[%B] [%a] %Y-%m-%d %r')    "

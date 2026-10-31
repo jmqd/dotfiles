@@ -363,6 +363,31 @@ made by `omp wt add` from the current HEAD; uncommitted changes stay behind. Eve
 path, branch and worktree entry is checked before anything is created. The
 terminal is tmux inside tmux, else WezTerm; `--terminal wezterm|tmux` overrides.
 
+## Thermal logging
+
+`flow thermal` reads temperatures from the BMC (`ipmitool sdr`, where the board
+has one) and the OS (hwmon on Linux, SMC/HID sensors on macOS), and fan speeds
+from the BMC. A sampler appends one JSON line per run to a daily file and keeps
+seven days:
+
+- **jmws:** the root `flow-thermal` systemd timer runs every 30 s, writing
+  `/var/log/flow-thermal/` readable by every user, with `--limit VRM=85`
+  ([`nixos/hosts/jmws-thermal.nix`](nixos/hosts/jmws-thermal.nix)). Alerts go
+  to the journal (`journalctl -u flow-thermal -p warning`) and the i3 bar block
+  turns yellow 10 °C before a limit and red at it.
+- **macOS:** a launchd agent samples every 60 s into `~/Library/Logs/flow-thermal/`
+  and shows a notification when a sensor starts alerting (past 105 °C).
+
+```bash
+flow thermal history --since 30m    # per sensor: now, min, max, when, alerts
+flow thermal read                   # live, unlogged; BMC sensors need root
+flow --output json thermal history  # for scripts and agents
+```
+
+A temperature alerts at `--alert-at` (default 90 °C) or the first matching
+`--limit PATTERN=CELSIUS`; any sensor the BMC flags alerts too. Each sensor
+notifies once when it starts alerting, not on every sample.
+
 
 ## bootstrap
 

@@ -272,6 +272,28 @@
               service.enable = true;
               settings.hotkey.enabled = true;
             };
+            # Linux hosts with a BMC log as root instead (nixos/hosts/jmws-thermal.nix).
+            # Apple Silicon dies run near 100 °C under sustained load, so
+            # alert only past that.
+            launchd.agents.flow-thermal = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
+              enable = true;
+              config = {
+                ProgramArguments = [
+                  "${flowPkg}/bin/flow"
+                  "--automated"
+                  "thermal"
+                  "sample"
+                  "--notify"
+                  "--alert-at"
+                  "105"
+                ];
+                StartInterval = 60;
+                RunAtLoad = true;
+                ProcessType = "Background";
+                StandardOutPath = "/dev/null";
+                StandardErrorPath = "/tmp/flow-thermal.err.log";
+              };
+            };
           };
         };
 
@@ -791,6 +813,9 @@
         }:
         nixpkgs.lib.nixosSystem {
           inherit system;
+          specialArgs = {
+            flowPkg = mkFlowPkg system;
+          };
           modules = [
             hostModule
             home-manager.nixosModules.home-manager
