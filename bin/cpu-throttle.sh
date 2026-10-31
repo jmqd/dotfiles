@@ -1,12 +1,15 @@
 #!/bin/sh
 # Temporarily cut CPU power to cool the VRMs: disable boost and cap the
-# max frequency of the given CPUs to their minimum (acpi-cpufreq). With
-# "off", re-enable boost and restore every CPU's max to its hardware max.
-# Changes last until reboot or "off". Needs root.
+# max frequency of the given CPUs (acpi-cpufreq). With "off", re-enable
+# boost and restore every CPU's max to its hardware max. Changes last
+# until reboot or "off". Needs root.
 #
-# Usage: sudo cpu-throttle.sh on [CPU_LIST]   (default: all CPUs)
+# Usage: sudo cpu-throttle.sh on [--mhz MHZ] [CPU_LIST]
 #        sudo cpu-throttle.sh off
-#   CPU_LIST is a cpuset list such as 0-63,128-191 (socket 1 on jmws).
+#   MHZ must be one of the CPU's P-states (scaling_available_frequencies,
+#   e.g. 1500 2000 2450 on jmws); default is the minimum.
+#   CPU_LIST is a cpuset list such as 0-63,128-191 (socket 1 on jmws);
+#   default is all CPUs.
 
 set -u
 
@@ -19,7 +22,7 @@ ensure() { "$@" || err "command failed: $*"; }
 SYS=/sys/devices/system/cpu
 
 usage() {
-    sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 write_file() {
@@ -41,9 +44,10 @@ expand_list() {
     IFS="$_old_ifs"
 }
 
+# Args: KHZ (empty for each CPU's minimum), CPU_LIST (empty for all).
 throttle_on() {
-    if [ -n "${1:-}" ]; then
-        expand_list "$1"
+    if [ -n "$2" ]; then
+        expand_list "$2"
         _cpus="$RETVAL"
     else
         _cpus="$(seq 0 $(($(getconf _NPROCESSORS_CONF) - 1)) | tr '\n' ' ')"
@@ -51,15 +55,23 @@ throttle_on() {
     for _c in $_cpus; do
         _f="$SYS/cpu$_c/cpufreq"
         [ -d "$_f" ] || err "no cpufreq for cpu$_c"
+        if [ -n "$1" ]; then
+            case " $(cat "$_f/scaling_available_frequencies") " in
+                *" $1 "*) ;;
+                *) err "$(($1 / 1000)) MHz is not a P-state of cpu$_c" ;;
+            esac
+        fi
     done
     write_file "$SYS/cpufreq/boost" 0
     _n=0
     for _c in $_cpus; do
         _f="$SYS/cpu$_c/cpufreq"
-        write_file "$_f/scaling_max_freq" "$(cat "$_f/cpuinfo_min_freq")"
+        if [ -n "$1" ]; then _khz="$1"; else _khz="$(cat "$_f/cpuinfo_min_freq")"; fi
+        write_file "$_f/scaling_max_freq" "$_khz"
         _n=$((_n + 1))
     done
-    say "boost off; capped $_n CPUs to minimum frequency"
+    if [ -n "$1" ]; then _to="$(($1 / 1000)) MHz"; else _to="minimum frequency"; fi
+    say "boost off; capped $_n CPUs to $_to"
 }
 
 throttle_off() {
@@ -71,19 +83,33 @@ throttle_off() {
 }
 
 main() {
-    case "${1:-}" in
+    _cmd="${1:-}"
+    case "$_cmd" in
         -h|--help) usage; return 0 ;;
-        on|off) ;;
+        on|off) shift ;;
         *) usage; err "need 'on' or 'off'" ;;
     esac
+    _khz=""
+    _list=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --mhz)
+                [ $# -ge 2 ] || err "--mhz needs a value"
+                case "$2" in *[!0-9]*|'') err "bad MHz: $2" ;; esac
+                _khz=$(($2 * 1000)); shift 2 ;;
+            -*) usage; err "unknown option: $1" ;;
+            *) [ -z "$_list" ] || err "too many arguments"; _list="$1"; shift ;;
+        esac
+    done
+    [ "$_cmd" = on ] || [ -z "$_khz$_list" ] || err "'off' takes no arguments"
     need_cmd seq
     need_cmd tr
     need_cmd getconf
     [ "$(id -u)" -eq 0 ] || err "run as root (sudo)"
     [ -w "$SYS/cpufreq/boost" ] || err "no writable $SYS/cpufreq/boost"
 
-    case "$1" in
-        on) throttle_on "${2:-}" ;;
+    case "$_cmd" in
+        on) throttle_on "$_khz" "$_list" ;;
         off) throttle_off ;;
     esac
 }
