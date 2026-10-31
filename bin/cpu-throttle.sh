@@ -78,7 +78,7 @@ main() {
     esac
     need_cmd seq
     need_cmd tr
-    need_cmd wc
+    need_cmd getconf
     [ "$(id -u)" -eq 0 ] || err "run as root (sudo)"
     [ -w "$SYS/cpufreq/boost" ] || err "no writable $SYS/cpufreq/boost"
 
