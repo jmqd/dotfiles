@@ -543,13 +543,18 @@
               ''
                 export HOME="$TMPDIR/home"
                 mkdir -p "$HOME"
-                cd ${
+                # The Linux sandbox has no /usr/bin/env; the hook executes
+                # bin/lint-secrets.sh directly, so its shebang must resolve.
+                cp -r --no-preserve=mode ${
                   checkSource [
                     ".githooks/pre-push"
                     "bin/lint-secrets.sh"
                     "tests/pre-push-secrets.sh"
                   ]
-                }
+                } src
+                chmod +x src/bin/lint-secrets.sh
+                patchShebangs src
+                cd src
                 bash tests/pre-push-secrets.sh
                 touch $out
               '';
