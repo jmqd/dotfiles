@@ -14,6 +14,7 @@ err() { say "error: $1"; exit 1; }
 check_cmd() { command -v "$1" >/dev/null 2>&1; }
 need_cmd() { check_cmd "$1" || err "need '$1' (command not found)"; }
 ensure() { "$@" || err "command failed: $*"; }
+warn_fail() { "$@" || say "warning: command failed: $*"; }
 
 usage() {
     sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
@@ -47,10 +48,10 @@ main() {
     [ "$(id -u)" -eq 0 ] || err "run as root (sudo)"
 
     say "temperature sensors"
-    ensure ipmitool sdr type Temperature
+    warn_fail ipmitool sdr type Temperature
 
     say "fan mode (00 standard, 01 full, 02 optimal, 04 heavy IO)"
-    ensure ipmitool raw 0x30 0x45 0x00
+    warn_fail ipmitool raw 0x30 0x45 0x00
 
     archive_sel "$_dir"
     _file="$RETVAL"
