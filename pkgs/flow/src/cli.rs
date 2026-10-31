@@ -178,9 +178,10 @@ pub struct ThermalSampleArgs {
     #[command(flatten)]
     pub log: ThermalLogArgs,
 
-    /// Days of log files to keep, today included.
-    #[arg(long, default_value_t = 7, value_parser = clap::value_parser!(u32).range(1..))]
-    pub keep_days: u32,
+    /// Delete log days older than this many days, today included. Without
+    /// it, finished days are kept, gzipped.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub keep_days: Option<u32>,
 
     /// Show a desktop notification when a sensor starts alerting.
     #[arg(long, default_value_t = false)]

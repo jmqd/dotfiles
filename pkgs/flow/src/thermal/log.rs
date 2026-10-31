@@ -1,10 +1,16 @@
 //! Append-only sample log: one JSON line per sample in `<dir>/<UTC date>.jsonl`.
+//! Finished days are gzipped to `<UTC date>.jsonl.gz` (about a tenth of the
+//! size) rather than deleted; deleting old days is opt-in through `prune`.
 
 use super::Sample;
 use anyhow::Context as _;
 use chrono::{DateTime, Days, NaiveDate, Utc};
+use flate2::Compression;
+use flate2::read::GzDecoder;
+use flate2::write::GzEncoder;
+use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
+use std::io::{self, ErrorKind, Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 
 /// The service writes to the system log directory on Linux; on macOS the
@@ -21,6 +27,64 @@ pub fn default_dir() -> Option<PathBuf> {
 
 /// How far back from the end of a day file to look for the newest sample.
 const TAIL_BYTES: u64 = 64 * 1024;
+
+/// One day's samples. A day is `Gzip` once its compressed copy is complete,
+/// even if a crash left the plain file behind.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum DayFile {
+    Plain(PathBuf),
+    Gzip(PathBuf),
+}
+
+impl DayFile {
+    fn read(&self) -> anyhow::Result<Vec<u8>> {
+        match self {
+            Self::Plain(path) => match fs::read(path) {
+                // Compressed between listing and reading.
+                Err(error) if error.kind() == ErrorKind::NotFound => {
+                    Self::Gzip(gzip_path(path)).read()
+                }
+                result => result.with_context(|| format!("reading {}", path.display())),
+            },
+            Self::Gzip(path) => {
+                let mut bytes = Vec::new();
+                File::open(path)
+                    .and_then(|file| GzDecoder::new(file).read_to_end(&mut bytes))
+                    .with_context(|| format!("reading {}", path.display()))?;
+                Ok(bytes)
+            }
+        }
+    }
+
+    fn latest(&self) -> anyhow::Result<Option<Sample>> {
+        let Self::Plain(path) = self else {
+            return Ok(newest_parsable(&self.read()?));
+        };
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                return Self::Gzip(gzip_path(path)).latest();
+            }
+            Err(error) => return Err(error).with_context(|| format!("opening {}", path.display())),
+        };
+        let start = file.metadata()?.len().saturating_sub(TAIL_BYTES);
+        let mut tail = Vec::new();
+        file.seek(SeekFrom::Start(start))?;
+        file.read_to_end(&mut tail)?;
+        match newest_parsable(&tail) {
+            Some(sample) => Ok(Some(sample)),
+            None if start == 0 => Ok(None),
+            // A line longer than the tail window; fall back to the whole file.
+            None => Ok(newest_parsable(&self.read()?)),
+        }
+    }
+}
+
+fn gzip_path(plain: &Path) -> PathBuf {
+    let mut name = plain.as_os_str().to_owned();
+    name.push(".gz");
+    PathBuf::from(name)
+}
 
 #[derive(Clone, Debug)]
 pub struct ThermalLog {
@@ -54,8 +118,8 @@ impl ThermalLog {
     }
 
     pub fn latest(&self) -> anyhow::Result<Option<Sample>> {
-        for (_, path) in self.days()?.into_iter().rev() {
-            if let Some(sample) = last_sample(&path)? {
+        for (_, file) in self.days()?.into_iter().rev() {
+            if let Some(sample) = file.latest()? {
                 return Ok(Some(sample));
             }
         }
@@ -65,22 +129,50 @@ impl ThermalLog {
     /// Samples taken at or after `start`, oldest first.
     pub fn since(&self, start: DateTime<Utc>) -> anyhow::Result<Vec<Sample>> {
         let mut samples = Vec::new();
-        for (day, path) in self.days()? {
+        for (day, file) in self.days()? {
             if day < start.date_naive() {
                 continue;
             }
-            let text =
-                fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))?;
+            let bytes = file.read()?;
             samples.extend(
-                text.lines()
-                    .filter_map(|line| serde_json::from_str::<Sample>(line).ok())
+                bytes
+                    .split(|byte| *byte == b'\n')
+                    .filter_map(|line| serde_json::from_slice::<Sample>(line).ok())
                     .filter(|sample| sample.at >= start),
             );
         }
         Ok(samples)
     }
 
-    /// Deletes day files older than the newest `keep_days` days ending at
+    /// Gzips every plain day file before `today` and returns the compressed
+    /// files. The plain file is removed only after its compressed copy is
+    /// fully written and renamed into place.
+    pub fn compress_finished(&self, today: NaiveDate) -> anyhow::Result<Vec<PathBuf>> {
+        let mut compressed = Vec::new();
+        for (day, file) in self.days()? {
+            if day >= today {
+                continue;
+            }
+            let plain = self.day_file(day);
+            if let DayFile::Plain(_) = file {
+                let target = gzip_path(&plain);
+                let partial = self.dir.join(format!("{day}.jsonl.gz.partial"));
+                write_gzip(&plain, &partial)
+                    .and_then(|()| fs::rename(&partial, &target))
+                    .with_context(|| format!("compressing {}", plain.display()))?;
+                compressed.push(target);
+            }
+            match fs::remove_file(&plain) {
+                Err(error) if error.kind() != ErrorKind::NotFound => {
+                    return Err(error).with_context(|| format!("removing {}", plain.display()));
+                }
+                _ => {}
+            }
+        }
+        Ok(compressed)
+    }
+
+    /// Deletes days older than the newest `keep_days` days ending at
     /// `today`, and returns them.
     pub fn prune(&self, keep_days: u32, today: NaiveDate) -> anyhow::Result<Vec<PathBuf>> {
         let Some(oldest_kept) = today.checked_sub_days(Days::new(u64::from(keep_days.max(1)) - 1))
@@ -88,10 +180,18 @@ impl ThermalLog {
             return Ok(Vec::new());
         };
         let mut removed = Vec::new();
-        for (day, path) in self.days()? {
-            if day < oldest_kept {
-                fs::remove_file(&path).with_context(|| format!("removing {}", path.display()))?;
-                removed.push(path);
+        for (day, _) in self.days()? {
+            if day >= oldest_kept {
+                continue;
+            }
+            for path in [self.day_file(day), gzip_path(&self.day_file(day))] {
+                match fs::remove_file(&path) {
+                    Ok(()) => removed.push(path),
+                    Err(error) if error.kind() == ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(error).with_context(|| format!("removing {}", path.display()));
+                    }
+                }
             }
         }
         Ok(removed)
@@ -101,8 +201,8 @@ impl ThermalLog {
         self.dir.join(format!("{day}.jsonl"))
     }
 
-    /// Day files sorted oldest first; a missing directory has none.
-    fn days(&self) -> anyhow::Result<Vec<(NaiveDate, PathBuf)>> {
+    /// One file per day, oldest first; a missing directory has none.
+    fn days(&self) -> anyhow::Result<Vec<(NaiveDate, DayFile)>> {
         let entries = match fs::read_dir(&self.dir) {
             Ok(entries) => entries,
             Err(error) if error.kind() == ErrorKind::NotFound => return Ok(Vec::new()),
@@ -110,39 +210,40 @@ impl ThermalLog {
                 return Err(error).with_context(|| format!("listing {}", self.dir.display()));
             }
         };
-        let mut days = Vec::new();
+        // `Gzip` sorts after `Plain`, so `max` prefers the compressed copy.
+        let mut days: BTreeMap<NaiveDate, DayFile> = BTreeMap::new();
         for entry in entries {
             let path = entry?.path();
-            let day = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .and_then(|name| name.strip_suffix(".jsonl"))
-                .and_then(|stem| stem.parse::<NaiveDate>().ok());
-            if let Some(day) = day {
-                days.push((day, path));
+            let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            let parsed = if let Some(stem) = name.strip_suffix(".jsonl.gz") {
+                stem.parse()
+                    .ok()
+                    .map(|day| (day, DayFile::Gzip(path.clone())))
+            } else if let Some(stem) = name.strip_suffix(".jsonl") {
+                stem.parse()
+                    .ok()
+                    .map(|day| (day, DayFile::Plain(path.clone())))
+            } else {
+                None
+            };
+            if let Some((day, file)) = parsed {
+                let best = match days.remove(&day) {
+                    Some(existing) => existing.max(file),
+                    None => file,
+                };
+                days.insert(day, best);
             }
         }
-        days.sort();
-        Ok(days)
+        Ok(days.into_iter().collect())
     }
 }
 
-fn last_sample(path: &Path) -> anyhow::Result<Option<Sample>> {
-    let mut file = File::open(path).with_context(|| format!("opening {}", path.display()))?;
-    let len = file.metadata()?.len();
-    let start = len.saturating_sub(TAIL_BYTES);
-    let mut tail = Vec::new();
-    file.seek(SeekFrom::Start(start))?;
-    file.read_to_end(&mut tail)?;
-    if let Some(sample) = newest_parsable(&tail) {
-        return Ok(Some(sample));
-    }
-    if start == 0 {
-        return Ok(None);
-    }
-    // A line longer than the tail window; fall back to the whole file.
-    let whole = fs::read(path).with_context(|| format!("reading {}", path.display()))?;
-    Ok(newest_parsable(&whole))
+fn write_gzip(source: &Path, target: &Path) -> io::Result<()> {
+    let mut encoder = GzEncoder::new(File::create(target)?, Compression::default());
+    io::copy(&mut File::open(source)?, &mut encoder)?;
+    encoder.finish()?.sync_all()
 }
 
 fn newest_parsable(bytes: &[u8]) -> Option<Sample> {
@@ -180,6 +281,13 @@ mod tests {
             .expect("valid time")
     }
 
+    fn names(paths: &[PathBuf]) -> Vec<&str> {
+        paths
+            .iter()
+            .filter_map(|path| path.file_name()?.to_str())
+            .collect()
+    }
+
     #[test]
     fn reads_back_samples_across_days_and_skips_a_torn_line() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -207,22 +315,68 @@ mod tests {
     }
 
     #[test]
+    fn finished_days_are_compressed_and_still_read_back() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let log = ThermalLog::new(dir.path().to_owned());
+        let samples = [
+            sample(at(28, 12), 40.0),
+            sample(at(29, 12), 50.0),
+            sample(at(30, 12), 60.0),
+        ];
+        for sample in &samples {
+            log.append(sample).expect("append");
+        }
+        // A crash after the rename leaves both copies of the 28th.
+        write_gzip(
+            &log.day_file(at(28, 0).date_naive()),
+            &dir.path().join("2026-10-28.jsonl.gz"),
+        )
+        .expect("gzip");
+
+        let compressed = log
+            .compress_finished(at(30, 0).date_naive())
+            .expect("compress");
+        assert_eq!(names(&compressed), ["2026-10-29.jsonl.gz"]);
+        let mut files: Vec<_> = fs::read_dir(dir.path())
+            .expect("list")
+            .filter_map(|entry| entry.ok()?.file_name().into_string().ok())
+            .collect();
+        files.sort();
+        assert_eq!(
+            files,
+            [
+                "2026-10-28.jsonl.gz",
+                "2026-10-29.jsonl.gz",
+                "2026-10-30.jsonl"
+            ]
+        );
+        assert_eq!(log.since(at(1, 0)).expect("since"), samples);
+
+        // Once today is finished too, the newest sample comes from a gzip.
+        log.compress_finished(at(31, 0).date_naive())
+            .expect("compress");
+        assert_eq!(log.latest().expect("latest").as_ref(), Some(&samples[2]));
+    }
+
+    #[test]
     fn prune_keeps_the_newest_days_including_today() {
         let dir = tempfile::tempdir().expect("tempdir");
         let log = ThermalLog::new(dir.path().to_owned());
         for day in 25..=30 {
             log.append(&sample(at(day, 12), 50.0)).expect("append");
         }
+        log.compress_finished(at(27, 0).date_naive())
+            .expect("compress");
         fs::write(dir.path().join("notes.txt"), "keep").expect("write");
 
         let removed = log.prune(3, at(30, 0).date_naive()).expect("prune");
-        let removed: Vec<_> = removed
-            .iter()
-            .filter_map(|path| path.file_name()?.to_str())
-            .collect();
         assert_eq!(
-            removed,
-            ["2026-10-25.jsonl", "2026-10-26.jsonl", "2026-10-27.jsonl"]
+            names(&removed),
+            [
+                "2026-10-25.jsonl.gz",
+                "2026-10-26.jsonl.gz",
+                "2026-10-27.jsonl"
+            ]
         );
         assert_eq!(log.since(at(1, 0)).expect("since").len(), 3);
         assert!(dir.path().join("notes.txt").exists());

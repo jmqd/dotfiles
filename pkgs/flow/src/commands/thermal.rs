@@ -117,13 +117,29 @@ fn sample(args: ThermalSampleArgs) -> anyhow::Result<SampleOutput> {
             tracing::warn!(error = %format!("{error:#}"), "desktop notification failed");
         }
     }
-    match log.prune(args.keep_days, sample.at.date_naive()) {
-        Ok(removed) => {
-            for path in removed {
-                tracing::info!(path = %path.display(), "removed old thermal log");
+    // Log upkeep never fails the sample, which is already written.
+    let today = sample.at.date_naive();
+    match log.compress_finished(today) {
+        Ok(compressed) => {
+            for path in compressed {
+                tracing::info!(path = %path.display(), "compressed finished thermal log");
             }
         }
-        Err(error) => tracing::warn!(error = %format!("{error:#}"), "pruning thermal logs failed"),
+        Err(error) => {
+            tracing::warn!(error = %format!("{error:#}"), "compressing thermal logs failed")
+        }
+    }
+    if let Some(keep_days) = args.keep_days {
+        match log.prune(keep_days, today) {
+            Ok(removed) => {
+                for path in removed {
+                    tracing::info!(path = %path.display(), "removed old thermal log");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(error = %format!("{error:#}"), "pruning thermal logs failed")
+            }
+        }
     }
 
     if sample.readings.is_empty() {

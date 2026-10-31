@@ -367,8 +367,9 @@ terminal is tmux inside tmux, else WezTerm; `--terminal wezterm|tmux` overrides.
 
 `flow thermal` reads temperatures from the BMC (`ipmitool sdr`, where the board
 has one) and the OS (hwmon on Linux, SMC/HID sensors on macOS), and fan speeds
-from the BMC. A sampler appends one JSON line per run to a daily file and keeps
-seven days:
+from the BMC. A sampler appends one JSON line per run to a daily file and gzips
+each finished day (roughly a tenth of the size); nothing is deleted unless
+`flow thermal sample` is given `--keep-days N`:
 
 - **jmws:** the root `flow-thermal` systemd timer runs every 30 s, writing
   `/var/log/flow-thermal/` readable by every user, with `--limit VRM=85`
