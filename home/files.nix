@@ -29,6 +29,7 @@ in
     ".local/bin/linear".source = ../bin/linear;
     ".local/bin/link-private-data".source = ../bin/link-private-data.sh;
     ".local/bin/lint-secrets".source = ../bin/lint-secrets.sh;
+    ".local/bin/omp-fan-out".source = ../bin/omp-fan-out.sh;
     ".local/bin/setup-git-hooks".source = ../bin/setup-git-hooks.sh;
     ".sqliterc".source = ../.sqliterc;
 

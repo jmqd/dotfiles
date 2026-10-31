@@ -299,6 +299,7 @@
             "bin/hm-switch.sh"
             "bin/link-private-data.sh"
             "bin/lint-secrets.sh"
+            "bin/omp-fan-out.sh"
             "bin/setup-git-hooks.sh"
             "bin/setup-nix-cache.sh"
             "tests/bootstrap-rust-mapfile.sh"

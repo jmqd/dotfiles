@@ -343,6 +343,26 @@ git clean-stale --apply    # move stale worktrees to the trash, then prune
 emptied. A worktree with no such trash is reported `no-trash` and kept. A move that
 fails keeps the worktree and makes the run exit 1. Branches are never deleted.
 
+## omp fan-out
+
+`omp-fan-out` opens one forked omp session per follow-up, each in its own git
+worktree and its own WezTerm tab or tmux window, so several follow-ups of one
+session run in parallel without sharing a checkout.
+
+```bash
+omp-fan-out SESSION 'first follow-up' 'second follow-up'   # print the plan
+omp-fan-out --run SESSION 'first follow-up' 'second follow-up'
+omp-fan-out --run -n 3 SESSION              # three forks, no initial prompt
+omp-fan-out --run --in-place SESSION 'review only'   # no worktrees
+```
+
+SESSION is an omp session id prefix or `.jsonl` path. Each fork runs
+`omp --fork SESSION PROMPT` in a new worktree `../<repo>-fan-<tag>-<i>` on a new
+branch `fan/<tag>-<i>` (`<tag>`: the last 8 letters and digits of the session id),
+made by `omp wt add` from the current HEAD; uncommitted changes stay behind. Every
+path, branch and worktree entry is checked before anything is created. The
+terminal is tmux inside tmux, else WezTerm; `--terminal wezterm|tmux` overrides.
+
 
 ## bootstrap
 
