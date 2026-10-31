@@ -1,7 +1,7 @@
 use anyhow::Context as _;
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use flow::cli::{Cli, Commands};
-use flow::commands::{doctor, pin, search};
+use flow::commands::{doctor, pin, search, thermal};
 use flow::context::Ctx;
 use flow::logging::{self, LoggingOptions, tracing};
 use flow::output::{OutputMode, write_json, write_text};
@@ -74,6 +74,15 @@ fn main() -> anyhow::Result<()> {
             if output.has_failures() {
                 drop(stdout);
                 std::process::exit(1);
+            }
+        }
+        Commands::Thermal(args) => {
+            let output = thermal::execute(&ctx, args)?;
+            let stdout = io::stdout();
+            let mut stdout = stdout.lock();
+            match ctx.output_mode() {
+                OutputMode::Text => write_text(&mut stdout, &thermal::format_text(&output))?,
+                OutputMode::Json => write_json(&mut stdout, &output)?,
             }
         }
         Commands::GenerateCompletions(args) => {

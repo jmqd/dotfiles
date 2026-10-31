@@ -5,3 +5,4 @@ pub mod logging;
 pub mod output;
 pub mod pins;
 pub mod search;
+pub mod thermal;

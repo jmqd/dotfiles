@@ -1,6 +1,9 @@
 use crate::logging::LogFormat;
 use crate::output::OutputMode;
+use crate::thermal::{LimitOverride, parse_celsius, parse_duration};
+use chrono::TimeDelta;
 use clap::{Args, Parser, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Args, Clone, Debug)]
 pub struct GenerateCompletionsArgs {
@@ -142,6 +145,88 @@ pub struct PinArgs {
 }
 
 #[derive(Args, Clone, Debug)]
+pub struct ThermalLimitArgs {
+    /// Alert when a temperature reaches this many °C, unless a --limit matches it.
+    #[arg(long, value_name = "CELSIUS", default_value = "90", value_parser = parse_celsius)]
+    pub alert_at: f64,
+
+    /// Per-sensor limit; PATTERN matches sensor names case-insensitively as a
+    /// substring. Repeatable; the first match wins.
+    #[arg(long = "limit", value_name = "PATTERN=CELSIUS")]
+    pub limits: Vec<LimitOverride>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ThermalLogArgs {
+    /// Directory of daily JSONL sample files [default: /var/log/flow-thermal on
+    /// Linux, ~/Library/Logs/flow-thermal on macOS].
+    #[arg(long, env = "FLOW_THERMAL_LOG_DIR")]
+    pub log_dir: Option<PathBuf>,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ThermalReadArgs {
+    #[command(flatten)]
+    pub limits: ThermalLimitArgs,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ThermalSampleArgs {
+    #[command(flatten)]
+    pub limits: ThermalLimitArgs,
+
+    #[command(flatten)]
+    pub log: ThermalLogArgs,
+
+    /// Days of log files to keep, today included.
+    #[arg(long, default_value_t = 7, value_parser = clap::value_parser!(u32).range(1..))]
+    pub keep_days: u32,
+
+    /// Show a desktop notification when a sensor starts alerting.
+    #[arg(long, default_value_t = false)]
+    pub notify: bool,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ThermalHistoryArgs {
+    #[command(flatten)]
+    pub log: ThermalLogArgs,
+
+    /// Window to summarize, such as 90s, 30m, 2h or 7d.
+    #[arg(long, default_value = "1h", value_parser = parse_duration)]
+    pub since: TimeDelta,
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ThermalBarArgs {
+    #[command(flatten)]
+    pub log: ThermalLogArgs,
+
+    /// Report the log as stale when its newest sample is older than this.
+    #[arg(long, default_value = "5m", value_parser = parse_duration)]
+    pub stale_after: TimeDelta,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum ThermalCommands {
+    /// Read every available sensor now, without logging.
+    Read(ThermalReadArgs),
+    /// Read every available sensor, append the sample to the log, and warn
+    /// about sensors that start alerting. Meant for a timer.
+    Sample(ThermalSampleArgs),
+    /// Summarize logged samples per sensor: latest, min, max, and alerts.
+    History(ThermalHistoryArgs),
+    /// Print the newest logged sample as an i3status-rust custom block.
+    Bar(ThermalBarArgs),
+}
+
+#[derive(Args, Clone, Debug)]
+pub struct ThermalArgs {
+    #[command(subcommand)]
+    pub command: ThermalCommands,
+}
+
+#[derive(Args, Clone, Debug)]
 pub struct CommonArgs {
     /// Enable automation-safe behavior (no prompts, stable output/logging defaults).
     #[arg(global = true, long, default_value_t = false)]
@@ -180,6 +265,8 @@ pub enum Commands {
     Search(SearchArgs),
     /// Check and bump manually pinned upstream binaries in the dotfiles repo.
     Pin(PinArgs),
+    /// Read and log temperatures and fan speeds from the BMC and the OS.
+    Thermal(ThermalArgs),
     /// Generate shell completions.
     GenerateCompletions(GenerateCompletionsArgs),
 }
@@ -190,6 +277,7 @@ impl Commands {
             Self::Doctor(_) => "doctor",
             Self::Search(_) => "search",
             Self::Pin(_) => "pin",
+            Self::Thermal(_) => "thermal",
             Self::GenerateCompletions(_) => "generate-completions",
         }
     }

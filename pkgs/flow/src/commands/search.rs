@@ -770,9 +770,11 @@ mod tests {
         )
         .expect_err("query should fail");
 
-        assert!(error
-            .to_string()
-            .contains("search query has no enabled backends"));
+        assert!(
+            error
+                .to_string()
+                .contains("search query has no enabled backends")
+        );
     }
 
     #[test]
