@@ -12,14 +12,21 @@ findings.
 ## 1. Pick the scope
 
 Use the scope the user names: a path, a commit, a range, a PR number, or
-"everything". Otherwise take the first of these that is non-empty:
+"everything". Otherwise review the work in progress, committed or not:
 
-1. **Uncommitted work:** `git diff HEAD` plus untracked files
-   (`git ls-files --others --exclude-standard`).
-2. **The branch, as a PR would show it:** `git diff $(git merge-base HEAD <base>)`,
-   where `<base>` is the upstream default branch (`origin/HEAD`, else
-   `origin/main` or `origin/master`). Skip this step on the default branch itself.
-3. **The last commit:** `git show HEAD`.
+The default branch is the one `origin/HEAD` points to, else `main` or
+`master`. Use the refs you have; do not fetch.
+
+- **On a feature branch:** everything since it left the default branch,
+  through the working tree, including commits already pushed to the branch:
+  `git diff $(git merge-base HEAD <base>)` plus untracked files
+  (`git ls-files --others --exclude-standard`). `<base>` is `origin/HEAD`,
+  else the local default branch.
+- **On the default branch:** unpushed commits plus uncommitted work:
+  `git diff @{upstream}` plus untracked files, or `git diff HEAD` when there is
+  no upstream. If that is empty, the last commit: `git show HEAD`.
+
+Every line of an untracked file counts as added.
 
 For a range, diff its endpoints (`git diff A..B`), so a file added and later
 edited counts once. For a PR number, use `gh pr diff <N>`. Say which scope you
@@ -37,7 +44,8 @@ makes them worse.
 
 A comment earns its place when it says what the code cannot: why, an
 invariant, a failure contract (errors, panics, safety), or a non-obvious
-external constraint. Doc comments on public items are allowed. Flag:
+external constraint. Doc comments (`///`, `//!`, docstrings, JSDoc) are
+always allowed. Flag:
 
 - comments that restate the code (`// increment the counter`)
 - narration of the change or history (`// now uses the new API`, `// fixed`)
@@ -82,9 +90,6 @@ same behavior:
 - deep nesting or flag variables that early returns or a `match` would flatten
 - hand-rolled code the standard library or an existing project helper does
 - duplicated logic that one function would serve
-- avoidable allocations, copies, or repeated work in compiled code, but only
-  on a path that runs often (per item, per request, in a loop); a one-off
-  copy is not a finding
 
 Report a simplification only if you can name the simpler form. "This is
 complex" without the alternative is not a finding.
@@ -103,7 +108,8 @@ complex" without the alternative is not a finding.
 
 ## 4. Report
 
-Group findings by category, most important first. For each finding give:
+Report sections in this order: Bugs, Comments, Tests, Simplicity, Unsure.
+Within each, put the most important finding first. For each finding give:
 
 - **Where:** `path:line`
 - **What:** the problem, in one sentence
@@ -112,5 +118,5 @@ Group findings by category, most important first. For each finding give:
 - **Confidence:** high or medium. Leave out low-confidence findings, or list
   them under "Unsure" with the reason.
 
-End with the counts per category. If a category has nothing, say "none" so
+End with the count for each section. If a section has nothing, say "none" so
 the reader knows you checked. Then offer to apply the high-confidence fixes.
