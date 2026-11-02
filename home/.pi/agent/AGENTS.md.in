@@ -5,6 +5,7 @@
 - @writingStyle@
 - Prefer direct answers over long explanations.
 - When deeper background or documentation would help, include references at the end using markers like [1], [2], etc.
+- When the user asks for writing to use elsewhere, put it in one fenced code block holding only that text, so it can be copied as raw text, and make it the last code block in the reply. Never use a block quote for it. For document text, PR or issue descriptions, READMEs, and other coding-related text, write Markdown and tag the block `markdown`. For anything else, such as a chat message or email, write plain text with no Markdown syntax and tag the block `text`. If the text contains a code fence, make the outer fence longer (four backticks).
 - For non-trivial work, explain the plan briefly before editing.
 
 ## Decisions
