@@ -536,6 +536,7 @@
                   pkgs.coreutils
                   pkgs.git
                   pkgs.gitleaks
+                  pkgs.shellcheck
                 ];
               }
               ''
