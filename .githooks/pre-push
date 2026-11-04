@@ -21,6 +21,14 @@ has_strict_mode() {
 		return 0
 	fi
 
+	# House style (rustup-init.sh): POSIX sh with `set -u`, explicit
+	# ensure/err failure paths, and a final `main "$@" || exit 1` so a
+	# truncated script runs nothing.
+	if grep -Eq '^[[:space:]]*set[[:space:]]+-u[[:space:]]*$' "$file" &&
+		[ "$(tail -n 1 "$file")" = 'main "$@" || exit 1' ]; then
+		return 0
+	fi
+
 	return 1
 }
 
@@ -137,7 +145,7 @@ else
 		case "$file" in
 		bin/*.sh | .githooks/pre-push)
 			if ! has_strict_mode "$file"; then
-				echo "pre-push: $file missing strict mode (set -euo pipefail)" >&2
+				echo "pre-push: $file missing strict mode (set -euo pipefail, or set -u ending in main \"\$@\" || exit 1)" >&2
 				failed=1
 			fi
 			;;
