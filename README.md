@@ -363,6 +363,21 @@ made by `omp wt add` from the current HEAD; uncommitted changes stay behind. Eve
 path, branch and worktree entry is checked before anything is created. The
 terminal is tmux inside tmux, else WezTerm; `--terminal wezterm|tmux` overrides.
 
+## Agent feedback userscript
+
+[`userscripts/agent-feedback.user.js`](userscripts/agent-feedback.user.js)
+collects page feedback for a coding agent. Alt/Option+right-click an element,
+type a note, and press Enter. The corner badge's **Copy & clear** copies every
+note for the current origin as one JSON document, with URL, time, element
+selector and attributes, selection, and browser context. It clears only the
+notes it copied.
+
+Home Manager links it to
+`~/.local/share/userscripts/agent-feedback.user.js`. Install it in
+Tampermonkey or Violentmonkey; in Chrome 138+, enable **Allow User Scripts** on
+the extension's details page. For a one-off session, paste it into the DevTools
+console.
+
 ## Thermal logging
 
 `flow thermal` reads temperatures from the BMC (`ipmitool sdr`, where the board

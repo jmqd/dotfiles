@@ -31,6 +31,7 @@ in
     ".local/bin/lint-secrets".source = ../bin/lint-secrets.sh;
     ".local/bin/omp-fan-out".source = ../bin/omp-fan-out.sh;
     ".local/bin/setup-git-hooks".source = ../bin/setup-git-hooks.sh;
+    ".local/share/userscripts/agent-feedback.user.js".source = ../userscripts/agent-feedback.user.js;
     ".sqliterc".source = ../.sqliterc;
 
     ".claude/CLAUDE.md".source = agentInstructions;
