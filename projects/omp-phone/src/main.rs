@@ -828,7 +828,7 @@ mod tests {
     use webauthn_authenticator_rs::{softpasskey::SoftPasskey, WebauthnAuthenticator};
     use webauthn_rs::prelude::*;
 
-    type Key = WebauthnAuthenticator<SoftPasskey>;
+    type Key = SoftPasskey;
 
     fn enroll_test_key(config: &Config, name: &str) -> (Key, auth::Record) {
         auth::enroll(config, name).unwrap();
@@ -842,7 +842,7 @@ mod tests {
         let (options, cookie) = auth
             .start_registration("owner@example.com", pending["secret"].as_str().unwrap())
             .unwrap();
-        let mut key = Key::new(SoftPasskey::new(true));
+        let mut key = Key::new(true);
         let response = key
             .do_registration(Url::parse(&config.origin).unwrap(), options)
             .unwrap();
@@ -1382,7 +1382,7 @@ mod tests {
         assert!(auth.start_registration(login, "incorrect").is_err());
         let (options, cookie) = auth.start_registration(login, secret).unwrap();
         assert!(auth.start_registration(login, secret).is_err());
-        let mut second = Key::new(SoftPasskey::new(true));
+        let mut second = Key::new(true);
         let response = second
             .do_registration(Url::parse(&app.config.origin).unwrap(), options)
             .unwrap();
