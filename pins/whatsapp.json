@@ -1,9 +1,9 @@
 {
-  "version": "2.26.44.15",
+  "version": "2.26.44.21",
   "sources": {
     "aarch64-darwin": {
-      "url": "https://web.whatsapp.com/desktop/mac_native/release/?version=2.26.44.15&extension=zip&configuration=Release&branch=master&is_buck=true",
-      "hash": "sha256-U3Fr5Gg2L6e2Bdu/qWIVYuWQ1xPER9fuTLo39Q6j/4U="
+      "url": "https://web.whatsapp.com/desktop/mac_native/release/?version=2.26.44.21&extension=zip&configuration=Release&branch=master&is_buck=true",
+      "hash": "sha256-JmVUdzjQ8pnuclM9GlgBYlaYgR2PgJ5YUAmRMuqcSxM="
     }
   }
 }
