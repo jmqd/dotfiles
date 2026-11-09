@@ -1,7 +1,9 @@
 symbolPreset: nerd
 theme:
   light: light
-setupVersion: 2
+# Match omp's CURRENT_SETUP_VERSION; a lower value makes omp write this
+# read-only file at startup to record the setup wizard as complete.
+setupVersion: 3
 # Claude Opus 5.5 is the default across every OMP role.
 modelRoles:
   # Startup uses medium reasoning.
