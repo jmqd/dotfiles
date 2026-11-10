@@ -366,7 +366,8 @@ govulncheck_notion_cli() {
 			GO-2026-6617 \
 			GO-2026-6629 \
 			GO-2026-6860 \
-			GO-2026-6866
+			GO-2026-6866 \
+			GO-2026-6911
 	fi
 }
 
@@ -431,7 +432,8 @@ main() {
 		"voxtype (pkgs/voxtype)" \
 		"pkgs/voxtype/Cargo.lock" \
 		RUSTSEC-2026-0194 \
-		RUSTSEC-2026-0195
+		RUSTSEC-2026-0195 \
+		RUSTSEC-2026-0459
 
 	govulncheck_notion_cli "$notion_src"
 

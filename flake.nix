@@ -207,10 +207,11 @@
           upstream = voxtype.packages.${system};
           # Upstream's lock keeps webpki-roots and rustls-webpki releases that
           # trust the compromised eMudhra intermediates (RUSTSEC-2026-0381 to
-          # 0383), plus rustls and quinn-proto releases with open advisories.
-          # pkgs/voxtype/Cargo.lock is upstream's lock after
+          # 0383), plus rustls, quinn-proto and openssl releases with open
+          # advisories. pkgs/voxtype/Cargo.lock is upstream's lock after
           #   cargo update -p rustls-webpki -p webpki-roots@<old> \
-          #     -p webpki-root-certs -p rustls -p quinn-proto -p bytes -p crossbeam-epoch
+          #     -p webpki-root-certs -p rustls -p quinn-proto -p bytes \
+          #     -p crossbeam-epoch -p openssl -p openssl-sys
           # Regenerate it on each voxtype bump; drop it once upstream catches up.
           lockFile = ./pkgs/voxtype/Cargo.lock;
           unwrapped = upstream.voxtype-vulkan-unwrapped.overrideAttrs (old: {
