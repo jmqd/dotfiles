@@ -13,6 +13,7 @@
       "original": {
         "owner": "djgoku",
         "repo": "sops",
+        "rev": "07fd550969fe164f71aab89c93338f8993fbd9e6",
         "type": "github"
       }
     },

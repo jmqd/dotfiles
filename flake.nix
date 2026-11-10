@@ -15,8 +15,10 @@
       url = "github:lox/notion-cli/v0.6.0";
       flake = false;
     };
+    # Pinned to a release: this package handles decrypted secrets in every
+    # Emacs session, so `nix flake update` must not move it unreviewed.
     emacs-sops = {
-      url = "github:djgoku/sops";
+      url = "github:djgoku/sops/v0.2.1";
       flake = false;
     };
     trueflow = {
