@@ -18,7 +18,8 @@ against a session. Requires OMP 18.1.11 or newer.
 
 Home Manager installs the companion, registers the extension alongside existing
 extensions, and starts a user service on macOS/Linux when custom CLI packages
-are enabled. Set the **machine-specific** HTTPS URL and authorization in your host module:
+are enabled and `services.omp-phone.publicUrl` is set. Set the
+**machine-specific** HTTPS URL and authorization in your host module:
 
 ```nix
 services.omp-phone = {
@@ -165,6 +166,11 @@ image previews. Disconnected sessions disappear; stale replies are rejected.
 and subscriptions live under `~/.local/state/omp-phone`, never in the Nix store.
 Restarting the companion requires signing in again with the security key; push
 subscriptions persist. Disable notifications before signing out to stop them.
+
+Every write request under `/api/` (sign-in, prompt, stop, sign-out, push
+subscription) is recorded as one line with the time, Tailscale login, method,
+path and status, never the body. On macOS the lines go to
+`~/Library/Logs/omp-phone.log`, which launchd does not rotate.
 
 For development without activating Home Manager:
 
