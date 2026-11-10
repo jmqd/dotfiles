@@ -44,6 +44,8 @@ const COOKIE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const ACK_TIMEOUT: Duration = Duration::from_secs(15);
 const HTTP_CONNECTIONS: u32 = 128;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(250);
+const LOGIN_CHECK_INTERVAL: Duration = Duration::from_secs(15);
 
 struct App {
     config: Config,
@@ -669,9 +671,13 @@ async fn events(State(app): State<Arc<App>>, headers: HeaderMap) -> impl IntoRes
     let mut updates = app.events.subscribe();
     let mut shutdown = app.shutdown.subscribe();
     let stream = async_stream::stream! {
-        let mut check_login = tokio::time::interval(Duration::from_secs(15));
+        let mut check_login = tokio::time::interval_at(
+            tokio::time::Instant::now() + LOGIN_CHECK_INTERVAL,
+            LOGIN_CHECK_INTERVAL,
+        );
         loop {
             if *shutdown.borrow() || !authenticated(&app, &headers) { break; }
+            let sent = tokio::time::Instant::now();
             let snapshot = app.registry.lock().snapshot(&app.config.hostname);
             yield Ok::<_, Infallible>(Event::default().event("sessions").json_data(snapshot).expect("serializable session"));
             tokio::select! {
@@ -679,6 +685,16 @@ async fn events(State(app): State<Arc<App>>, headers: HeaderMap) -> impl IntoRes
                 _ = shutdown.changed() => { break; },
                 _ = check_login.tick() => {},
             }
+            // Each snapshot carries every transcript, so a burst of updates yields one.
+            tokio::select! {
+                _ = tokio::time::sleep_until(sent + SNAPSHOT_INTERVAL) => {},
+                _ = shutdown.changed() => { break; },
+            }
+            // Queued and lagged notifications are covered by the next snapshot.
+            while matches!(
+                updates.try_recv(),
+                Ok(()) | Err(broadcast::error::TryRecvError::Lagged(_))
+            ) {}
         }
     };
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))
@@ -1271,6 +1287,78 @@ mod tests {
                 StatusCode::FORBIDDEN
             );
         }
+    }
+
+    #[tokio::test]
+    async fn event_stream_coalesces_a_burst_of_updates() {
+        let (app, _dir, mut key) = test_app();
+        let routes = router(app.clone());
+        let signed = signed_login(&routes, &mut key).await;
+        assert_eq!(signed.status(), StatusCode::OK);
+        let cookie = signed.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        let opened = tokio::time::Instant::now();
+        let response = routes
+            .oneshot(request(
+                Method::GET,
+                "/api/events",
+                None,
+                Some(cookie),
+                json!({}),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body().into_data_stream();
+        let initial = tokio::time::timeout(Duration::from_secs(5), body.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(String::from_utf8_lossy(&initial).starts_with("event: sessions"));
+
+        let (commands, _receive) = mpsc::channel(1);
+        for update in 0..10 {
+            let session = Session {
+                id: "busy".into(),
+                title: "title".into(),
+                cwd: "/tmp".into(),
+                state: sessions::SessionState::Working,
+                messages: vec![],
+                partial: format!("update-{update}"),
+                changed_at: 0,
+            };
+            app.registry
+                .lock()
+                .update(1, session, commands.clone())
+                .unwrap();
+            let _ = app.events.send(());
+        }
+        let mut frames = Vec::new();
+        let mut first_arrival = None;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+        while let Ok(Some(frame)) = tokio::time::timeout_at(deadline, body.next()).await {
+            first_arrival.get_or_insert_with(tokio::time::Instant::now);
+            frames.push(String::from_utf8(frame.unwrap().to_vec()).unwrap());
+        }
+        // The initial snapshot was taken after `opened`; the next waits out the interval.
+        assert!(first_arrival.unwrap() >= opened + SNAPSHOT_INTERVAL);
+        assert!(
+            frames
+                .iter()
+                .all(|frame| frame.starts_with("event: sessions")),
+            "{frames:?}"
+        );
+        assert!(
+            (1..=2).contains(&frames.len()),
+            "{} snapshots for 10 updates",
+            frames.len()
+        );
+        assert!(frames.last().unwrap().contains("update-9"), "{frames:?}");
     }
 
     #[tokio::test]
