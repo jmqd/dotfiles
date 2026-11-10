@@ -1,6 +1,6 @@
 {
   lib,
-  makeWrapper,
+  makeBinaryWrapper,
   pkg-config,
   rustPlatform,
   sqlite,
@@ -24,7 +24,7 @@ rustPlatform.buildRustPackage rec {
   cargoLock.lockFile = ./Cargo.lock;
 
   nativeBuildInputs = [
-    makeWrapper
+    makeBinaryWrapper
     pkg-config
   ];
   buildInputs = [ sqlite ];
