@@ -36,6 +36,9 @@ in
   programs.zsh = {
     enable = true;
     enableCompletion = true;
+    # /bin/zsh and the Nix zsh differ in version and fpath. Sharing one dump
+    # makes each rebuild it (about 1 s) whenever the other ran last.
+    completionInit = ''autoload -U compinit && compinit -d "''${ZDOTDIR:-$HOME}/.zcompdump-$ZSH_VERSION"'';
 
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
