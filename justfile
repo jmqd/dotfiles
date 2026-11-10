@@ -1,4 +1,5 @@
 set shell := ["bash", "-euo", "pipefail", "-c"]
+set positional-arguments
 
 default:
     @just --list
@@ -13,7 +14,7 @@ audit-deps:
     bin/audit-deps.sh
 
 clean-stale *args:
-    bin/clean-stale.sh {{args}}
+    bin/clean-stale.sh "$@"
 
 lint-secrets:
     bin/lint-secrets.sh
