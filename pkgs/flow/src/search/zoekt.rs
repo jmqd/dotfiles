@@ -1,3 +1,4 @@
+use crate::logging::tracing;
 use crate::search::config::SearchConfig;
 use crate::search::repo::DiscoveredRepo;
 use anyhow::{Context as _, bail};
@@ -29,10 +30,13 @@ pub struct ZoektReindexStats {
     pub repo_names: BTreeMap<PathBuf, String>,
 }
 
+/// `previous_names` maps repo paths to the zoekt names the last reindex
+/// recorded; zoekt writes no shard for a repo it skips as up to date.
 pub fn reindex(
     config: &SearchConfig,
     zoekt_git_index_bin: &str,
     repos: &[DiscoveredRepo],
+    previous_names: &BTreeMap<PathBuf, String>,
 ) -> anyhow::Result<ZoektReindexStats> {
     config.ensure_state_dirs()?;
     let temporary_root = TempDir::new_in(&config.zoekt_dir).with_context(|| {
@@ -44,42 +48,46 @@ pub fn reindex(
     let temporary_index_dir = temporary_root.path().join("index");
     fs::create_dir_all(&temporary_index_dir)
         .with_context(|| format!("failed to create {}", temporary_index_dir.display()))?;
+    seed_with_current_shards(&config.zoekt_index_dir, &temporary_index_dir)?;
 
     let mut repo_names = BTreeMap::new();
     for repo in repos {
-        let repo_cache = repo.root.as_ref().unwrap_or(&repo.path);
-        let index_display = temporary_index_dir.display().to_string();
-        let repo_cache_display = repo_cache.display().to_string();
-        let repo_display = repo.path.display().to_string();
-        let before = shard_files(&temporary_index_dir)?;
-        let output = Command::new(zoekt_git_index_bin)
-            .arg("-index")
-            .arg(&index_display)
-            .arg("-repo_cache")
-            .arg(&repo_cache_display)
-            .arg(&repo_display)
-            .output()
-            .with_context(|| {
-                format!(
-                    "failed to run {} for {}",
-                    zoekt_git_index_bin,
-                    repo.path.display()
-                )
-            })?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-            bail!(
-                "zoekt indexing failed for {}: {stderr}",
-                repo.path.display()
-            );
+        let mut written =
+            run_zoekt_git_index(zoekt_git_index_bin, &temporary_index_dir, repo, true)?;
+        if written.is_empty() {
+            let shards = shard_files(&temporary_index_dir)?;
+            let has_shard = |name: &str| {
+                shards
+                    .keys()
+                    .any(|file_name| repo_name_from_shard(file_name).as_deref() == Some(name))
+            };
+            if let Some(name) = previous_names
+                .get(&repo.path)
+                .filter(|name| has_shard(name))
+            {
+                repo_names.insert(repo.path.clone(), name.clone());
+                continue;
+            }
+            // No record says which up-to-date shard is this repo's, so write it
+            // again to learn its name.
+            written = run_zoekt_git_index(zoekt_git_index_bin, &temporary_index_dir, repo, false)?;
         }
-        let written = shard_files(&temporary_index_dir)?
-            .into_iter()
-            .filter(|(file_name, identity)| before.get(file_name) != Some(identity))
-            .map(|(file_name, _)| file_name);
         let name = written_repo_name(written)
             .with_context(|| format!("reading the zoekt shard for {}", repo.path.display()))?;
         repo_names.insert(repo.path.clone(), name);
+    }
+
+    // Shards of repos that are gone or no longer indexable came along with the
+    // seed; they must not stay searchable.
+    let current_names: BTreeSet<&str> = repo_names.values().map(String::as_str).collect();
+    for file_name in shard_files(&temporary_index_dir)?.into_keys() {
+        let is_current = repo_name_from_shard(&file_name)
+            .is_some_and(|name| current_names.contains(name.as_str()));
+        if !is_current {
+            let path = temporary_index_dir.join(&file_name);
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+        }
     }
 
     if config.zoekt_index_dir.exists() {
@@ -98,6 +106,64 @@ pub fn reindex(
         indexed_repo_count: repos.len(),
         repo_names,
     })
+}
+
+/// Hard-links the live shards into the new index directory, so
+/// `zoekt-git-index` skips repos whose shards are up to date. zoekt replaces a
+/// shard by renaming a new file over it, which leaves the live link intact.
+/// If linking fails, the new index starts empty and every repo is indexed.
+fn seed_with_current_shards(current: &Path, temporary: &Path) -> anyhow::Result<()> {
+    if !current.exists() {
+        return Ok(());
+    }
+    for file_name in shard_files(current)?.into_keys() {
+        if let Err(error) = fs::hard_link(current.join(&file_name), temporary.join(&file_name)) {
+            tracing::warn!(error = %error, "cannot link the current zoekt shards; indexing every repo");
+            fs::remove_dir_all(temporary)
+                .and_then(|()| fs::create_dir_all(temporary))
+                .with_context(|| format!("failed to empty {}", temporary.display()))?;
+            return Ok(());
+        }
+    }
+    Ok(())
+}
+
+/// Runs `zoekt-git-index` for one repo and returns the shard files it wrote.
+fn run_zoekt_git_index(
+    zoekt_git_index_bin: &str,
+    index_dir: &Path,
+    repo: &DiscoveredRepo,
+    incremental: bool,
+) -> anyhow::Result<Vec<String>> {
+    let repo_cache = repo.root.as_ref().unwrap_or(&repo.path);
+    let before = shard_files(index_dir)?;
+    let output = Command::new(zoekt_git_index_bin)
+        .arg(format!("-incremental={incremental}"))
+        .arg("-index")
+        .arg(index_dir)
+        .arg("-repo_cache")
+        .arg(repo_cache)
+        .arg(&repo.path)
+        .output()
+        .with_context(|| {
+            format!(
+                "failed to run {} for {}",
+                zoekt_git_index_bin,
+                repo.path.display()
+            )
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        bail!(
+            "zoekt indexing failed for {}: {stderr}",
+            repo.path.display()
+        );
+    }
+    Ok(shard_files(index_dir)?
+        .into_iter()
+        .filter(|(file_name, identity)| before.get(file_name) != Some(identity))
+        .map(|(file_name, _)| file_name)
+        .collect())
 }
 
 /// Each shard file by name, with the identity of the file behind the name.

@@ -9,8 +9,8 @@ use crate::search::dirty;
 use crate::search::lock::FileLock;
 use crate::search::metadata::{self, CommitMatch, CommitSearchFilters};
 use crate::search::repo::{
-    DiscoveredRepo, discover_repos, repo_from_working_dir, repo_has_head, resolve_repo_selector,
-    write_repo_records,
+    DiscoveredRepo, discover_repos, load_repo_records, repo_from_working_dir, repo_has_head,
+    resolve_repo_selector, write_repo_records,
 };
 use crate::search::zoekt::{self, ZoektMatch};
 use crate::search::{SearchTools, join_query_terms, normalize_query_terms};
@@ -339,7 +339,22 @@ fn execute_reindex(
         }
     }
 
-    let zoekt_stats = zoekt::reindex(config, &tools.zoekt_git_index_bin, &indexable_repos)?;
+    // The manifest only saves work here, so a damaged one must not block the
+    // reindex that rewrites it.
+    let previous_repos = load_repo_records(config).unwrap_or_else(|error| {
+        tracing::warn!(error = %format!("{error:#}"), "ignoring unreadable repo manifest");
+        Vec::new()
+    });
+    let previous_names = previous_repos
+        .into_iter()
+        .filter_map(|repo| Some((repo.path, repo.zoekt_name?)))
+        .collect();
+    let zoekt_stats = zoekt::reindex(
+        config,
+        &tools.zoekt_git_index_bin,
+        &indexable_repos,
+        &previous_names,
+    )?;
     let metadata_stats = metadata::reindex(config, &tools.git_bin, &indexable_repos)?;
     for repo in &mut discovered_repos {
         repo.zoekt_name = zoekt_stats.repo_names.get(&repo.path).cloned();

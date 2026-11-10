@@ -66,7 +66,7 @@ That command:
 
 - discovers git repos under the configured roots
 - skips repos that do not have a `HEAD` commit yet
-- rebuilds the Zoekt index from scratch
+- rebuilds the Zoekt index in a new directory seeded with hard links to the current shards, so `zoekt-git-index` skips repos whose shards are up to date; shards of repos that are gone or have no `HEAD` are deleted before the new directory replaces the old one (if the links cannot be made, every repo is indexed from scratch)
 - rebuilds the commit metadata SQLite database from scratch
 - rewrites the repo manifest used for repo selection/status, including the name Zoekt gave each repo (Zoekt names a repo with an `origin` remote after the remote URL, so `--repo` code search filters on that name rather than the directory name)
 
