@@ -75,7 +75,12 @@ fn parse_args() -> Result<Option<Args>> {
     let client_id = client_id
         .filter(|id| !id.is_empty())
         .ok_or("set SPOTIFY_CLIENT_ID or pass --client-id")?;
-    Ok(Some(Args { playlist, output, client_id, port }))
+    Ok(Some(Args {
+        playlist,
+        output,
+        client_id,
+        port,
+    }))
 }
 
 fn main() -> ExitCode {
@@ -102,7 +107,10 @@ fn main() -> ExitCode {
 fn run(args: &Args) -> Result<()> {
     let http = Client::builder().user_agent("spotify-export/0.1").build()?;
     let token = access_token(&http, args)?;
-    let api = Api { http: &http, token: &token };
+    let api = Api {
+        http: &http,
+        token: &token,
+    };
 
     let playlist_id = match playlist_id_from_ref(&args.playlist) {
         Some(id) => id,
@@ -235,7 +243,10 @@ fn find_playlist_by_name(api: &Api, name: &str) -> Result<String> {
         0 => Err(format!("no playlist named {name:?} in your library").into()),
         1 => Ok(matches.remove(0).id),
         _ => {
-            let mut msg = format!("{} playlists are named {name:?}; pass one as a URI:", matches.len());
+            let mut msg = format!(
+                "{} playlists are named {name:?}; pass one as a URI:",
+                matches.len()
+            );
             for p in &matches {
                 let owner = p.owner.display_name.as_deref().unwrap_or(&p.owner.id);
                 msg.push_str(&format!("\n  spotify:playlist:{}  (owner: {owner})", p.id));
@@ -286,7 +297,13 @@ fn export(api: &Api, playlist_id: &str, out: &mut dyn Write) -> Result<usize> {
 fn write_row(out: &mut dyn Write, position: usize, entry: PlaylistItem) -> Result<()> {
     let media = entry.item.or(entry.track);
     let m = media.as_ref();
-    let joined = |names: &[Named]| names.iter().map(|n| n.name.as_str()).collect::<Vec<_>>().join("; ");
+    let joined = |names: &[Named]| {
+        names
+            .iter()
+            .map(|n| n.name.as_str())
+            .collect::<Vec<_>>()
+            .join("; ")
+    };
     let opt = |v: Option<String>| v.unwrap_or_default();
     let num = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_default();
 
@@ -311,19 +328,29 @@ fn write_row(out: &mut dyn Write, position: usize, entry: PlaylistItem) -> Resul
         opt(m.and_then(|m| m.explicit).map(|b| b.to_string())),
         num(m.and_then(|m| m.disc_number).map(u64::from)),
         num(m.and_then(|m| m.track_number).map(u64::from)),
-        opt(m.and_then(|m| m.external_ids.as_ref()).and_then(|e| e.isrc.clone())),
+        opt(m
+            .and_then(|m| m.external_ids.as_ref())
+            .and_then(|e| e.isrc.clone())),
         entry.is_local.to_string(),
         opt(entry.added_at),
         opt(entry.added_by.map(|u| u.display_name.unwrap_or(u.id))),
         opt(m.and_then(|m| m.uri.clone())),
-        opt(m.and_then(|m| m.external_urls.as_ref()).and_then(|u| u.spotify.clone())),
+        opt(m
+            .and_then(|m| m.external_urls.as_ref())
+            .and_then(|u| u.spotify.clone())),
     ];
     let mut line = String::new();
     for (i, field) in fields.iter().enumerate() {
         if i > 0 {
             line.push('\t');
         }
-        line.extend(field.chars().map(|c| if matches!(c, '\t' | '\n' | '\r') { ' ' } else { c }));
+        line.extend(field.chars().map(|c| {
+            if matches!(c, '\t' | '\n' | '\r') {
+                ' '
+            } else {
+                c
+            }
+        }));
     }
     writeln!(out, "{line}")?;
     Ok(())
@@ -392,7 +419,9 @@ struct TokenResponse {
 }
 
 fn now() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
 }
 
 fn token_path() -> Result<PathBuf> {
@@ -420,7 +449,9 @@ fn access_token(http: &Client, args: &Args) -> Result<String> {
             ("client_id", args.client_id.as_str()),
         ];
         match request_token(http, &form) {
-            Ok(resp) => return save_token(&path, &args.client_id, resp, Some(stored.refresh_token)),
+            Ok(resp) => {
+                return save_token(&path, &args.client_id, resp, Some(stored.refresh_token))
+            }
             Err(err) => eprintln!("spotify-export: token refresh failed ({err}); re-authorizing"),
         }
     }
@@ -432,7 +463,12 @@ fn request_token(http: &Client, form: &[(&str, &str)]) -> Result<TokenResponse> 
     Ok(send_with_retry(|| http.post(TOKEN_URL).form(form).send())?.json()?)
 }
 
-fn save_token(path: &Path, client_id: &str, resp: TokenResponse, old_refresh: Option<String>) -> Result<String> {
+fn save_token(
+    path: &Path,
+    client_id: &str,
+    resp: TokenResponse,
+    old_refresh: Option<String>,
+) -> Result<String> {
     let refresh_token = resp
         .refresh_token
         .or(old_refresh)
@@ -493,7 +529,11 @@ fn authorize_interactively(http: &Client, args: &Args) -> Result<TokenResponse> 
     )?;
 
     eprintln!("spotify-export: authorize in your browser:\n  {url}");
-    let opener = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+    let opener = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
     let _ = Command::new(opener).arg(url.as_str()).status();
 
     let code = wait_for_code(&listener, &state)?;
@@ -516,18 +556,33 @@ fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String> {
         let target = request_line.split_whitespace().nth(1).unwrap_or("/");
         let url = Url::parse(&format!("http://127.0.0.1{target}"))?;
         if url.path() != "/callback" {
-            let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            let _ = stream.write_all(
+                b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
             continue;
         }
-        let param = |key: &str| url.query_pairs().find(|(k, _)| k == key).map(|(_, v)| v.into_owned());
+        let param = |key: &str| {
+            url.query_pairs()
+                .find(|(k, _)| k == key)
+                .map(|(_, v)| v.into_owned())
+        };
         let (outcome, message) = if param("state").as_deref() != Some(state) {
-            (Err("authorization callback had a mismatched state".to_owned()), "State mismatch.")
+            (
+                Err("authorization callback had a mismatched state".to_owned()),
+                "State mismatch.",
+            )
         } else if let Some(err) = param("error") {
-            (Err(format!("authorization denied: {err}")), "Authorization failed.")
+            (
+                Err(format!("authorization denied: {err}")),
+                "Authorization failed.",
+            )
         } else if let Some(code) = param("code") {
             (Ok(code), "Authorized. You can close this tab.")
         } else {
-            (Err("authorization callback had no code".to_owned()), "Missing code.")
+            (
+                Err("authorization callback had no code".to_owned()),
+                "Missing code.",
+            )
         };
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{message}",
@@ -554,11 +609,25 @@ mod tests {
     #[test]
     fn playlist_refs() {
         let id = Some("37i9dQZF1DXcBWIGoYBM5M".to_owned());
-        assert_eq!(playlist_id_from_ref("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"), id);
-        assert_eq!(playlist_id_from_ref("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc"), id);
-        assert_eq!(playlist_id_from_ref("https://open.spotify.com/intl-de/playlist/37i9dQZF1DXcBWIGoYBM5M"), id);
+        assert_eq!(
+            playlist_id_from_ref("spotify:playlist:37i9dQZF1DXcBWIGoYBM5M"),
+            id
+        );
+        assert_eq!(
+            playlist_id_from_ref("https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=abc"),
+            id
+        );
+        assert_eq!(
+            playlist_id_from_ref(
+                "https://open.spotify.com/intl-de/playlist/37i9dQZF1DXcBWIGoYBM5M"
+            ),
+            id
+        );
         assert_eq!(playlist_id_from_ref("Road Trip"), None);
-        assert_eq!(playlist_id_from_ref("https://example.com/playlist/abc"), None);
+        assert_eq!(
+            playlist_id_from_ref("https://example.com/playlist/abc"),
+            None
+        );
         assert_eq!(playlist_id_from_ref("spotify:playlist:../me"), None);
     }
 
@@ -590,9 +659,17 @@ mod tests {
 
     #[test]
     fn row_for_removed_track_keeps_column_count() {
-        let entry: PlaylistItem = serde_json::from_value(serde_json::json!({"item": null, "track": null})).unwrap();
+        let entry: PlaylistItem =
+            serde_json::from_value(serde_json::json!({"item": null, "track": null})).unwrap();
         let mut out = Vec::new();
         write_row(&mut out, 1, entry).unwrap();
-        assert_eq!(String::from_utf8(out).unwrap().trim_end_matches('\n').split('\t').count(), COLUMNS.len());
+        assert_eq!(
+            String::from_utf8(out)
+                .unwrap()
+                .trim_end_matches('\n')
+                .split('\t')
+                .count(),
+            COLUMNS.len()
+        );
     }
 }
