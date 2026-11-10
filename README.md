@@ -526,13 +526,17 @@ file exists, remove it and rotate any personal access tokens it contained.
 
 ## git hooks
 
+The dev shell (`nix develop`, or direnv entering the checkout) sets
+`core.hooksPath` to `.githooks`. To enable the hook without it:
+
 ```bash
 bash ~/src/dotfiles/bin/setup-git-hooks.sh
 ```
 
-The pre-push hook scans both the worktree and history across all local Git
-refs. Removing a secret in a later commit does not make it safe to push;
-rotate the credential and remove it from the outgoing history first.
+The pre-push hook scans the worktree and every commit on a local Git ref that
+the remote being pushed to does not already have. Removing a secret in a later
+commit does not make it safe to push; rotate the credential and remove it from
+the outgoing history first. `bin/lint-secrets.sh --history` rescans all refs.
 
 ## nix tooling
 

@@ -609,6 +609,16 @@
                   piPkg
                   trueflowPkg
                 ];
+              # The pre-push secret scan only protects a checkout whose
+              # core.hooksPath points at .githooks, and a fresh clone's does
+              # not. Entering the dev shell at the repo root (direnv does
+              # this) turns it on.
+              shellHook = ''
+                if [ -f .githooks/pre-push ] && [ -f bin/setup-git-hooks.sh ] &&
+                  [ "$(git config --get core.hooksPath 2>/dev/null)" != .githooks ]; then
+                  git config core.hooksPath .githooks 2>/dev/null || true
+                fi
+              '';
             };
 
           };
