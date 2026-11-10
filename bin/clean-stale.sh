@@ -130,7 +130,10 @@ main() {
 # that select them, and collectors last.
 build_plan() {
 	snapshot_open_paths
-	discover | classify_discoveries
+	{
+		discover
+		discover_cache_checkouts
+	} | classify_discoveries
 	find_contained_checkouts
 	plan_rust_targets
 	plan_build_caches
@@ -874,6 +877,17 @@ discover_below \"\$@\""
 	done | parallel_runs 1 "$walker"
 }
 
+# Prints, NUL-separated, every .git in the cache roots, which discover
+# prunes or, with --root, never reaches. One find walks them all: a
+# parallel walk per entry took five times as long on a loaded Mac.
+discover_cache_checkouts() {
+	local root roots=()
+	while IFS= read -r root; do
+		roots+=("$root")
+	done < <(cache_roots)
+	find -H "${roots[@]}" -xdev -name .git \( -type d -o -type f \) -print0 -prune 2>/dev/null || true
+}
+
 # Splits discoveries into cargo target dirs (cargo's tag plus
 # .rustc_info.json; vendored crates and CARGO_HOME carry only the tag),
 # other tagged caches, git checkouts, direnv layout dirs, nix out-links,
@@ -914,11 +928,12 @@ classify_discoveries() {
 }
 
 # Collects the checkouts inside directories this run may delete whole:
-# build output, temp directories, and omp task copies.
+# build output, temp directories, caches, and omp task copies.
 find_contained_checkouts() {
 	{
 		cat "$work/rust-targets" "$work/build-caches"
 		printf '%s\n' "$home/.omp/wt" ${temp_roots[@]+"${temp_roots[@]}"}
+		cache_roots
 	} >"$work/containers"
 	awk '
 		NR == FNR { container[$0] = 1; next }
@@ -1055,16 +1070,32 @@ plan_chromium_caches() {
 	plan_each cache chromium_cache_entries "$1"
 }
 
-plan_package_caches() {
-	local gopath="${GOPATH:-$home/go}" unit
-	for unit in \
-		"$home/.npm/_cacache" "$home/.npm/_npx" "$home/.npm/_logs" \
+# Prints the package caches that plan_package_caches deletes whole.
+package_caches() {
+	local gopath="${GOPATH:-$home/go}"
+	printf '%s\n' "$home/.npm/_cacache" "$home/.npm/_npx" "$home/.npm/_logs" \
 		"$home/.bun/install/cache" "$home/.yarn/berry/cache" \
-		"${GOMODCACHE:-${gopath%%:*}/pkg/mod}"; do
+		"${GOMODCACHE:-${gopath%%:*}/pkg/mod}"
+}
+
+# Prints the directories whose entries the cache, package-cache, and
+# Xcode planners delete whole, or that they delete whole themselves.
+cache_roots() {
+	if [ "$os" = Darwin ]; then
+		printf '%s\n' "$home/Library/Caches"
+	fi
+	printf '%s\n' "$cache_home" "$home/Library/Developer/Xcode/DerivedData" \
+		"$rustup_home/downloads" "$rustup_home/tmp"
+	package_caches
+}
+
+plan_package_caches() {
+	local unit
+	while IFS= read -r unit <&3; do
 		if [ -e "$unit" ]; then
 			plan_path cache "$unit"
 		fi
-	done
+	done 3< <(package_caches)
 	plan_entries cache "$rustup_home/downloads"
 	plan_entries cache "$rustup_home/tmp"
 	# Cargo's sources and git checkouts stay: cargo cleans them by its own

@@ -284,6 +284,12 @@ file "$src/old3/target/debug/app"
 git clone -q "$origin" "$src/old3/target/dylint/clone"
 git clone -q "$origin" "$tmp/dirty-clone"
 file "$tmp/dirty-clone/wip.txt"
+# A cache entry is planned around a clone with local work in it; a clean
+# clone does not protect its entry.
+git clone -q "$origin" "$HOME/.cache/tool/repo"
+file "$HOME/.cache/tool/repo/wip.txt"
+file "$HOME/.cache/tool/index"
+git clone -q "$origin" "$HOME/.cache/clean-tool/repo"
 
 # A tree unpacked into a temp root brings its own git config, so
 # inspecting it would run the filter configured there. A repository
@@ -422,6 +428,8 @@ expected_gone=(
 	"$app_data/Browser/extensions_crx_cache"
 	"$app_data/Browser/Profile 1/Code Cache"
 	"$app_data/Team/Cache"
+	"$HOME/.cache/tool/index"
+	"$HOME/.cache/clean-tool"
 	"$HOME/.omp/wt/dead"
 	"$HOME/.omp/wt/reused"
 	"$drivers/nightly-2026-02-02-test-host"
@@ -460,6 +468,7 @@ expected_kept=(
 	"$tmp/pipe/data"
 	"$tmp/empty.log"
 	"$tmp/dirty-clone/wip.txt"
+	"$HOME/.cache/tool/repo/wip.txt"
 	"$src/old2/target/task/probe/a.txt"
 	"$tmp/filtered/a.txt"
 	"$tmp/embedding/inner/a.txt"
@@ -483,6 +492,7 @@ expected_notes=(
 	"$src/wt-locked: locked worktree"
 	"$src/old2/target/task/probe: commits no remote or tag holds"
 	"$tmp/dirty-clone: uncommitted changes"
+	"$HOME/.cache/tool/repo: uncommitted changes"
 	"$tmp/filtered: repository config can run commands; not inspected"
 	"$tmp/embedding: has submodules"
 	"$HOME/.omp/wt/dirty/m: uncommitted changes (orphaned omp task copy)"
