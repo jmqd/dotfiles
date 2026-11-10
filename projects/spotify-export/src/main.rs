@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::fs;
-use std::io::{self, BufRead, BufReader, Write};
-use std::net::TcpListener;
+use std::io::{self, BufRead, BufReader, Read, Write};
+use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 use std::thread::sleep;
@@ -29,6 +29,9 @@ const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 const SCOPES: &str = "playlist-read-private playlist-read-collaborative";
 const DEFAULT_PORT: u16 = 8888;
 const MAX_RETRIES: u32 = 5;
+const MAX_RETRY_WAIT_SECS: u64 = 60;
+const CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const MAX_REQUEST_LINE_BYTES: u64 = 8192;
 
 const USAGE: &str = "\
 usage: spotify-export [options] <playlist>
@@ -398,7 +401,7 @@ fn next_page_url(next: Option<String>) -> Result<Option<String>> {
     }
 }
 
-/// Retry rate limits (honoring Retry-After) and transient 5xx, a bounded number of times.
+/// Retry rate limits (honoring a short Retry-After) and transient 5xx, a bounded number of times.
 fn send_with_retry(send: impl Fn() -> reqwest::Result<Response>) -> Result<Response> {
     for attempt in 0..=MAX_RETRIES {
         let resp = send()?;
@@ -417,16 +420,31 @@ fn send_with_retry(send: impl Fn() -> reqwest::Result<Response>) -> Result<Respo
             };
             return Err(format!("{status} from {url}: {}{hint}", body.trim()).into());
         }
-        let wait = resp
+        let retry_after = resp
             .headers()
             .get("retry-after")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(1u64 << attempt);
+            .and_then(|v| v.to_str().ok());
+        let wait = retry_wait(retry_after, attempt)
+            .map_err(|e| format!("{status} from {}: {e}", resp.url()))?;
         eprintln!("spotify-export: {status}, retrying in {wait}s");
         sleep(Duration::from_secs(wait));
     }
     unreachable!("loop returns on the final attempt")
+}
+
+/// Seconds to wait before retrying after failed attempt `attempt`: the
+/// server's Retry-After seconds if given, else exponential backoff. Spotify
+/// can ask for hours, so a wait above `MAX_RETRY_WAIT_SECS` fails the run.
+fn retry_wait(retry_after: Option<&str>, attempt: u32) -> Result<u64, String> {
+    let wait = retry_after
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1u64 << attempt);
+    if wait > MAX_RETRY_WAIT_SECS {
+        return Err(format!(
+            "rate limited for {wait}s (over the {MAX_RETRY_WAIT_SECS}s limit); try again later"
+        ));
+    }
+    Ok(wait)
 }
 
 // -------------------------------------------------------------------- auth
@@ -579,8 +597,13 @@ fn authorize_interactively(http: &Client, args: &Args) -> Result<TokenResponse> 
 fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String> {
     for _ in 0..20 {
         let (mut stream, _) = listener.accept()?;
-        let mut request_line = String::new();
-        BufReader::new(&stream).read_line(&mut request_line)?;
+        let request_line = match read_request_line(&stream, CALLBACK_READ_TIMEOUT) {
+            Ok(line) => line,
+            Err(err) => {
+                eprintln!("spotify-export: ignoring callback connection: {err}");
+                continue;
+            }
+        };
         let target = request_line.split_whitespace().nth(1).unwrap_or("/");
         let url = Url::parse(&format!("http://127.0.0.1{target}"))?;
         if url.path() != "/callback" {
@@ -620,6 +643,21 @@ fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String> {
         return outcome.map_err(Into::into);
     }
     Err("too many unrelated requests on the callback port".into())
+}
+
+/// Read one HTTP request line. Any local process can connect to the callback
+/// port, so bound the wait and the size instead of trusting the client.
+fn read_request_line(stream: &TcpStream, timeout: Duration) -> io::Result<String> {
+    stream.set_read_timeout(Some(timeout))?;
+    let mut line = String::new();
+    BufReader::new(stream.take(MAX_REQUEST_LINE_BYTES)).read_line(&mut line)?;
+    if !line.ends_with('\n') {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("no request line within {MAX_REQUEST_LINE_BYTES} bytes"),
+        ));
+    }
+    Ok(line)
 }
 
 #[cfg(test)]
@@ -750,5 +788,70 @@ mod tests {
         assert_eq!(fs::read(&victim).unwrap(), b"precious");
         assert!(!out.exists());
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn retry_waits_briefly_and_refuses_long_retry_after() {
+        assert_eq!(retry_wait(Some("60"), 0), Ok(60));
+        assert_eq!(retry_wait(None, 3), Ok(8));
+        assert_eq!(retry_wait(Some("soon"), 2), Ok(4));
+        assert!(retry_wait(Some("61"), 0).is_err());
+        let err = retry_wait(Some("3600"), 0).unwrap_err();
+        assert!(err.contains("3600s"), "{err}");
+    }
+
+    /// A connected loopback pair: (client, accepted server side).
+    fn loopback_pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (server, _) = listener.accept().unwrap();
+        (client, server)
+    }
+
+    #[test]
+    fn callback_reader_returns_the_request_line() {
+        let (mut client, server) = loopback_pair();
+        client
+            .write_all(b"GET /callback?code=c HTTP/1.1\r\nHost: x\r\n\r\n")
+            .unwrap();
+        let line = read_request_line(&server, Duration::from_secs(10)).unwrap();
+        assert_eq!(line, "GET /callback?code=c HTTP/1.1\r\n");
+    }
+
+    #[test]
+    fn callback_reader_refuses_an_overlong_request_line() {
+        let (mut client, server) = loopback_pair();
+        let line = format!("GET /callback?{} HTTP/1.1\r\n", "a".repeat(9000));
+        client.write_all(line.as_bytes()).unwrap();
+        let err = read_request_line(&server, Duration::from_secs(10)).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn callback_reader_times_out_on_a_silent_client() {
+        let (_client, server) = loopback_pair();
+        let start = std::time::Instant::now();
+        let err = read_request_line(&server, Duration::from_millis(200)).unwrap_err();
+        assert!(
+            matches!(
+                err.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+            ),
+            "{err}"
+        );
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn callback_skips_a_bad_connection_and_takes_the_next() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mut flood = TcpStream::connect(addr).unwrap();
+        flood.write_all("a".repeat(9000).as_bytes()).unwrap();
+        let mut browser = TcpStream::connect(addr).unwrap();
+        browser
+            .write_all(b"GET /callback?state=s&code=c HTTP/1.1\r\n\r\n")
+            .unwrap();
+        assert_eq!(wait_for_code(&listener, "s").unwrap(), "c");
     }
 }
