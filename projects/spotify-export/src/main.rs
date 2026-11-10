@@ -122,15 +122,29 @@ fn run(args: &Args) -> Result<()> {
     let mut tsv = Vec::new();
     let count = export(&api, &playlist_id, &mut tsv)?;
     match &args.output {
-        Some(path) => {
-            let mut tmp = path.clone().into_os_string();
-            tmp.push(".tmp");
-            fs::write(&tmp, &tsv)?;
-            fs::rename(&tmp, path)?;
-        }
+        Some(path) => write_via_temp_file(path, &tsv)?,
         None => io::stdout().lock().write_all(&tsv)?,
     }
     eprintln!("spotify-export: wrote {count} rows");
+    Ok(())
+}
+
+/// Write `bytes` to `FILE.tmp`, then rename it over `path`. The temporary
+/// name is predictable, so `create_new` (O_EXCL) refuses an existing file or
+/// a planted symlink there instead of following and truncating it.
+fn write_via_temp_file(path: &Path, bytes: &[u8]) -> Result<()> {
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(|e| format!("cannot create {}: {e}", tmp.display()))?;
+    if let Err(err) = file.write_all(bytes).and_then(|()| fs::rename(&tmp, path)) {
+        let _ = fs::remove_file(&tmp);
+        return Err(err.into());
+    }
     Ok(())
 }
 
@@ -671,5 +685,39 @@ mod tests {
                 .count(),
             COLUMNS.len()
         );
+    }
+
+    /// A fresh directory under the system temp dir, unique to this process and test.
+    fn scratch_dir(test: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("spotify-export-{}-{test}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn output_write_replaces_file_and_leaves_no_temp() {
+        let dir = scratch_dir("output-write");
+        let out = dir.join("list.tsv");
+        fs::write(&out, "old").unwrap();
+        write_via_temp_file(&out, b"new\n").unwrap();
+        assert_eq!(fs::read(&out).unwrap(), b"new\n");
+        assert!(!dir.join("list.tsv.tmp").exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_write_refuses_symlink_at_temp_name() {
+        let dir = scratch_dir("output-symlink");
+        let victim = dir.join("victim");
+        fs::write(&victim, "precious").unwrap();
+        let out = dir.join("list.tsv");
+        std::os::unix::fs::symlink(&victim, dir.join("list.tsv.tmp")).unwrap();
+        assert!(write_via_temp_file(&out, b"tsv\n").is_err());
+        assert_eq!(fs::read(&victim).unwrap(), b"precious");
+        assert!(!out.exists());
+        fs::remove_dir_all(&dir).unwrap();
     }
 }
