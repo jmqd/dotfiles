@@ -183,8 +183,10 @@ pub fn parse_since_argument(value: &str) -> anyhow::Result<i64> {
 fn initialize_schema(connection: &Connection) -> anyhow::Result<()> {
     connection.execute_batch(
         r#"
-        PRAGMA journal_mode = WAL;
-        PRAGMA synchronous = NORMAL;
+        -- The database is built in a temp file and renamed into place, so
+        -- the rename, not a journal, is what makes a reindex atomic.
+        PRAGMA journal_mode = OFF;
+        PRAGMA synchronous = OFF;
 
         CREATE TABLE commits (
             repo_name TEXT NOT NULL,
