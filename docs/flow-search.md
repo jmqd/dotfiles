@@ -68,7 +68,7 @@ That command:
 - skips repos that do not have a `HEAD` commit yet
 - rebuilds the Zoekt index from scratch
 - rebuilds the commit metadata SQLite database from scratch
-- rewrites the repo manifest used for repo selection/status
+- rewrites the repo manifest used for repo selection/status, including the name Zoekt gave each repo (Zoekt names a repo with an `origin` remote after the remote URL, so `--repo` code search filters on that name rather than the directory name)
 
 If the indexes are missing, the current commands behave like this:
 
@@ -76,6 +76,7 @@ If the indexes are missing, the current commands behave like this:
 - `flow search commits ...` fails and tells you to run `flow search reindex`
 - `flow search query ...` warns about whichever indexed backend is missing and still uses any remaining enabled backend(s)
 - if no backend is usable, `flow search query ...` fails
+- if the manifest has no Zoekt name for the `--repo` repo (an index built before flow recorded the name, or a repo the last reindex skipped), `flow search code` fails and `flow search query` warns, both asking for a reindex
 
 ## `--include-dirty`: scope and limits
 

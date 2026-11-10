@@ -14,6 +14,7 @@ use crate::search::repo::{
 };
 use crate::search::zoekt::{self, ZoektMatch};
 use crate::search::{SearchTools, join_query_terms, normalize_query_terms};
+use anyhow::Context as _;
 use chrono::Utc;
 use serde::Serialize;
 use std::fmt::Write as _;
@@ -149,25 +150,30 @@ fn execute_query(
     tracing::debug!(query = %query, repo = ?selected_repo.as_ref().map(|repo| repo.display_name.as_str()), include_dirty = args.include_dirty, "executing flow search query");
 
     if !args.no_code {
-        if config.index_exists()? {
-            used_backend = true;
-            results.extend(
-                zoekt::search(
-                    config,
-                    &tools.zoekt_bin,
-                    &query,
-                    selected_repo.as_ref(),
-                    args.scope.path.as_deref(),
-                    args.scope.limit,
-                )?
-                .into_iter()
-                .map(convert_zoekt_match),
-            );
-        } else {
+        if !config.index_exists()? {
             warnings.push(format!(
                 "Zoekt index is missing at {}; run `flow search reindex` to enable code search",
                 config.zoekt_index_dir.display()
             ));
+        } else {
+            match zoekt_repo_filter(selected_repo.as_ref()) {
+                Ok(repo_filter) => {
+                    used_backend = true;
+                    results.extend(
+                        zoekt::search(
+                            config,
+                            &tools.zoekt_bin,
+                            &query,
+                            repo_filter,
+                            args.scope.path.as_deref(),
+                            args.scope.limit,
+                        )?
+                        .into_iter()
+                        .map(convert_zoekt_match),
+                    );
+                }
+                Err(error) => warnings.push(format!("{error:#}")),
+            }
         }
     }
 
@@ -259,7 +265,7 @@ fn execute_code(
         config,
         &tools.zoekt_bin,
         &query,
-        selected_repo.as_ref(),
+        zoekt_repo_filter(selected_repo.as_ref())?,
         args.scope.path.as_deref(),
         args.scope.limit,
     )?
@@ -318,7 +324,7 @@ fn execute_reindex(
     _args: SearchReindexArgs,
 ) -> anyhow::Result<ReindexOutput> {
     let _lock = FileLock::acquire(&config.reindex_lock_path)?;
-    let discovered_repos = discover_repos(config)?;
+    let mut discovered_repos = discover_repos(config)?;
     let mut indexable_repos = Vec::new();
     let mut warnings = Vec::new();
 
@@ -335,6 +341,9 @@ fn execute_reindex(
 
     let zoekt_stats = zoekt::reindex(config, &tools.zoekt_git_index_bin, &indexable_repos)?;
     let metadata_stats = metadata::reindex(config, &tools.git_bin, &indexable_repos)?;
+    for repo in &mut discovered_repos {
+        repo.zoekt_name = zoekt_stats.repo_names.get(&repo.path).cloned();
+    }
     write_repo_records(config, &discovered_repos)?;
 
     let last_reindex_at = Utc::now().to_rfc3339();
@@ -390,6 +399,19 @@ fn resolve_optional_repo(
     selector
         .map(|selector| resolve_repo_selector(config, selector, ctx.working_dir()))
         .transpose()
+}
+
+/// The name zoekt indexed `repo` under, which is what its results carry.
+fn zoekt_repo_filter(repo: Option<&DiscoveredRepo>) -> anyhow::Result<Option<&str>> {
+    repo.map(|repo| {
+        repo.zoekt_name.as_deref().with_context(|| {
+            format!(
+                "the code index has no record of {}; run `flow search reindex`",
+                repo.display_name
+            )
+        })
+    })
+    .transpose()
 }
 
 fn build_commit_filters(

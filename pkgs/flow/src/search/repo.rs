@@ -13,6 +13,10 @@ pub struct RepoRecord {
     pub name: String,
     pub display_name: String,
     pub path: String,
+    /// The name zoekt indexed the repo under; absent from manifests written
+    /// before flow recorded it and for repos the last reindex skipped.
+    #[serde(default)]
+    pub zoekt_name: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -21,6 +25,7 @@ pub struct DiscoveredRepo {
     pub display_name: String,
     pub path: PathBuf,
     pub root: Option<PathBuf>,
+    pub zoekt_name: Option<String>,
 }
 
 impl DiscoveredRepo {
@@ -52,6 +57,7 @@ impl DiscoveredRepo {
             display_name,
             path: normalized_path,
             root,
+            zoekt_name: None,
         }
     }
 
@@ -60,6 +66,7 @@ impl DiscoveredRepo {
             name: self.name.clone(),
             display_name: self.display_name.clone(),
             path: self.path.display().to_string(),
+            zoekt_name: self.zoekt_name.clone(),
         }
     }
 }
@@ -139,6 +146,7 @@ pub fn load_repo_records(config: &SearchConfig) -> anyhow::Result<Vec<Discovered
             display_name: record.display_name,
             path: PathBuf::from(record.path),
             root: None,
+            zoekt_name: record.zoekt_name,
         })
         .collect())
 }
@@ -187,7 +195,12 @@ pub fn resolve_repo_selector(
                 path.display()
             )
         })?;
-        return Ok(DiscoveredRepo::from_path(config, repo_path));
+        let mut repo = DiscoveredRepo::from_path(config, repo_path);
+        repo.zoekt_name = load_repo_records(config)?
+            .into_iter()
+            .find(|record| record.path == repo.path)
+            .and_then(|record| record.zoekt_name);
+        return Ok(repo);
     }
 
     let mut candidates = load_repo_records(config)?;
@@ -385,6 +398,7 @@ mod tests {
                     .join("indexed/manifest-only")
                     .display()
                     .to_string(),
+                zoekt_name: None,
             }])
             .expect("manifest json"),
         )
@@ -400,6 +414,38 @@ mod tests {
         let selected = resolve_repo_selector(&config, "manifest-only", sandbox.path())
             .expect("manifest selector resolves");
         assert_eq!(selected.display_name, "manifest-only");
+    }
+
+    #[test]
+    fn resolve_repo_selector_reads_zoekt_name_from_manifest() {
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        fs::create_dir_all(&root).expect("create root");
+        let repo = init_git_repo(&root.join("app"));
+        commit_file(&repo, "README.md", "hello\n");
+        let repo = repo.canonicalize().expect("canonical repo");
+
+        let config = test_config(root.clone(), sandbox.path().join("state"));
+        config.ensure_state_dirs().expect("state dirs");
+        // The second record predates zoekt_name.
+        let manifest = serde_json::json!([
+            {
+                "name": "app",
+                "display_name": "app",
+                "path": repo.display().to_string(),
+                "zoekt_name": "example.com/app",
+            },
+            {"name": "old", "display_name": "old", "path": "/nowhere/old"},
+        ]);
+        fs::write(&config.repos_manifest_path, manifest.to_string()).expect("write manifest");
+
+        for selector in ["app", repo.to_str().expect("utf8 path")] {
+            let selected = resolve_repo_selector(&config, selector, sandbox.path())
+                .expect("selector resolves");
+            assert_eq!(selected.zoekt_name.as_deref(), Some("example.com/app"));
+        }
+        let old = resolve_repo_selector(&config, "old", sandbox.path()).expect("old resolves");
+        assert_eq!(old.zoekt_name, None);
     }
 
     #[test]

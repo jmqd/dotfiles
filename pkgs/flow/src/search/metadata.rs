@@ -393,6 +393,7 @@ mod tests {
             display_name: "dotfiles".to_owned(),
             path: PathBuf::from("/tmp/dotfiles"),
             root: None,
+            zoekt_name: None,
         };
         let raw = b"\x1eabc123\x1fJane\x1fjane@example.com\x1f1704067200\x1fsubject\x1fbody line\n\x1d\0src/main.rs\0README.md\0";
         let commits = parse_git_log_output(&repo, raw).expect("git log parses");

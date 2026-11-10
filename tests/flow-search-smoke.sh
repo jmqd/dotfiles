@@ -17,6 +17,9 @@ cd "$repo_dir"
 git init -q
 git config user.name 'Flow Smoke'
 git config user.email 'flow-smoke@example.com'
+# zoekt names a repo with a remote after its URL, not its directory, so
+# --repo demo must still find it.
+git remote add origin https://example.com/flow/demo.git
 
 printf 'fn hello_world() {}\n' >"$repo_dir/src/main.rs"
 printf 'overview\n' >"$repo_dir/docs/search_plan.md"
