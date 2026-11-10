@@ -347,10 +347,12 @@ async fn protect(
         ApiError::new(StatusCode::FORBIDDEN, "unrecognized host").into_response()
     } else if path.starts_with("/api/") {
         let write = request.method() != Method::GET && request.method() != Method::HEAD;
+        // A sibling host on the same site carries the SameSite cookie, so only
+        // same-origin requests and direct user navigation are accepted.
         if !valid_origin(&app, headers, write)
             || headers
                 .get("sec-fetch-site")
-                .is_some_and(|value| value == "cross-site")
+                .is_some_and(|value| value != "same-origin" && value != "none")
         {
             ApiError::new(StatusCode::FORBIDDEN, "unrecognized or missing origin").into_response()
         } else if !matches!(
@@ -388,6 +390,10 @@ async fn protect(
         HeaderValue::from_static("nosniff"),
     );
     headers.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    headers.insert(
+        "cross-origin-resource-policy",
+        HeaderValue::from_static("same-origin"),
+    );
     headers.insert("content-security-policy", HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"));
     if app.config.secure {
         headers.insert(
@@ -1154,6 +1160,47 @@ mod tests {
                 StatusCode::FORBIDDEN
             );
         }
+    }
+
+    #[tokio::test]
+    async fn only_same_origin_or_user_initiated_fetches_reach_the_api() {
+        let (app, _dir, mut key) = test_app();
+        let routes = router(app);
+        let signed = signed_login(&routes, &mut key).await;
+        assert_eq!(signed.status(), StatusCode::OK);
+        let cookie = signed.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap();
+        for (site, expected) in [
+            ("same-origin", StatusCode::OK),
+            ("none", StatusCode::OK),
+            ("same-site", StatusCode::FORBIDDEN),
+            ("cross-site", StatusCode::FORBIDDEN),
+        ] {
+            let mut input = request(Method::GET, "/api/sessions", None, Some(cookie), json!({}));
+            input
+                .headers_mut()
+                .insert("sec-fetch-site", HeaderValue::from_static(site));
+            let response = routes.clone().oneshot(input).await.unwrap();
+            assert_eq!(response.status(), expected, "{site}");
+            assert_eq!(
+                response.headers()["cross-origin-resource-policy"],
+                "same-origin",
+                "{site}"
+            );
+        }
+        let asset = routes
+            .oneshot(request(Method::GET, "/app.js", None, None, json!({})))
+            .await
+            .unwrap();
+        assert_eq!(asset.status(), StatusCode::OK);
+        assert_eq!(
+            asset.headers()["cross-origin-resource-policy"],
+            "same-origin"
+        );
     }
 
     #[tokio::test]
