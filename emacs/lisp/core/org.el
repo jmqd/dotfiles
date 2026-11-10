@@ -19,6 +19,7 @@
     (org-redisplay-inline-images)))
 
 (use-package org
+  :defer t
   :config
   (require 'ox-md)
   (add-hook 'org-babel-after-execute-hook #'jmq/org-redisplay-inline-images)
