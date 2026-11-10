@@ -1371,6 +1371,28 @@ mod tests {
     }
 
     #[test]
+    fn authentication_flood_evicts_oldest_ceremony_instead_of_locking_out() {
+        let (app, _dir, mut key) = test_app();
+        let origin = Url::parse(&app.config.origin).unwrap();
+        let login = "owner@example.com";
+        let mut auth = app.auth.lock();
+        let starts: Vec<_> = (0..33)
+            .map(|_| auth.start_authentication(login).unwrap())
+            .collect();
+        let (first_options, first_cookie) = starts[0].clone();
+        let first = key
+            .do_authentication(origin.clone(), first_options)
+            .unwrap();
+        assert!(auth
+            .finish_authentication(login, &first_cookie, &first)
+            .is_err());
+        let (last_options, last_cookie) = starts[32].clone();
+        let last = key.do_authentication(origin, last_options).unwrap();
+        auth.finish_authentication(login, &last_cookie, &last)
+            .unwrap();
+    }
+
+    #[test]
     fn live_and_persisted_counters_fail_closed_without_runtime_trust() {
         let (app, _dir, mut key) = test_app();
         let origin = Url::parse(&app.config.origin).unwrap();

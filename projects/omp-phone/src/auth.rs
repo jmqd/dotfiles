@@ -14,6 +14,7 @@ use webauthn_rs::prelude::*;
 pub const CEREMONY_AGE: Duration = Duration::from_secs(300);
 const MAX_RECORDS: usize = 128;
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
+const MAX_AUTHENTICATIONS: usize = 32;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -225,8 +226,16 @@ impl Auth {
         if self.records.is_empty() {
             return Err("no security keys configured for this service".into());
         }
-        if self.authentication.len() >= 32 {
-            return Err("too many authentication attempts; wait five minutes".into());
+        // Evict instead of refusing, so a flood of starts cannot lock the owner out.
+        if self.authentication.len() >= MAX_AUTHENTICATIONS {
+            if let Some(oldest) = self
+                .authentication
+                .iter()
+                .min_by_key(|(_, ceremony)| ceremony.deadline)
+                .map(|(cookie, _)| cookie.clone())
+            {
+                self.authentication.remove(&oldest);
+            }
         }
         let keys: Vec<_> = self
             .records
