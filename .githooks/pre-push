@@ -55,11 +55,21 @@ detect_shell() {
 	fi
 }
 
+# Extensionless scripts under bin/ count when their shebang names a shell.
+has_shell_shebang() {
+	head -n 1 "$1" 2>/dev/null | grep -Eq '^#!.*[/ ](ba|z)?sh([[:space:]]|$)'
+}
+
 shell_files=()
 while IFS= read -r -d '' file; do
 	case "$file" in
 	*.sh | *.bash | *.zsh | .bashrc | .zshrc | .githooks/pre-push)
 		shell_files+=("$file")
+		;;
+	bin/*)
+		if has_shell_shebang "$file"; then
+			shell_files+=("$file")
+		fi
 		;;
 	esac
 done < <(git ls-files -z)
