@@ -1,7 +1,9 @@
 {
   lib,
   makeWrapper,
+  pkg-config,
   rustPlatform,
+  sqlite,
   _7zz,
   curl,
   gitMinimal,
@@ -21,7 +23,11 @@ rustPlatform.buildRustPackage rec {
   };
   cargoLock.lockFile = ./Cargo.lock;
 
-  nativeBuildInputs = [ makeWrapper ];
+  nativeBuildInputs = [
+    makeWrapper
+    pkg-config
+  ];
+  buildInputs = [ sqlite ];
   nativeCheckInputs = [ gitMinimal ];
 
   # `flow pin` also runs the host's `nix`, which must match the daemon, so it

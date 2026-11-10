@@ -24,11 +24,11 @@ flate2 = "1.1.10"
 fs2 = "0.4"
 plist = { version = "1.10", default-features = false }
 roxmltree = "0.21"
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite = "0.41"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tempfile = "3.20"
-tracing = "0.1"
+tracing = { version = "0.1", default-features = false, features = ["std"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 walkdir = "2.5"
 
