@@ -1,10 +1,9 @@
 alias ls="ls -trlAh"
 
-repo_context() {
-    local OUT_FILE="/tmp/repo_context_dump.xml"
+_repo_context_dump() {
     local MAX_SIZE="64k"
 
-    echo "<codebase>" > "$OUT_FILE"
+    echo "<codebase>"
 
     find . -type f -size -"$MAX_SIZE" \
         -not -path '*/.git/*' \
@@ -24,23 +23,31 @@ repo_context() {
 
         clean_name="${file#./}"
         echo "Processing: $clean_name" >&2
-        {
-            echo "  <file name=\"$clean_name\">"
-            cat "$file"
-            echo ""
-            echo "  </file>"
-        } >> "$OUT_FILE"
+        echo "  <file name=\"$clean_name\">"
+        cat "$file"
+        echo ""
+        echo "  </file>"
     done
 
-    echo "</codebase>" >> "$OUT_FILE"
+    echo "</codebase>"
+}
+
+# The dump can hold private source, so it never lands in a shared,
+# predictable path: it goes straight to the clipboard, or to a private
+# mktemp file when xclip is missing.
+repo_context() {
+    local dump out_file
+    dump="$(_repo_context_dump)" || return 1
 
     if command -v xclip &> /dev/null; then
-        xclip -selection clipboard < "$OUT_FILE"
+        printf '%s\n' "$dump" | xclip -selection clipboard
         echo "------------------------------------------------"
         echo "Context copied to clipboard!"
-        echo "Size: $(du -h "$OUT_FILE" | cut -f1)"
+        echo "Size: ${#dump} characters"
         echo "------------------------------------------------"
     else
-        echo "Error: xclip not found. Result saved to $OUT_FILE"
+        out_file="$(mktemp "${TMPDIR:-/tmp}/repo_context.XXXXXX")" || return 1
+        printf '%s\n' "$dump" > "$out_file"
+        echo "Error: xclip not found. Result saved to $out_file"
     fi
 }
