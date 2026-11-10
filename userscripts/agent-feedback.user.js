@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Agent Feedback
 // @namespace    jmq.agent-feedback
-// @version      1.0.0
+// @version      1.0.1
 // @description  Alt/Option+right-click any element to leave a note. Copy this site's notes as JSON for a coding agent.
 // @match        *://*/*
 // @match        file:///*
@@ -117,9 +117,12 @@
   };
 
   // --- UI (shadow DOM keeps page CSS out; adoptedStyleSheets is not blocked by CSP) ---
+  // The root is closed and every handler below ignores synthetic events: the
+  // page is untrusted, and the exported notes are pasted into a coding agent,
+  // so page script must not be able to open the panel, save, copy or clear.
   const host = document.createElement("div");
   host.setAttribute("data-agent-feedback", "");
-  const root = host.attachShadow({ mode: "open" });
+  const root = host.attachShadow({ mode: "closed" });
   const sheet = new CSSStyleSheet();
   sheet.replaceSync(`
     :host { all: initial; }
@@ -215,28 +218,35 @@
         console.error("[agent-feedback]", err);
       });
 
-  $(".save").addEventListener("click", guarded(submit));
-  $(".cancel").addEventListener("click", close);
-  $(".copy").addEventListener("click", guarded(() => copy({ clear: false })));
-  $(".copy-clear").addEventListener("click", guarded(() => copy({ clear: true })));
+  const trusted = (fn) => (e) => {
+    if (e.isTrusted) return fn(e);
+  };
+
+  $(".save").addEventListener("click", trusted(guarded(submit)));
+  $(".cancel").addEventListener("click", trusted(close));
+  $(".copy").addEventListener("click", trusted(guarded(() => copy({ clear: false }))));
+  $(".copy-clear").addEventListener("click", trusted(guarded(() => copy({ clear: true }))));
 
   // Keys typed in the panel must not reach page hotkey handlers, which see the
   // retargeted shadow host rather than our textarea.
   for (const type of ["keydown", "keyup", "keypress"]) {
     panel.addEventListener(type, (e) => e.stopPropagation());
   }
-  textarea.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") close();
-    else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
-      e.preventDefault();
-      guarded(submit)();
-    }
-  });
+  textarea.addEventListener(
+    "keydown",
+    trusted((e) => {
+      if (e.key === "Escape") close();
+      else if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        guarded(submit)();
+      }
+    }),
+  );
 
   document.addEventListener(
     "contextmenu",
     (e) => {
-      if (!e.altKey) return;
+      if (!e.isTrusted || !e.altKey) return;
       const path = e.composedPath();
       if (path.includes(host)) return;
       const target = path.find((n) => n instanceof Element);
