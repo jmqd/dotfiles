@@ -23,6 +23,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 type Result<T, E = Box<dyn Error>> = std::result::Result<T, E>;
 
 const API: &str = "https://api.spotify.com/v1";
+const API_ORIGIN: &str = "https://api.spotify.com/";
 const AUTHORIZE_URL: &str = "https://accounts.spotify.com/authorize";
 const TOKEN_URL: &str = "https://accounts.spotify.com/api/token";
 const SCOPES: &str = "playlist-read-private playlist-read-collaborative";
@@ -105,7 +106,10 @@ fn main() -> ExitCode {
 }
 
 fn run(args: &Args) -> Result<()> {
-    let http = Client::builder().user_agent("spotify-export/0.1").build()?;
+    let http = Client::builder()
+        .user_agent("spotify-export/0.1")
+        .https_only(true)
+        .build()?;
     let token = access_token(&http, args)?;
     let api = Api {
         http: &http,
@@ -248,7 +252,7 @@ fn find_playlist_by_name(api: &Api, name: &str) -> Result<String> {
     loop {
         let page: Page<Option<SimplePlaylist>> = api.get(&url)?;
         matches.extend(page.items.into_iter().flatten().filter(|p| p.name == name));
-        match page.next {
+        match next_page_url(page.next)? {
             Some(next) => url = next,
             None => break,
         }
@@ -300,7 +304,7 @@ fn export(api: &Api, playlist_id: &str, out: &mut dyn Write) -> Result<usize> {
             position += 1;
             write_row(out, position, entry)?;
         }
-        match page.next {
+        match next_page_url(page.next)? {
             Some(next) => url = next,
             None => break,
         }
@@ -381,6 +385,16 @@ impl Api<'_> {
     fn get<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
         let resp = send_with_retry(|| self.http.get(url).bearer_auth(self.token).send())?;
         Ok(resp.json()?)
+    }
+}
+
+/// Check a response's pagination link before following it. `Api::get` sends
+/// the bearer token to that URL, so only the API origin over HTTPS is accepted.
+fn next_page_url(next: Option<String>) -> Result<Option<String>> {
+    match next {
+        Some(url) if url.starts_with(API_ORIGIN) => Ok(Some(url)),
+        Some(url) => Err(format!("refusing pagination URL outside {API_ORIGIN}: {url}").into()),
+        None => Ok(None),
     }
 }
 
@@ -618,6 +632,23 @@ mod tests {
             pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
             "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
         );
+    }
+
+    #[test]
+    fn pagination_follows_only_the_api_origin() {
+        let next = |url: &str| next_page_url(Some(url.to_owned()));
+        let ok = "https://api.spotify.com/v1/me/playlists?offset=50&limit=50";
+        assert_eq!(next(ok).unwrap().as_deref(), Some(ok));
+        assert_eq!(next_page_url(None).unwrap(), None);
+        for bad in [
+            "http://api.spotify.com/v1/me/playlists?offset=50",
+            "https://example.com/v1/me/playlists",
+            "https://api.spotify.com.evil.example/v1/me/playlists",
+            "https://api.spotify.com@evil.example/v1",
+            "https://accounts.spotify.com/v1",
+        ] {
+            assert!(next(bad).is_err(), "{bad} was accepted");
+        }
     }
 
     #[test]
