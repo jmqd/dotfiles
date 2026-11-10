@@ -30,6 +30,11 @@ fn curl(args: &[&str], url: &str) -> anyhow::Result<Vec<u8>> {
             "--show-error",
             "--max-time",
             CURL_TIMEOUT_SECS,
+            // Never fall back to plaintext, including through a redirect.
+            "--proto",
+            "=https",
+            "--proto-redir",
+            "=https",
         ])
         .args(args);
     // A token raises GitHub's anonymous rate limit. Pass it on stdin so it never

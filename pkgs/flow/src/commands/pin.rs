@@ -268,6 +268,14 @@ fn hash_sources(
     let mut by_url: HashMap<String, String> = HashMap::new();
     let mut sources = BTreeMap::new();
     for (system, candidate) in candidates {
+        // The pinned hash is whatever this URL served at bump time, so a
+        // plaintext download would let anyone on the path choose it.
+        if !candidate.url.starts_with("https://") {
+            bail!(
+                "{system}: upstream offered a non-HTTPS URL {}",
+                candidate.url
+            );
+        }
         let hash = match candidate.hash {
             Some(hash) => hash,
             None => match by_url.get(&candidate.url) {
@@ -343,7 +351,8 @@ pub fn format_text(output: &PinOutput) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Comparison, compare};
+    use super::{Comparison, compare, hash_sources};
+    use crate::pins::fetch::Artifact;
     use crate::pins::upstream::{Candidate, Release};
     use crate::pins::{PinFile, Source};
     use std::collections::BTreeMap;
@@ -421,5 +430,18 @@ mod tests {
             compare(&nine, ten).expect("compares"),
             Comparison::Outdated(_)
         ));
+    }
+
+    #[test]
+    fn plaintext_artifact_url_is_refused() {
+        let candidates = BTreeMap::from([(
+            "aarch64-darwin".to_owned(),
+            Candidate {
+                url: "http://example.com/1.1.dmg".to_owned(),
+                hash: Some("sha256-new".to_owned()),
+            },
+        )]);
+        let error = hash_sources(candidates, Artifact::File).expect_err("refused");
+        assert!(error.to_string().contains("non-HTTPS"), "{error}");
     }
 }
