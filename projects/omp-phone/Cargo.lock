@@ -1270,6 +1270,7 @@ dependencies = [
  "fs2",
  "futures-util",
  "hostname",
+ "hyper-util",
  "openssl",
  "p256",
  "parking_lot",

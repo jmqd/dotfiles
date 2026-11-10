@@ -7,6 +7,7 @@ description = "Local phone companion for OMP public-API extensions"
 
 [dependencies]
 axum = "0.8"
+hyper-util = { version = "0.1", features = ["http1", "server", "service", "tokio"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time", "fs"] }
 tokio-util = { version = "0.7", features = ["codec"] }
 serde = { version = "1", features = ["derive"] }

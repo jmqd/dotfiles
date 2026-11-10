@@ -16,6 +16,11 @@ use axum::{
 };
 use config::{Config, Result};
 use futures_util::{SinkExt, StreamExt};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo, TokioTimer},
+    server::conn::auto::Builder,
+    service::TowerToHyperService,
+};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::json;
@@ -23,6 +28,7 @@ use sessions::{CommandResult, Pending, Registry, Session};
 use std::{
     collections::HashMap,
     convert::Infallible,
+    future::Future,
     net::Ipv4Addr,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -36,6 +42,8 @@ use tokio_util::codec::{Framed, LinesCodec};
 const COOKIE: &str = "omp_phone";
 const COOKIE_AGE: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const ACK_TIMEOUT: Duration = Duration::from_secs(15);
+const HTTP_CONNECTIONS: u32 = 128;
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
 
 struct App {
     config: Config,
@@ -145,19 +153,94 @@ Web Push uses outbound HTTPS to Google, Mozilla or Apple push services."#
         app.config.port
     );
     let stop = app.clone();
-    let server = axum::serve(listener, router(app.clone())).with_graceful_shutdown(async move {
-        tokio::select! {
-            _ = shutdown_signal() => {},
-            _ = stopping.changed() => {},
-        }
-        stop.shutdown.send_replace(true);
-    });
-    let result = server.await;
+    serve_http(
+        listener,
+        router(app.clone()),
+        HTTP_CONNECTIONS,
+        HEADER_READ_TIMEOUT,
+        async move {
+            tokio::select! {
+                _ = shutdown_signal() => {},
+                _ = stopping.changed() => {},
+            }
+            stop.shutdown.send_replace(true);
+        },
+    )
+    .await;
     app.shutdown.send_replace(true);
     extension_worker.await??;
     push_worker.abort();
-    result?;
     Ok(())
+}
+
+/// Serves HTTP/1.1 until `shutdown` completes, then waits for open connections to finish.
+/// Excess connections wait in the kernel backlog, and a peer that does not send a
+/// complete request head within `header_read_timeout` is disconnected.
+async fn serve_http(
+    listener: tokio::net::TcpListener,
+    routes: Router,
+    connections: u32,
+    header_read_timeout: Duration,
+    shutdown: impl Future<Output = ()>,
+) {
+    let permits = Arc::new(Semaphore::new(connections as usize));
+    let (stopping, stopped) = watch::channel(());
+    // HTTP/1 only: protocol detection would read the first bytes without any timeout.
+    let mut builder = Builder::new(TokioExecutor::new()).http1_only();
+    builder
+        .http1()
+        .timer(TokioTimer::new())
+        .header_read_timeout(header_read_timeout);
+    let mut shutdown = std::pin::pin!(shutdown);
+    loop {
+        let permit = tokio::select! {
+            _ = &mut shutdown => break,
+            permit = permits.clone().acquire_owned() => permit,
+        };
+        // The semaphore is never closed.
+        let Ok(permit) = permit else { break };
+        let socket = tokio::select! {
+            _ = &mut shutdown => break,
+            accepted = listener.accept() => match accepted {
+                Ok((socket, _)) => socket,
+                Err(error) => {
+                    if !matches!(
+                        error.kind(),
+                        std::io::ErrorKind::ConnectionRefused
+                            | std::io::ErrorKind::ConnectionAborted
+                            | std::io::ErrorKind::ConnectionReset
+                    ) {
+                        // Typically descriptor exhaustion; retrying at once would spin.
+                        eprintln!("omp-phone: accept failed: {error}");
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                    }
+                    continue;
+                }
+            },
+        };
+        let connection = builder
+            .serve_connection(
+                TokioIo::new(socket),
+                TowerToHyperService::new(routes.clone()),
+            )
+            .into_owned();
+        let mut stopped = stopped.clone();
+        tokio::spawn(async move {
+            let _permit = permit;
+            let mut connection = std::pin::pin!(connection);
+            // Errors here are client disconnects and header timeouts.
+            tokio::select! {
+                _ = connection.as_mut() => return,
+                _ = stopped.changed() => {},
+            }
+            connection.as_mut().graceful_shutdown();
+            let _ = connection.await;
+        });
+    }
+    drop(listener);
+    stopping.send_replace(());
+    // Every open connection holds a permit until it closes.
+    let _ = permits.acquire_many(connections).await;
 }
 
 async fn shutdown_signal() {
@@ -1426,6 +1509,86 @@ mod tests {
         std::fs::write(app.config.credentials_file.as_ref().unwrap(), "[]").unwrap();
         let mut removed = auth::Auth::load(&app.config).unwrap();
         assert!(removed.start_authentication(login).is_err());
+    }
+
+    #[tokio::test]
+    async fn http_listener_drops_silent_peers_caps_connections_and_shuts_down() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpStream;
+        let (app, _dir, _) = test_app();
+        // A response that outlives the header timeout must not be cut off.
+        let routes = router(app)
+            .route(
+                "/slow",
+                get(|| async {
+                    Body::from_stream(async_stream::stream! {
+                        for part in 0..5 {
+                            tokio::time::sleep(Duration::from_millis(200)).await;
+                            yield Ok::<_, Infallible>(format!("part-{part};"));
+                        }
+                    })
+                }),
+            )
+            .route("/fast", get(|| async { "done" }));
+        let listener = tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let (stop, stopped) = oneshot::channel::<()>();
+        let server = tokio::spawn(serve_http(
+            listener,
+            routes,
+            1,
+            Duration::from_millis(300),
+            async {
+                let _ = stopped.await;
+            },
+        ));
+        let mut buffer = [0; 1024];
+
+        let mut silent = TcpStream::connect(address).await.unwrap();
+        let mut queued = TcpStream::connect(address).await.unwrap();
+        queued
+            .write_all(b"GET /slow HTTP/1.1\r\nHost: test\r\nConnection: close\r\n\r\n")
+            .await
+            .unwrap();
+        // The silent peer holds the only connection slot.
+        assert!(
+            tokio::time::timeout(Duration::from_millis(150), queued.read(&mut buffer))
+                .await
+                .is_err()
+        );
+        let read = tokio::time::timeout(Duration::from_secs(5), silent.read(&mut buffer))
+            .await
+            .expect("silent peer is disconnected by the header timeout")
+            .unwrap();
+        assert_eq!(read, 0);
+        let mut response = Vec::new();
+        tokio::time::timeout(Duration::from_secs(10), queued.read_to_end(&mut response))
+            .await
+            .expect("queued connection is served once a slot frees")
+            .unwrap();
+        let response = String::from_utf8(response).unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK"), "{response}");
+        assert!(response.contains("part-4;"), "{response}");
+
+        // Graceful shutdown closes an idle keep-alive connection and returns.
+        let mut idle = TcpStream::connect(address).await.unwrap();
+        idle.write_all(b"GET /fast HTTP/1.1\r\nHost: test\r\n\r\n")
+            .await
+            .unwrap();
+        let mut response = Vec::new();
+        while !response.ends_with(b"done") {
+            let read = idle.read(&mut buffer).await.unwrap();
+            assert_ne!(read, 0, "keep-alive response truncated");
+            response.extend_from_slice(&buffer[..read]);
+        }
+        stop.send(()).unwrap();
+        tokio::time::timeout(Duration::from_secs(5), server)
+            .await
+            .expect("graceful shutdown completes")
+            .unwrap();
+        assert_eq!(idle.read(&mut buffer).await.unwrap(), 0);
     }
 
     #[tokio::test]
