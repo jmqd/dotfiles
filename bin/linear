@@ -10,11 +10,13 @@ die() { echo "error: $*" >&2; exit 1; }
 command -v curl >/dev/null 2>&1 || die "curl is required"
 command -v jq >/dev/null 2>&1 || die "jq is required"
 
+# The key is passed in a header file, not an argument, so it never shows up
+# in the process list.
 gql() {
   local query="$1"
   curl -s -X POST "$api_url" \
     -H "Content-Type: application/json" \
-    -H "Authorization: $api_key" \
+    -H @<(printf 'Authorization: %s\n' "$api_key") \
     -d "$query"
 }
 

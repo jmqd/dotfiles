@@ -72,24 +72,18 @@ note_upgrade() {
 	fi
 }
 
+# Header lines for `curl --header @file`, so the token never appears in the
+# process list.
 github_api_headers() {
-	local args=(
-		--header "Accept: application/vnd.github+json"
-		--header "User-Agent: dotfiles-audit-deps"
-	)
+	printf '%s\n' "Accept: application/vnd.github+json" "User-Agent: dotfiles-audit-deps"
 	if [ -n "${GITHUB_TOKEN:-}" ]; then
-		args+=(--header "Authorization: Bearer ${GITHUB_TOKEN}")
+		printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN"
 	fi
-	printf '%s\n' "${args[@]}"
 }
 
 github_release_latest_api() {
 	local repo="$1"
-	local -a headers=()
-	while IFS= read -r header; do
-		headers+=("$header")
-	done < <(github_api_headers)
-	curl --fail --silent --show-error --location "${headers[@]}" "https://api.github.com/repos/${repo}/releases/latest" |
+	curl --fail --silent --show-error --location --header @<(github_api_headers) "https://api.github.com/repos/${repo}/releases/latest" |
 		jq -er '.tag_name // empty'
 }
 
