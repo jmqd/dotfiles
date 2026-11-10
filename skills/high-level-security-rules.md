@@ -479,9 +479,18 @@ Companion to [low-level-security-rules.md](low-level-security-rules.md), which c
 **Cloud and Kubernetes**
 
 20. AWS Well-Architected Framework, Security Pillar (2024-11-06): https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/welcome.html. Cited by best-practice ID, e.g. SEC02-BP02.
-21. NSA and CISA, cloud security Cybersecurity Information Sheets (March 2024; the CI/CD sheet is June 2023): https://www.cisa.gov/news-events/alerts/2024/03/07/cisa-and-nsa-release-cybersecurity-information-sheets-cloud-security-best-practices. Cited by sheet: Shared Responsibility, IAM, Key Management, Network Segmentation, Secure Data, MSP, IaC, Logs, CI/CD. The PDFs are on media.defense.gov, which refuses automated requests; they were read from Internet Archive copies.
+21. NSA and CISA, cloud security Cybersecurity Information Sheets (March 2024; the CI/CD sheet is June 2023). Announcement: https://www.cisa.gov/news-events/alerts/2024/03/07/cisa-and-nsa-release-cybersecurity-information-sheets-cloud-security-best-practices. Cited by sheet name. The PDFs are on media.defense.gov, which refuses automated requests, so each link below is the Internet Archive copy that was read; the original URL is the part after `id_/`.
+    - Shared Responsibility: https://web.archive.org/web/20250130093128id_/https://media.defense.gov/2024/Mar/07/2003407863/-1/-1/0/CSI-CLOUDTOP10-SHARED-RESPONSIBILITY-MODEL.PDF
+    - IAM: https://web.archive.org/web/20250121151902id_/https://media.defense.gov/2024/Mar/07/2003407866/-1/-1/0/CSI-CLOUDTOP10-IDENTITY-ACCESS-MANAGEMENT.PDF
+    - Key Management: https://web.archive.org/web/20250121191330id_/https://media.defense.gov/2024/Mar/07/2003407858/-1/-1/0/CSI-CLOUDTOP10-KEY-MANAGEMENT.PDF
+    - Network Segmentation: https://web.archive.org/web/20250121190300id_/https://media.defense.gov/2024/Mar/07/2003407861/-1/-1/0/CSI-CLOUDTOP10-NETWORK-SEGMENTATION.PDF
+    - Secure Data: https://web.archive.org/web/20250126161035id_/https://media.defense.gov/2024/Mar/07/2003407862/-1/-1/0/CSI-CloudTop10-Secure-Data.PDF
+    - MSP: https://web.archive.org/web/20250121151854id_/https://media.defense.gov/2024/Mar/07/2003407859/-1/-1/0/CSI-CloudTop10-Managed-Service-Providers.PDF
+    - IaC: https://web.archive.org/web/20250121185307id_/https://media.defense.gov/2024/Mar/07/2003407857/-1/-1/0/CSI-CLOUDTOP10-INFRASTRUCTURE-AS-CODE.PDF
+    - Logs: https://web.archive.org/web/20240315142351id_/https://media.defense.gov/2024/Mar/07/2003407864/-1/-1/0/CSI_CloudTop10-Logs-for-Effective-Threat-Hunting.PDF
+    - CI/CD: https://web.archive.org/web/20250107213329id_/https://media.defense.gov/2023/Jun/28/2003249466/-1/-1/0/CSI_DEFENDING_CI_CD_ENVIRONMENTS.PDF
 22. Kubernetes documentation, "Security Checklist": https://kubernetes.io/docs/concepts/security/security-checklist/. "RBAC" is https://kubernetes.io/docs/concepts/security/rbac-good-practices/ and "Pod Security Standards" is https://kubernetes.io/docs/concepts/security/pod-security-standards/.
-23. NSA and CISA, *Kubernetes Hardening Guide* version 1.2 (August 2022): https://media.defense.gov/2022/Aug/29/2003066362/-1/-1/0/CTR_KUBERNETES_HARDENING_GUIDANCE_1.2_20220829.PDF. Read from an Internet Archive copy.
+23. NSA and CISA, *Kubernetes Hardening Guide* version 1.2 (August 2022): https://media.defense.gov/2022/Aug/29/2003066362/-1/-1/0/CTR_KUBERNETES_HARDENING_GUIDANCE_1.2_20220829.PDF. That host refuses automated requests; the copy read is https://web.archive.org/web/20231212041314id_/https://media.defense.gov/2022/Aug/29/2003066362/-1/-1/0/CTR_KUBERNETES_HARDENING_GUIDANCE_1.2_20220829.PDF
 
 **Web platform**
 
