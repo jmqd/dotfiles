@@ -64,15 +64,37 @@
       # - cutter: uic in Qt 6.12 rejects its .ui files, NixOS/nixpkgs#576576
       pkgsPreGcc16For = system: import nixpkgs-pre-gcc16 { inherit system; };
 
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+
+      # One package set per system and config. Nix does not memoize
+      # `import nixpkgs { … }`, so an import in each builder below evaluated
+      # nixpkgs a dozen times per system.
+      pkgsBySystem = nixpkgs.lib.genAttrs systems (system: import nixpkgs { inherit system; });
+      unfreePkgsBySystem = nixpkgs.lib.genAttrs systems (
+        system:
+        import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        }
+      );
+      rustPkgsBySystem = nixpkgs.lib.genAttrs systems (
+        system:
+        import nixpkgs {
+          inherit system;
+          overlays = [ rust-overlay.overlays.default ];
+        }
+      );
+
       # Local crates build with the newest stable Rust in the locked rust-overlay
       # rather than whichever rustc the Nixpkgs revision happens to ship.
       rustPlatformFor =
         system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [ rust-overlay.overlays.default ];
-          };
+          pkgs = rustPkgsBySystem.${system};
           toolchain = pkgs.rust-bin.stable.latest.minimal;
         in
         pkgs.makeRustPlatform {
@@ -83,7 +105,7 @@
       mkNotionCliPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = pkgsBySystem.${system};
         in
         pkgs.buildGoModule {
           pname = "notion-cli";
@@ -114,14 +136,14 @@
       mkPiPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = pkgsBySystem.${system};
         in
         pkgs.callPackage ./pkgs/omp { };
 
       mkOraclePkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = pkgsBySystem.${system};
         in
         # Node 24 in nixpkgs still links brotli without the CVE-2026-111497
         # fix; other majors carry it. Return to the default nodejs once
@@ -134,30 +156,21 @@
       mkClaudeCodePkg =
         system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
+          pkgs = unfreePkgsBySystem.${system};
         in
         pkgs.callPackage ./pkgs/claude-code { };
 
       mkCodexDesktopPkg =
         system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
+          pkgs = unfreePkgsBySystem.${system};
         in
         pkgs.callPackage ./pkgs/codex-desktop { };
 
       mkWisprFlowPkg =
         system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
+          pkgs = unfreePkgsBySystem.${system};
         in
         pkgs.callPackage ./pkgs/wispr-flow { };
 
@@ -166,17 +179,14 @@
       mkPinnedAppPkg =
         name: system:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
+          pkgs = unfreePkgsBySystem.${system};
         in
         pkgs.callPackage (./pkgs + "/${name}") { };
 
       mkFlowPkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = pkgsBySystem.${system};
         in
         pkgs.callPackage ./pkgs/flow {
           rustPlatform = rustPlatformFor system;
@@ -186,14 +196,14 @@
       mkOmpPhonePkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = pkgsBySystem.${system};
         in
         pkgs.callPackage ./projects/omp-phone { rustPlatform = rustPlatformFor system; };
 
       mkVoxtypePkg =
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = pkgsBySystem.${system};
           upstream = voxtype.packages.${system};
           # Upstream's lock keeps webpki-roots and rustls-webpki releases that
           # trust the compromised eMudhra intermediates (RUSTSEC-2026-0381 to
@@ -299,10 +309,10 @@
           };
         };
 
-      perSystem = flake-utils.lib.eachSystem [ "aarch64-darwin" "aarch64-linux" "x86_64-linux" ] (
+      perSystem = flake-utils.lib.eachSystem systems (
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = pkgsBySystem.${system};
           notionCliPkg = mkNotionCliPkg system;
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
