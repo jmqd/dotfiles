@@ -34,7 +34,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{broadcast, mpsc, oneshot, watch, Semaphore};
 use tokio_util::codec::{Framed, LinesCodec};
@@ -56,6 +56,8 @@ struct App {
     sockets: Arc<Semaphore>,
     push: Arc<push::Push>,
     turns: mpsc::Sender<push::Turn>,
+    /// Receives one line per state-changing API request; stderr outside tests.
+    audit: Box<dyn Fn(&str) + Send + Sync>,
 }
 
 struct BrowserSession {
@@ -145,6 +147,7 @@ Web Push uses outbound HTTPS to Google, Mozilla or Apple push services."#
         sockets: Arc::new(Semaphore::new(64)),
         push,
         turns,
+        audit: Box::new(|line| eprintln!("{line}")),
     });
     let mut stopping = app.shutdown.subscribe();
     let extension_worker = tokio::spawn(extensions(app.clone(), extension_listener));
@@ -422,6 +425,16 @@ async fn protect(
 ) -> Response {
     let path = request.uri().path().strip_prefix("/omp").unwrap_or("");
     let headers = request.headers();
+    let write = request.method() != Method::GET && request.method() != Method::HEAD;
+    // Never include bodies, cookies, query strings or other headers: they carry secrets.
+    let audit = (write && path.starts_with("/api/")).then(|| {
+        format!(
+            "login={:?} {} {}",
+            tailnet_login(&app, headers),
+            request.method(),
+            request.uri().path()
+        )
+    });
     let host = single_header(headers, "host");
     let host_ok = host.is_some_and(|host| app.config.hosts.iter().any(|allowed| allowed == host));
     let mut response = if !tailnet_authorized(&app.config, headers) {
@@ -429,7 +442,6 @@ async fn protect(
     } else if !host_ok {
         ApiError::new(StatusCode::FORBIDDEN, "unrecognized host").into_response()
     } else if path.starts_with("/api/") {
-        let write = request.method() != Method::GET && request.method() != Method::HEAD;
         // A sibling host on the same site carries the SameSite cookie, so only
         // same-origin requests and direct user navigation are accepted.
         if !valid_origin(&app, headers, write)
@@ -465,6 +477,15 @@ async fn protect(
                 .unwrap_or("request rejected"),
         )
         .into_response();
+    }
+    if let Some(action) = audit {
+        let time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        (app.audit)(&format!(
+            "omp-phone: audit {time} {action} -> {}",
+            response.status().as_u16()
+        ));
     }
     let headers = response.headers_mut();
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
@@ -989,6 +1010,12 @@ mod tests {
     }
 
     fn test_app() -> (Arc<App>, tempfile::TempDir, Key) {
+        test_app_with_audit(Box::new(|line| eprintln!("{line}")))
+    }
+
+    fn test_app_with_audit(
+        audit: Box<dyn Fn(&str) + Send + Sync>,
+    ) -> (Arc<App>, tempfile::TempDir, Key) {
         let dir = tempfile::tempdir().unwrap();
         let mut config = Config {
             dir: dir.path().to_owned(),
@@ -1027,6 +1054,7 @@ mod tests {
                 sockets: Arc::new(Semaphore::new(2)),
                 push,
                 turns,
+                audit,
             }),
             dir,
             key,
@@ -1242,6 +1270,77 @@ mod tests {
                 routes.clone().oneshot(input).await.unwrap().status(),
                 StatusCode::FORBIDDEN
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn write_requests_are_audited_without_secrets() {
+        let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+        let sink = lines.clone();
+        let (app, _dir, mut key) =
+            test_app_with_audit(Box::new(move |line| sink.lock().push(line.to_owned())));
+        let routes = router(app);
+        let signed = signed_login(&routes, &mut key).await;
+        assert_eq!(signed.status(), StatusCode::OK);
+        let cookie = signed.headers()[header::SET_COOKIE]
+            .to_str()
+            .unwrap()
+            .split(';')
+            .next()
+            .unwrap()
+            .to_owned();
+        let token = cookie.split_once('=').unwrap().1.to_owned();
+        let read = request(Method::GET, "/api/sessions", None, Some(&cookie), json!({}));
+        assert_eq!(
+            routes.clone().oneshot(read).await.unwrap().status(),
+            StatusCode::OK
+        );
+        let prompt = request(
+            Method::POST,
+            "/api/sessions/gone/prompt?debug=query-secret",
+            Some("https://phone.example"),
+            Some(&cookie),
+            json!({"text": "body-secret rm -rf"}),
+        );
+        assert_eq!(
+            routes.clone().oneshot(prompt).await.unwrap().status(),
+            StatusCode::NOT_FOUND
+        );
+        let logout = request(
+            Method::POST,
+            "/api/logout",
+            Some("https://phone.example"),
+            Some(&cookie),
+            json!({}),
+        );
+        assert_eq!(
+            routes.oneshot(logout).await.unwrap().status(),
+            StatusCode::OK
+        );
+
+        let lines = lines.lock();
+        let actions: Vec<_> = lines
+            .iter()
+            .map(|line| {
+                let rest = line.strip_prefix("omp-phone: audit ").unwrap();
+                let (time, action) = rest.split_once(' ').unwrap();
+                assert!(time.parse::<u64>().unwrap() > 0, "{line}");
+                action
+            })
+            .collect();
+        assert_eq!(
+            actions,
+            [
+                r#"login="owner@example.com" POST /omp/api/auth/start -> 200"#,
+                r#"login="owner@example.com" POST /omp/api/auth/finish -> 200"#,
+                r#"login="owner@example.com" POST /omp/api/sessions/gone/prompt -> 404"#,
+                r#"login="owner@example.com" POST /omp/api/logout -> 200"#,
+            ]
+        );
+        for line in lines.iter() {
+            for secret in ["body-secret", "query-secret", token.as_str()] {
+                assert!(!line.contains(secret), "{line}");
+            }
         }
     }
 
