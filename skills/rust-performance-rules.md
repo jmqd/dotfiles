@@ -2,7 +2,7 @@
 
 Rules for making Rust programs fast. Each rule cites its source. Numbers are what the authors measured on their own hardware, so treat them as orders of magnitude, not promises. Items marked ⏳ depend on the Rust version or toolchain; re-check them before relying on them.
 
-Companion to [speeding-up-rust-builds.md](speeding-up-rust-builds.md), which covers compile times in depth.
+Companion to [performance-rules.md](performance-rules.md), which covers language-agnostic method and measurement, and to [speeding-up-rust-builds.md](speeding-up-rust-builds.md), which covers compile times in depth.
 
 ## How to use this file
 
