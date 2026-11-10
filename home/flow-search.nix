@@ -46,8 +46,9 @@ in
       KeepAlive = true;
       RunAtLoad = true;
       WorkingDirectory = flowSearchStateDir;
-      StandardOutPath = "/tmp/flow-search-zoekt.log";
-      StandardErrorPath = "/tmp/flow-search-zoekt.err.log";
+      # Fixed names in world-writable /tmp could be pre-planted by another user.
+      StandardOutPath = "${config.home.homeDirectory}/Library/Logs/flow-search-zoekt.log";
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/flow-search-zoekt.err.log";
     };
   };
 }

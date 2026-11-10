@@ -168,7 +168,7 @@ On macOS/Darwin, Home Manager declares a `launchd` agent:
 - starts `zoekt-webserver -rpc`
 - `RunAtLoad = true`
 - `KeepAlive = true`
-- writes stdout/stderr logs to `/tmp/flow-search-zoekt.log` and `/tmp/flow-search-zoekt.err.log`
+- writes stdout/stderr logs to `~/Library/Logs/flow-search-zoekt.log` and `~/Library/Logs/flow-search-zoekt.err.log`
 
 Both variants point the webserver at the same local Zoekt index directory and listen on `127.0.0.1:6070` by default.
 
