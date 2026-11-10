@@ -4,7 +4,7 @@
 
 use anyhow::{Context as _, bail};
 use serde::Deserialize;
-use std::io::Write as _;
+use std::io::{Read as _, Write as _};
 use std::path::Path;
 use std::process::{Command, Stdio};
 
@@ -20,6 +20,10 @@ pub enum Artifact {
 }
 
 const CURL_TIMEOUT_SECS: &str = "60";
+const CURL_MAX_FILESIZE: &str = "16777216";
+/// An Info.plist is a few KiB; a crafted image could expand a member without
+/// bound.
+const MAX_ARCHIVE_MEMBER_BYTES: u64 = 1 << 20;
 
 fn curl(args: &[&str], url: &str) -> anyhow::Result<Vec<u8>> {
     let mut command = Command::new("curl");
@@ -30,6 +34,10 @@ fn curl(args: &[&str], url: &str) -> anyhow::Result<Vec<u8>> {
             "--show-error",
             "--max-time",
             CURL_TIMEOUT_SECS,
+            // Upstream metadata is far smaller; refuse anything larger before
+            // it is buffered.
+            "--max-filesize",
+            CURL_MAX_FILESIZE,
             // Never fall back to plaintext, including through a redirect.
             "--proto",
             "=https",
@@ -118,18 +126,35 @@ pub fn prefetch(url: &str, artifact: Artifact) -> anyhow::Result<Prefetched> {
 /// Reads one member of a DMG. p7zip reports header errors on current DMGs;
 /// the official 7-Zip (`7zz`) reads them cleanly.
 pub fn extract_from_archive(archive: &str, member: &str) -> anyhow::Result<Vec<u8>> {
-    let output = Command::new("7zz")
+    let mut child = Command::new("7zz")
         .args(["x", "-so", archive, member])
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .context("running 7zz")?;
-    if !output.status.success() || output.stdout.is_empty() {
+    let mut contents = Vec::new();
+    child
+        .stdout
+        .take()
+        .expect("stdout was piped above")
+        .take(MAX_ARCHIVE_MEMBER_BYTES + 1)
+        .read_to_end(&mut contents)
+        .context("reading 7zz output")?;
+    if contents.len() as u64 > MAX_ARCHIVE_MEMBER_BYTES {
+        // Only the error below matters; kill fails solely if 7zz already exited.
+        let _ = child.kill();
+        let _ = child.wait();
+        bail!("{member} in {archive} is larger than {MAX_ARCHIVE_MEMBER_BYTES} bytes");
+    }
+    let output = child.wait_with_output().context("waiting for 7zz")?;
+    if !output.status.success() || contents.is_empty() {
         bail!(
             "7zz could not extract {member} from {archive}: {}",
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    Ok(output.stdout)
+    Ok(contents)
 }
 
 pub fn nix_build(repo_root: &Path, attr: &str) -> anyhow::Result<()> {
