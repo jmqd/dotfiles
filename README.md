@@ -681,7 +681,11 @@ It keeps:
   commits no remote or tag holds, except linked worktrees whose diff the
   default branch holds; a worktree whose diff touches a path the default
   branch has changed since stays. The plan deletes around them and lists them
-  under "Kept or skipped";
+  under "Kept or skipped". This also covers checkouts inside cache folders:
+  the cache entry is cleaned around them;
+- git checkouts whose own config can run commands (a filter, a diff or merge
+  driver, `textconv`, or an include), and checkouts with submodules or
+  embedded repositories. These are kept without being inspected;
 - linked worktrees with ignored files that are not build output, such as
   `.env`;
 - dev shells of projects that a process has open;
