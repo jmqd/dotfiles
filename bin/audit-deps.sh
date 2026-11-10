@@ -8,6 +8,8 @@ failures=0
 updates=0
 residuals=0
 tmp_paths=()
+cargo_audit_bin=""
+cargo_audit_db_fetched=0
 
 cleanup() {
 	for path in "${tmp_paths[@]}"; do
@@ -48,8 +50,18 @@ run_required() {
 	fi
 }
 
+# git+file reads the tracked tree in place; a plain path makes Nix copy the
+# whole working directory, ignored caches included, into the store.
 flake_expr() {
-	DOTFILES_AUDIT_ROOT="$repo_root" nix eval --impure --raw --expr "let flake = builtins.getFlake (builtins.getEnv \"DOTFILES_AUDIT_ROOT\"); in $*"
+	DOTFILES_AUDIT_ROOT="$repo_root" nix eval --impure --raw --expr "let flake = builtins.getFlake (\"git+file://\" + builtins.getEnv \"DOTFILES_AUDIT_ROOT\"); in $*"
+}
+
+# Resolve a nixpkgs tool once; `nix run` re-evaluates the flake on every call.
+tool_bin() {
+	local attr="$1" bin="$2" out
+	out="$(nix build --no-link --print-out-paths --inputs-from "$repo_root" "nixpkgs#${attr}" | head -n 1)"
+	[ -x "$out/bin/$bin" ] || return 1
+	printf '%s\n' "$out/bin/$bin"
 }
 
 package_version() {
@@ -207,8 +219,14 @@ cargo_audit_lock() {
 	stale_file="$(mktemp)"
 	tmp_paths+=("$json_file" "$json_stderr" "$actual_file" "$allowed_file" "$unexpected_file" "$stale_file")
 
+	# Only the first run needs to fetch the advisory database.
+	local no_fetch=""
+	if [ "$cargo_audit_db_fetched" -eq 1 ]; then
+		no_fetch="--no-fetch"
+	fi
+
 	set +e
-	nix run --inputs-from "$repo_root" nixpkgs#cargo-audit -- audit --file "$lock_file" --json >"$json_file" 2>"$json_stderr"
+	"$cargo_audit_bin" audit ${no_fetch:+"$no_fetch"} --file "$lock_file" --json >"$json_file" 2>"$json_stderr"
 	set -e
 
 	# Empty or error output must fail; jq alone accepts empty input.
@@ -218,6 +236,7 @@ cargo_audit_lock() {
 		fail "cargo audit JSON failed for $name"
 		return
 	fi
+	cargo_audit_db_fetched=1
 
 	: >"$allowed_file"
 	if [ "${#allowed_ids[@]}" -gt 0 ]; then
@@ -244,26 +263,7 @@ cargo_audit_lock() {
 		printf 'known residual upstream advisories ignored for pass/fail: %s\n' "$(tr '\n' ' ' <"$actual_file")"
 	fi
 
-	local args=(audit --file "$lock_file")
-	for advisory in "${allowed_ids[@]}"; do
-		args+=(--ignore "$advisory")
-	done
-
-	local output_file status
-	output_file="$(mktemp)"
-	tmp_paths+=("$output_file")
-
-	set +e
-	nix run --inputs-from "$repo_root" nixpkgs#cargo-audit -- "${args[@]}" >"$output_file" 2>&1
-	status=$?
-	set -e
-
-	if [ "$status" -eq 0 ]; then
-		ok "cargo audit passed for $name"
-	else
-		cat "$output_file"
-		fail "cargo audit failed for $name"
-	fi
+	ok "cargo audit passed for $name"
 }
 
 sorted_ids_file() {
@@ -392,6 +392,11 @@ main() {
 	check_pins
 
 	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json"
+
+	if ! cargo_audit_bin="$(tool_bin cargo-audit cargo-audit)"; then
+		fail "could not build cargo-audit"
+		exit 1
+	fi
 
 	local gws_src trueflow_src notion_src
 	# Build the source so the lockfile exists even when the store lacks it.
