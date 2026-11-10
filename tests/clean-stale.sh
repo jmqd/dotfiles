@@ -285,6 +285,27 @@ git clone -q "$origin" "$src/old3/target/dylint/clone"
 git clone -q "$origin" "$tmp/dirty-clone"
 file "$tmp/dirty-clone/wip.txt"
 
+# A tree unpacked into a temp root brings its own git config, so
+# inspecting it would run the filter configured there. A repository
+# embedded in another one runs its filter while git status enters it.
+filtered_repo() {
+	git init -q -b main "$1"
+	file "$1/a.txt"
+	printf '* filter=x\n' >"$1/.gitattributes"
+	git -C "$1" add a.txt .gitattributes
+	git -C "$1" commit -qm init
+	git -C "$1" config filter.x.clean "touch $2"
+	# Stat data that no longer matches the index makes git filter a.txt.
+	touch -m -d "$(stamp $((CLEAN_STALE_NOW - 5 * 86400)))" "$1/a.txt"
+}
+filtered_marker="$fixture/filter-ran"
+embedded_marker="$fixture/embedded-filter-ran"
+filtered_repo "$tmp/filtered" "$filtered_marker"
+git init -q -b main "$tmp/embedding"
+filtered_repo "$tmp/embedding/inner" "$embedded_marker"
+git -C "$tmp/embedding" update-index --add --cacheinfo "160000,$(git -C "$tmp/embedding/inner" rev-parse HEAD),inner"
+git -C "$tmp/embedding" commit -qm embed
+
 # omp task copies, each with an owner record.
 (exit 0) &
 dead_pid=$!
@@ -440,6 +461,8 @@ expected_kept=(
 	"$tmp/empty.log"
 	"$tmp/dirty-clone/wip.txt"
 	"$src/old2/target/task/probe/a.txt"
+	"$tmp/filtered/a.txt"
+	"$tmp/embedding/inner/a.txt"
 	"$src/wt-dirty/notes.txt"
 	"$src/wt-diverged/feature.txt"
 	"$src/wt-detached"
@@ -460,6 +483,8 @@ expected_notes=(
 	"$src/wt-locked: locked worktree"
 	"$src/old2/target/task/probe: commits no remote or tag holds"
 	"$tmp/dirty-clone: uncommitted changes"
+	"$tmp/filtered: repository config can run commands; not inspected"
+	"$tmp/embedding: has submodules"
 	"$HOME/.omp/wt/dirty/m: uncommitted changes (orphaned omp task copy)"
 	"$toolchains/1.80.0-test-host: selected by $src/pinned/rust-toolchain.toml and 1 more"
 	"$toolchains/1.72.0-test-host: selected by $src/legacy/rust-toolchain"
@@ -510,6 +535,9 @@ if planned | grep -Fxq -- "$src/legacy"; then
 fi
 
 output="$(run --dry-run)"
+for marker in "$filtered_marker" "$embedded_marker"; do
+	[ ! -e "$marker" ] || fail "dry run ran a filter from a checkout's git config: $marker"
+done
 for path in "${expected_gone[@]}"; do
 	planned | grep -Fxq -- "$path" || fail "dry run does not list $path${nl}$output"
 done

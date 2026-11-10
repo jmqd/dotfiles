@@ -51,9 +51,11 @@ last.
 Keeps anything written, renamed, or held open by a process within AGE;
 anything containing a socket or FIFO; empty files and directories; caches
 that hold installs or models (playwright, puppeteer, huggingface, ...);
-anything in the trash; and any git checkout with uncommitted changes,
+anything in the trash; any git checkout with uncommitted changes,
 stashes, or commits no remote or tag holds, unless it is a linked
-worktree whose diff the default branch holds. Reads count only where the
+worktree whose diff the default branch holds; and, without inspecting
+it, any git checkout whose own config could make git run a command
+(filters, diff or merge drivers, includes). Reads count only where the
 filesystem records them: Linux relatime records at most one read a day,
 and macOS records only the first read after each change.
 
@@ -524,6 +526,31 @@ git_repo() {
 	LC_ALL=C GIT_OPTIONAL_LOCKS=0 git --git-dir="$repo" -c core.fsmonitor=false "$@"
 }
 
+# Config keys that make git run a command: filters run while status,
+# diff, and hash-object read files, and an include can pull in any of
+# them. git_in already turns fsmonitor off, and none of the commands this
+# tool runs fires a hook.
+readonly command_keys='^(filter\..*\.(clean|smudge|process)|diff\..*\.(textconv|command)|merge\..*\.driver|include(if\..*)?\.path)$'
+
+# Succeeds when git config FILE sets a key in command_keys or cannot be
+# read; fails when FILE is absent or sets none.
+config_runs_commands() {
+	local status=0
+	[ -e "$1" ] || return 1
+	[ -r "$1" ] || return 0
+	git config --file "$1" --name-only --get-regexp "$command_keys" >/dev/null 2>&1 || status=$?
+	[ "$status" -ne 1 ]
+}
+
+# Succeeds when the checkout at DIR has submodules or embedded
+# repositories (a .gitmodules file or a gitlink in its index), or when
+# its index cannot be listed.
+has_submodules() {
+	[ ! -e "$1/.gitmodules" ] || return 0
+	git_in "$1" ls-files --stage >"$work/stage" 2>/dev/null || return 0
+	grep -q '^160000 ' "$work/stage"
+}
+
 # Prints the refs of the default branch of the checkout at DIR that
 # exist, local first, then origin's: the branch origin/HEAD names, else
 # main, else master.
@@ -633,13 +660,20 @@ assess_checkout() {
 	else
 		checkout_linked=0
 	fi
-	if ! status="$(git_in "$dir" status --porcelain --untracked-files=normal --ignore-submodules=none 2>/dev/null)"; then
+	# The checkout may be an unpacked tree whose config is not the owner's.
+	if config_runs_commands "$checkout_common/config" || config_runs_commands "$git_dir/config.worktree"; then
+		checkout_risk="repository config can run commands; not inspected"
+		return
+	fi
+	# Submodules keep the checkout anyway, and status would run git in
+	# them under their own config.
+	if ! status="$(git_in "$dir" status --porcelain --untracked-files=normal --ignore-submodules=all 2>/dev/null)"; then
 		checkout_risk="git status failed"
 	elif [ "$checkout_linked" -eq 1 ]; then
 		# Branches and stashes stay in the repository; only HEAD and
 		# uncommitted changes can be lost, and neither is once the default
 		# branch holds the worktree's whole diff.
-		if [ -e "$dir/.gitmodules" ]; then
+		if has_submodules "$dir"; then
 			checkout_risk="has submodules"
 		elif [ -e "$git_dir/locked" ]; then
 			checkout_risk="locked worktree"
@@ -658,7 +692,7 @@ assess_checkout() {
 		esac
 	elif [ -n "$status" ]; then
 		checkout_risk="uncommitted changes"
-	elif [ -e "$dir/.gitmodules" ]; then
+	elif has_submodules "$dir"; then
 		checkout_risk="has submodules"
 	elif git_in "$dir" rev-parse -q --verify refs/stash >/dev/null 2>&1; then
 		checkout_risk="stashed changes"
