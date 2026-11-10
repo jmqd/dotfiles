@@ -118,7 +118,8 @@ run_home_manager_switch() {
 	local status
 	local attempt
 
-	log_file="$(mktemp "${TMPDIR:-/tmp}/hm-switch.XXXXXX.log")"
+	# BSD mktemp only expands trailing Xs, so the template must end with them.
+	log_file="$(mktemp "${TMPDIR:-/tmp}/hm-switch.log.XXXXXX")"
 
 	for attempt in 1 2; do
 		: >"$log_file"
