@@ -72,8 +72,8 @@ in
       RunAtLoad = true;
       ProcessType = "Background";
       ThrottleInterval = 5;
-      StandardOutPath = "/tmp/postgresql-${config.home.username}.log";
-      StandardErrorPath = "/tmp/postgresql-${config.home.username}.err.log";
+      StandardOutPath = "${config.home.homeDirectory}/Library/Logs/postgresql.log";
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/postgresql.err.log";
     };
   };
 }

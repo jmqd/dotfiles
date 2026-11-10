@@ -291,7 +291,7 @@
                 RunAtLoad = true;
                 ProcessType = "Background";
                 StandardOutPath = "/dev/null";
-                StandardErrorPath = "/tmp/flow-thermal.err.log";
+                StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/flow-thermal.err.log";
               };
             };
           };

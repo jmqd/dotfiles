@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   ...
@@ -25,8 +26,8 @@ in
       ProcessType = "Interactive";
       RunAtLoad = true;
       KeepAlive = true;
-      StandardOutPath = "/tmp/raycast.log";
-      StandardErrorPath = "/tmp/raycast.err.log";
+      StandardOutPath = "${config.home.homeDirectory}/Library/Logs/raycast.log";
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/raycast.err.log";
     };
   };
 
