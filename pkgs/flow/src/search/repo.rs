@@ -240,9 +240,9 @@ pub fn repo_from_working_dir(config: &SearchConfig, working_dir: &Path) -> Optio
         .map(|path| DiscoveredRepo::from_path(config, path))
 }
 
-/// Reports whether `repo_path` has a HEAD commit. An unborn HEAD is
-/// `Ok(false)`; failing to run git, or any other git failure, is an error.
-pub fn repo_has_head(git_bin: &str, repo_path: &Path) -> anyhow::Result<bool> {
+/// The commit `repo_path`'s HEAD points at. An unborn HEAD is `Ok(None)`;
+/// failing to run git, or any other git failure, is an error.
+pub fn repo_head(git_bin: &str, repo_path: &Path) -> anyhow::Result<Option<String>> {
     let output = Command::new(git_bin)
         .args([
             "-C",
@@ -257,8 +257,10 @@ pub fn repo_has_head(git_bin: &str, repo_path: &Path) -> anyhow::Result<bool> {
     // With --quiet, git exits 1 without output when HEAD is unborn; a missing
     // or broken repository exits 128.
     match output.status.code() {
-        Some(0) => Ok(true),
-        Some(1) => Ok(false),
+        Some(0) => Ok(Some(
+            String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+        )),
+        Some(1) => Ok(None),
         _ => {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
             bail!(

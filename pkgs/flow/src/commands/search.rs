@@ -9,7 +9,7 @@ use crate::search::dirty;
 use crate::search::lock::FileLock;
 use crate::search::metadata::{self, CommitMatch, CommitSearchFilters};
 use crate::search::repo::{
-    DiscoveredRepo, discover_repos, load_repo_records, repo_from_working_dir, repo_has_head,
+    DiscoveredRepo, discover_repos, load_repo_records, repo_from_working_dir, repo_head,
     resolve_repo_selector, write_repo_records,
 };
 use crate::search::zoekt::{self, ZoektMatch};
@@ -17,6 +17,7 @@ use crate::search::{SearchTools, join_query_terms, normalize_query_terms};
 use anyhow::Context as _;
 use chrono::Utc;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
@@ -326,11 +327,13 @@ fn execute_reindex(
     let _lock = FileLock::acquire(&config.reindex_lock_path)?;
     let mut discovered_repos = discover_repos(config)?;
     let mut indexable_repos = Vec::new();
+    let mut heads = BTreeMap::new();
     let mut warnings = Vec::new();
 
     for repo in &discovered_repos {
-        if repo_has_head(&tools.git_bin, &repo.path)? {
+        if let Some(head) = repo_head(&tools.git_bin, &repo.path)? {
             indexable_repos.push(repo.clone());
+            heads.insert(repo.path.clone(), head);
         } else {
             warnings.push(format!(
                 "skipping {} because it does not have a HEAD commit yet",
@@ -353,6 +356,7 @@ fn execute_reindex(
         config,
         &tools.zoekt_git_index_bin,
         &indexable_repos,
+        &heads,
         &previous_names,
     )?;
     let metadata_stats = metadata::reindex(config, &tools.git_bin, &indexable_repos)?;

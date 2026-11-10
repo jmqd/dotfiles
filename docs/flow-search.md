@@ -131,14 +131,14 @@ Current environment overrides:
 
 - `FLOW_SEARCH_ROOTS`: search roots for repo discovery (path-separated list)
 - `FLOW_SEARCH_STATE_DIR`: state directory for indexes/metadata/status files
-- `FLOW_SEARCH_ZOEKT_LISTEN`: endpoint reported by `flow search status`
+- `FLOW_SEARCH_ZOEKT_LISTEN`: `zoekt-webserver` endpoint that code searches query and `flow search status` probes
 - `FLOW_SEARCH_GIT_BIN`: git executable to use
-- `FLOW_SEARCH_ZOEKT_BIN`: zoekt CLI executable to use for searches
+- `FLOW_SEARCH_ZOEKT_BIN`: zoekt CLI executable for code searches the webserver cannot answer
 - `FLOW_SEARCH_ZOEKT_GIT_INDEX_BIN`: zoekt-git-index executable to use for reindexing
 
 State layout today:
 
-- Zoekt index: `$FLOW_SEARCH_STATE_DIR/zoekt/index` (or `~/.local/share/flow-search/zoekt/index`)
+- Zoekt index: `$FLOW_SEARCH_STATE_DIR/zoekt/index` (or `~/.local/share/flow-search/zoekt/index`), with `flow-index.json` beside the shards recording the commit and shard count of each indexed repo
 - commit metadata DB: `$FLOW_SEARCH_STATE_DIR/metadata/commits.sqlite`
 - repo manifest: `$FLOW_SEARCH_STATE_DIR/metadata/repos.json`
 - search state: `$FLOW_SEARCH_STATE_DIR/state.json`
@@ -156,7 +156,7 @@ index-server, and maintenance executables are not installed.
 On Linux, Home Manager declares a user `systemd` service:
 
 - service name: `flow-search-zoekt`
-- starts `zoekt-webserver`
+- starts `zoekt-webserver -rpc`
 - restarts on failure
 - is wanted by `default.target`
 
@@ -165,7 +165,7 @@ On Linux, Home Manager declares a user `systemd` service:
 On macOS/Darwin, Home Manager declares a `launchd` agent:
 
 - agent name: `flow-search-zoekt`
-- starts `zoekt-webserver`
+- starts `zoekt-webserver -rpc`
 - `RunAtLoad = true`
 - `KeepAlive = true`
 - writes stdout/stderr logs to `/tmp/flow-search-zoekt.log` and `/tmp/flow-search-zoekt.err.log`
@@ -174,20 +174,17 @@ Both variants point the webserver at the same local Zoekt index directory and li
 
 ## Is the long-running Zoekt service required?
 
-For the current shipped `flow search` CLI behavior, the long-running `zoekt-webserver` is **not required**.
+No, but it makes code search much faster. `zoekt-webserver -rpc` keeps the shards loaded and answers `/api/search`, while the `zoekt` CLI loads every shard and computes every match on each run.
 
-The command implementation:
+`flow search code` and the code half of `flow search query`:
 
-- uses the `zoekt` CLI directly for indexed searches
-- uses `zoekt-git-index` directly for reindexing
-- only checks the configured listen address for observability in `flow search status`
+- put the `--repo` and `--path` filters into the Zoekt query itself (`repo:^<zoekt name>$`, `file:<path>`)
+- ask the webserver at `FLOW_SEARCH_ZOEKT_LISTEN` for the top `--limit` files, with the same match limits the CLI uses, so both return the same ranked results
+- fall back to the `zoekt` CLI when the webserver is not reachable, answers with an error, or is not serving exactly the index on disk
 
-So today the service is best understood as:
+The last check matters after a reindex. `flow search reindex` replaces the index directory, and the webserver notices only some time later; on a 618 MB index it served partial or stale results for 25-40 s. Its answers in that window would be wrong rather than slow, so before and after each search flow compares the webserver's `/api/list` (repo names, `HEAD` commits and shard counts) with `flow-index.json` in the index directory. Any difference, or an index built before flow wrote that file, means the search goes to the CLI. A webserver pointed at another index directory is skipped the same way.
 
-- managed by Home Manager
-- observable from `flow search status`
-- available for other workflows/future integration
-- **not** required for `flow search code`, `flow search commits`, `flow search query`, or `flow search reindex`
+`flow search reindex` never uses the webserver.
 
 ## Current limitations worth knowing
 

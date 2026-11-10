@@ -23,7 +23,7 @@ in
       After = [ "default.target" ];
     };
     Service = {
-      ExecStart = "${zoekt}/bin/zoekt-webserver -index ${lib.escapeShellArg flowSearchIndexDir} -listen 127.0.0.1:6070";
+      ExecStart = "${zoekt}/bin/zoekt-webserver -rpc -index ${lib.escapeShellArg flowSearchIndexDir} -listen 127.0.0.1:6070";
       Restart = "on-failure";
       WorkingDirectory = flowSearchStateDir;
     };
@@ -37,6 +37,7 @@ in
     config = {
       ProgramArguments = [
         "${zoekt}/bin/zoekt-webserver"
+        "-rpc"
         "-index"
         flowSearchIndexDir
         "-listen"
