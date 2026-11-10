@@ -40,7 +40,10 @@ stdenvNoCC.mkDerivation {
   doInstallCheck = true;
   installCheckPhase = ''
     runHook preInstallCheck
-    /usr/bin/codesign --verify --deep --strict "$out/Applications/Codex.app"
+    # Team 2DC432GLL2 is OpenAI. A valid signature from anyone else must fail.
+    /usr/bin/codesign --verify --deep --strict \
+      -R='anchor apple generic and certificate leaf[subject.OU] = "2DC432GLL2"' \
+      "$out/Applications/Codex.app"
     test -x "$out/Applications/Codex.app/Contents/MacOS/ChatGPT"
     runHook postInstallCheck
   '';

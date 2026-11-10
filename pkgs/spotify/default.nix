@@ -23,7 +23,10 @@ else
     doInstallCheck = true;
     installCheckPhase = ''
       runHook preInstallCheck
-      /usr/bin/codesign --verify --deep --strict "$out/Applications/Spotify.app"
+      # Team 2FNC3A47ZF is Spotify. A valid signature from anyone else must fail.
+      /usr/bin/codesign --verify --deep --strict \
+        -R='anchor apple generic and certificate leaf[subject.OU] = "2FNC3A47ZF"' \
+        "$out/Applications/Spotify.app"
       runHook postInstallCheck
     '';
   }

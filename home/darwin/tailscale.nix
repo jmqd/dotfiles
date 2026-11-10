@@ -76,7 +76,11 @@ let
 
       # Keep the official installer intact: its scripts manage app replacement,
       # LaunchServices, the bundled CLI/manpages, and application launch.
-      /usr/sbin/pkgutil --check-signature "$package"
+      # The package runs installer scripts as root, so require Tailscale's
+      # Developer ID, not just any valid signature.
+      signature=$(/usr/sbin/pkgutil --check-signature "$package")
+      printf '%s\n' "$signature"
+      [[ "$signature" == *"Developer ID Installer: Tailscale Inc. (W5364U7YZB)"* ]] || refuse "Package is not signed by Tailscale Inc. (W5364U7YZB)."
       /usr/sbin/spctl --assess --type install "$package"
       printf 'Installing standalone %s (currently %s); this can restart the VPN.\n' "$expected_version" "''${installed_version:-absent}"
       /usr/bin/sudo /usr/sbin/installer -pkg "$package" -target /
@@ -84,7 +88,9 @@ let
       installed_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")
       installed_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
       [[ "$installed_id" == io.tailscale.ipn.macsys && "$installed_version" == "$expected_version" ]] || refuse "Installed app does not match the pinned standalone version."
-      /usr/bin/codesign --verify --deep --strict "$app"
+      /usr/bin/codesign --verify --deep --strict \
+        -R='anchor apple generic and certificate leaf[subject.OU] = "W5364U7YZB"' \
+        "$app"
       echo "Installed. Approve the system extension and sign in if prompted; then run tailscale status."
       echo "Check the node name/IP before configuring OMP Serve."
     '';

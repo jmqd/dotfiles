@@ -37,7 +37,10 @@ stdenvNoCC.mkDerivation {
   installCheckPhase = ''
     runHook preInstallCheck
     app="$out/Applications/Wispr Flow.app"
-    /usr/bin/codesign --verify --deep --strict "$app"
+    # Team C9VQZ78H85 is Wispr. A valid signature from anyone else must fail.
+    /usr/bin/codesign --verify --deep --strict \
+      -R='anchor apple generic and certificate leaf[subject.OU] = "C9VQZ78H85"' \
+      "$app"
     test -x "$app/Contents/MacOS/Wispr Flow"
     test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "${version}"
     runHook postInstallCheck

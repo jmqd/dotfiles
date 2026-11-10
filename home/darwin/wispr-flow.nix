@@ -49,7 +49,9 @@ let
       /usr/bin/ditto "$source" "$staged"
       # Writable so the in-app updater can replace the bundle.
       chmod -R u+w "$staged"
-      /usr/bin/codesign --verify --deep --strict "$staged"
+      /usr/bin/codesign --verify --deep --strict \
+        -R='anchor apple generic and certificate leaf[subject.OU] = "C9VQZ78H85"' \
+        "$staged"
       if [[ -n "$installed_version" ]]; then
         mv "$app" "$HOME/.Trash/Wispr Flow $installed_version.$(date +%s).app"
       fi
