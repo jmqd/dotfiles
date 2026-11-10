@@ -12,8 +12,8 @@
       },
       "original": {
         "owner": "djgoku",
+        "ref": "v0.2.1",
         "repo": "sops",
-        "rev": "07fd550969fe164f71aab89c93338f8993fbd9e6",
         "type": "github"
       }
     },
