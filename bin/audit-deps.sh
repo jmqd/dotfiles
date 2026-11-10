@@ -401,6 +401,7 @@ main() {
 
 	cargo_audit_lock "pkgs/flow" "pkgs/flow/Cargo.lock"
 	cargo_audit_lock "projects/omp-phone" "projects/omp-phone/Cargo.lock"
+	cargo_audit_lock "projects/spotify-export" "projects/spotify-export/Cargo.lock"
 	cargo_audit_lock \
 		"googleworkspace/cli" \
 		"$gws_src/Cargo.lock" \
