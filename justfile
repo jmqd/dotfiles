@@ -8,7 +8,7 @@ fmt:
     nix fmt
 
 check:
-    nix flake check
+    nix flake check --option eval-cores 0
 
 audit-deps:
     bin/audit-deps.sh
