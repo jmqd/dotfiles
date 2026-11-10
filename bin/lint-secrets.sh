@@ -5,13 +5,16 @@ repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$repo_root"
 
 scan_mode="dir"
+log_opts=""
 
 usage() {
 	cat <<EOF
-usage: $(basename "$0") [--history]
+usage: $(basename "$0") [--history | --unpushed REMOTE]
 
-Run the default worktree secret scan, or use --history to scan all local Git
-refs with the repository gitleaks config.
+Run the default worktree secret scan. --history scans all local Git refs.
+--unpushed REMOTE scans only commits on local refs that REMOTE's
+remote-tracking branches do not contain. Both use the repository gitleaks
+config.
 EOF
 }
 
@@ -19,7 +22,20 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--history)
 		scan_mode="git"
+		log_opts="--all"
 		shift
+		;;
+	--unpushed)
+		# The name becomes a ref glob inside one --log-opts string.
+		case "${2:-}" in
+		"" | *[!A-Za-z0-9._/-]*)
+			usage >&2
+			exit 2
+			;;
+		esac
+		scan_mode="git"
+		log_opts="--all --not --remotes=$2"
+		shift 2
 		;;
 	-h | --help)
 		usage
@@ -34,7 +50,7 @@ done
 
 args=("$scan_mode" --config "$repo_root/.gitleaks.toml" --redact --exit-code 1 --no-banner .)
 if [ "$scan_mode" = "git" ]; then
-	args+=(--log-opts=--all)
+	args+=("--log-opts=$log_opts")
 fi
 
 if command -v gitleaks >/dev/null 2>&1; then

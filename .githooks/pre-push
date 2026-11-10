@@ -76,33 +76,32 @@ done < <(git ls-files -z)
 
 failed=0
 
+# Runs shellcheck over the given files, one process per file in parallel.
+# Returns non-zero when a file fails or shellcheck cannot be run.
 run_shellcheck() {
 	local shell_name="$1"
-	local file="$2"
-
-	if [ "$shell_name" = "zsh" ]; then
-		echo "pre-push: WARN ShellCheck does not support zsh; skipped for $file"
-		return 0
-	fi
+	shift
 
 	if command -v shellcheck >/dev/null 2>&1; then
-		shellcheck -x -s "$shell_name" "$file"
-		return $?
+		printf '%s\0' "$@" | xargs -0 -n 1 -P "$jobs" shellcheck -x -s "$shell_name"
+		return
 	fi
 
 	if command -v nix >/dev/null 2>&1 && [ -f "$repo_root/flake.nix" ]; then
-		local tmp_cache_dir
+		local tmp_cache_dir status=0
 		tmp_cache_dir="$(mktemp -d)"
-		if XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command shellcheck -x -s "$shell_name" "$file"; then
-			rm -rf "$tmp_cache_dir"
-			return 0
-		fi
+		XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command shellcheck -x -s "$shell_name" "$@" || status=$?
 		rm -rf "$tmp_cache_dir"
-		return 2
+		return "$status"
 	fi
 
-	return 3
+	echo "pre-push: shellcheck unavailable (install it or enable nix)" >&2
+	return 1
 }
+
+jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+bash_files=()
+sh_files=()
 
 if [ "${#shell_files[@]}" -eq 0 ]; then
 	echo "pre-push: no shell files found; skipping shell checks"
@@ -120,6 +119,7 @@ else
 				echo "pre-push: syntax check failed for $file (bash)" >&2
 				failed=1
 			fi
+			bash_files+=("$file")
 			;;
 		zsh)
 			if command -v zsh >/dev/null 2>&1; then
@@ -130,27 +130,16 @@ else
 			else
 				echo "pre-push: WARN zsh not found; skipped syntax check for $file"
 			fi
+			echo "pre-push: WARN ShellCheck does not support zsh; skipped for $file"
 			;;
 		*)
 			if ! sh -n "$file"; then
 				echo "pre-push: syntax check failed for $file (sh)" >&2
 				failed=1
 			fi
+			sh_files+=("$file")
 			;;
 		esac
-
-		if run_shellcheck "$shell_name" "$file"; then
-			:
-		else
-			shellcheck_status=$?
-			if [ "$shellcheck_status" -eq 1 ]; then
-				echo "pre-push: shellcheck failed for $file" >&2
-				failed=1
-			else
-				echo "pre-push: shellcheck unavailable for $file (install or enable nix)" >&2
-				failed=1
-			fi
-		fi
 
 		case "$file" in
 		bin/*.sh | .githooks/pre-push)
@@ -161,6 +150,15 @@ else
 			;;
 		esac
 	done
+
+	if [ "${#bash_files[@]}" -gt 0 ] && ! run_shellcheck bash "${bash_files[@]}"; then
+		echo "pre-push: shellcheck failed for bash scripts" >&2
+		failed=1
+	fi
+	if [ "${#sh_files[@]}" -gt 0 ] && ! run_shellcheck sh "${sh_files[@]}"; then
+		echo "pre-push: shellcheck failed for sh scripts" >&2
+		failed=1
+	fi
 fi
 
 echo "pre-push: running secret scan"
@@ -169,8 +167,18 @@ if ! bin/lint-secrets.sh; then
 	failed=1
 fi
 
-echo "pre-push: scanning committed history across local refs"
-if ! bin/lint-secrets.sh --history; then
+# Git passes the remote name as the first argument. Commits already on that
+# remote are published, so only the rest need a scan. Without a plainly
+# named, configured remote (a URL, or a manual run), scan every local ref.
+remote_name="${1:-}"
+if [[ "$remote_name" =~ ^[A-Za-z0-9._/-]+$ ]] && git remote | grep -Fxq -- "$remote_name"; then
+	echo "pre-push: scanning commits not yet on $remote_name"
+	history_scan=(bin/lint-secrets.sh --unpushed "$remote_name")
+else
+	echo "pre-push: scanning committed history across local refs"
+	history_scan=(bin/lint-secrets.sh --history)
+fi
+if ! "${history_scan[@]}"; then
 	echo "pre-push: committed secret scan failed" >&2
 	failed=1
 fi

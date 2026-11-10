@@ -3,7 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 work_dir="$(mktemp -d)"
-trap 'rm -rf "$work_dir"' EXIT
+remotes_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir" "$remotes_dir"' EXIT
 
 cd "$work_dir"
 git init --quiet --initial-branch=main
@@ -73,3 +74,34 @@ if bash "$repo_root/.githooks/pre-push" >scan.log 2>&1; then
 	exit 1
 fi
 printf 'PASS: pre-push rejects secrets removed from a non-HEAD branch\n'
+
+# Given a remote name (as Git passes it), the hook scans only commits that
+# remote lacks. The branch holding the marker is still unpushed.
+git init --quiet --bare "$remotes_dir/origin.git"
+git remote add origin "$remotes_dir/origin.git"
+git push --quiet origin main
+if bash "$repo_root/.githooks/pre-push" origin >scan.log 2>&1; then
+	printf 'pre-push accepted a secret in an unpushed branch\n' >&2
+	exit 1
+fi
+printf 'PASS: pre-push rejects secrets in commits the remote lacks\n'
+
+# Being on one remote does not make a commit safe to push to another.
+git push --quiet origin outgoing
+git init --quiet --bare "$remotes_dir/mirror.git"
+git remote add mirror "$remotes_dir/mirror.git"
+if bash "$repo_root/.githooks/pre-push" mirror >scan.log 2>&1; then
+	printf 'pre-push accepted a secret that only another remote holds\n' >&2
+	exit 1
+fi
+printf 'PASS: pre-push rejects secrets that only another remote holds\n'
+
+printf 'still safe\n' >example.txt
+git add example.txt
+git commit --quiet -m 'Clean follow-up'
+if ! bash "$repo_root/.githooks/pre-push" origin >scan.log 2>&1; then
+	cat scan.log >&2
+	printf 'pre-push rejected a clean commit on top of pushed history\n' >&2
+	exit 1
+fi
+printf 'PASS: pre-push accepts clean commits on top of pushed history\n'
