@@ -147,12 +147,13 @@ export function splitFrontmatter(raw: string): { frontmatter: Record<string, str
 	return { frontmatter, body };
 }
 
+// One pass with a function replacer: substituted values are reviewed content,
+// so `$&`-style replacement patterns and `{{KEY}}` text inside them must stay
+// literal.
 export function renderTemplate(template: string, values: Record<string, string>): string {
-	let output = template;
-	for (const [key, value] of Object.entries(values)) {
-		output = output.replaceAll(`{{${key}}}`, value);
-	}
-	return output;
+	return template.replace(/\{\{([A-Za-z0-9_]+)\}\}/g, (placeholder, key: string) =>
+		Object.hasOwn(values, key) ? values[key] : placeholder,
+	);
 }
 
 export type ReviewCategory = {

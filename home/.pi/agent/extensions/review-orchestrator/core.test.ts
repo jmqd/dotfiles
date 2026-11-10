@@ -125,6 +125,11 @@ test("renderTemplate replaces repeated placeholders and leaves unknown ones inta
 	assert.equal(rendered, "Hello pi. Again: pi. Missing: {{OTHER}}");
 });
 
+test("renderTemplate keeps substituted content literal", () => {
+	const rendered = renderTemplate("A {{X}} B {{Y}}", { X: "$$ $& $' {{Y}}", Y: "y" });
+	assert.equal(rendered, "A $$ $& $' {{Y}} B y");
+});
+
 test("extractText concatenates only text content", () => {
 	assert.equal(
 		extractText([
