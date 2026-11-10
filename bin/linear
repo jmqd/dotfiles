@@ -4,7 +4,10 @@ set -euo pipefail
 api_key="${LINEAR_API_KEY:-}"
 api_url="https://api.linear.app/graphql"
 
-die() { echo "error: $*" >&2; exit 1; }
+die() {
+	echo "error: $*" >&2
+	exit 1
+}
 
 [ -n "$api_key" ] || die "LINEAR_API_KEY is not set"
 command -v curl >/dev/null 2>&1 || die "curl is required"
@@ -13,67 +16,74 @@ command -v jq >/dev/null 2>&1 || die "jq is required"
 # The key is passed in a header file, not an argument, so it never shows up
 # in the process list.
 gql() {
-  local query="$1"
-  curl -s -X POST "$api_url" \
-    -H "Content-Type: application/json" \
-    -H @<(printf 'Authorization: %s\n' "$api_key") \
-    -d "$query"
+	local query="$1"
+	curl -s -X POST "$api_url" \
+		-H "Content-Type: application/json" \
+		-H @<(printf 'Authorization: %s\n' "$api_key") \
+		-d "$query"
 }
 
 cmd_search() {
-  local status_filter=""
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --status) [ $# -ge 2 ] || die "usage: --status <statuses>"; status_filter="$2"; shift 2 ;;
-      --status=*) status_filter="${1#--status=}"; shift ;;
-      -*) die "unknown flag: $1" ;;
-      *) break ;;
-    esac
-  done
+	local status_filter=""
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--status)
+			[ $# -ge 2 ] || die "usage: --status <statuses>"
+			status_filter="$2"
+			shift 2
+			;;
+		--status=*)
+			status_filter="${1#--status=}"
+			shift
+			;;
+		-*) die "unknown flag: $1" ;;
+		*) break ;;
+		esac
+	done
 
-  [ $# -ge 1 ] || die "usage: linear search [--status todo,done] <text>"
-  local text="$1"
-  local escaped
-  escaped=$(jq -cn --arg value "$text" '$value')
+	[ $# -ge 1 ] || die "usage: linear search [--status todo,done] <text>"
+	local text="$1"
+	local escaped
+	escaped=$(jq -cn --arg value "$text" '$value')
 
-  local query
-  query=$(jq -cn --arg query "{ searchIssues(term: ${escaped}, first: 50) { nodes { identifier title state { name } assignee { name } priority url } } }" '{query: $query}')
+	local query
+	query=$(jq -cn --arg query "{ searchIssues(term: ${escaped}, first: 50) { nodes { identifier title state { name } assignee { name } priority url } } }" '{query: $query}')
 
-  local result
-  result=$(gql "$query")
+	local result
+	result=$(gql "$query")
 
-  local jq_filter
-  if [ -n "$status_filter" ]; then
-    local states_json
-    states_json=$(printf '%s' "$status_filter" | tr ',' '\n' | jq -R 'ascii_downcase' | jq -s '.')
-    jq_filter="[.data.searchIssues.nodes[] | select((.state.name | ascii_downcase) as \$s | ${states_json} | any(. == \$s))][]"
-  else
-    jq_filter=".data.searchIssues.nodes[]"
-  fi
+	local jq_filter
+	if [ -n "$status_filter" ]; then
+		local states_json
+		states_json=$(printf '%s' "$status_filter" | tr ',' '\n' | jq -R 'ascii_downcase' | jq -s '.')
+		jq_filter="[.data.searchIssues.nodes[] | select((.state.name | ascii_downcase) as \$s | ${states_json} | any(. == \$s))][]"
+	else
+		jq_filter=".data.searchIssues.nodes[]"
+	fi
 
-  printf '%s' "$result" | jq -r "
+	printf '%s' "$result" | jq -r "
     ${jq_filter} |
     \"\(.identifier)\t\(.state.name)\t\(.assignee.name // \"-\")\t\(.title)\"
   " 2>/dev/null || {
-    echo "No results or API error:" >&2
-    printf '%s\n' "$result" | jq . 2>/dev/null || printf '%s\n' "$result"
-    exit 1
-  }
+		echo "No results or API error:" >&2
+		printf '%s\n' "$result" | jq . 2>/dev/null || printf '%s\n' "$result"
+		exit 1
+	}
 }
 
 cmd_view() {
-  [ $# -ge 1 ] || die "usage: linear view <issue-id>"
-  local issue_id="$1"
-  local escaped
-  escaped=$(jq -cn --arg value "$issue_id" '$value')
+	[ $# -ge 1 ] || die "usage: linear view <issue-id>"
+	local issue_id="$1"
+	local escaped
+	escaped=$(jq -cn --arg value "$issue_id" '$value')
 
-  local query
-  query=$(jq -cn --arg query "{ issue(id: ${escaped}) { identifier title description state { name } assignee { name } priority labels { nodes { name } } url createdAt updatedAt } }" '{query: $query}')
+	local query
+	query=$(jq -cn --arg query "{ issue(id: ${escaped}) { identifier title description state { name } assignee { name } priority labels { nodes { name } } url createdAt updatedAt } }" '{query: $query}')
 
-  local result
-  result=$(gql "$query")
+	local result
+	result=$(gql "$query")
 
-  printf '%s' "$result" | jq -r '
+	printf '%s' "$result" | jq -r '
     .data.issue |
     "Issue:    \(.identifier) — \(.title)",
     "State:    \(.state.name)",
@@ -86,27 +96,33 @@ cmd_view() {
     "",
     (.description // "(no description)")
   ' 2>/dev/null || {
-    echo "Issue not found or API error:" >&2
-    printf '%s\n' "$result" | jq . 2>/dev/null || printf '%s\n' "$result"
-    exit 1
-  }
+		echo "Issue not found or API error:" >&2
+		printf '%s\n' "$result" | jq . 2>/dev/null || printf '%s\n' "$result"
+		exit 1
+	}
 }
 
 usage() {
-  cat <<EOF
+	cat <<EOF
 usage: linear <command> [args]
 
 commands:
   search [--status s1,s2] <text>  search issues
   view <issue-id>     view issue details
 EOF
-  exit 1
+	exit 1
 }
 
 [ $# -ge 1 ] || usage
 
 case "$1" in
-  search) shift; cmd_search "$@" ;;
-  view)   shift; cmd_view "$@" ;;
-  *)      usage ;;
+search)
+	shift
+	cmd_search "$@"
+	;;
+view)
+	shift
+	cmd_view "$@"
+	;;
+*) usage ;;
 esac
