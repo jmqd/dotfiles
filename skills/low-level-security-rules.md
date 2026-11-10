@@ -2,7 +2,7 @@
 
 Rules for memory safety and other low-level security in systems code. Each rule cites its source. Statistics are dated and come from the authors' own products, so treat them as evidence of direction, not as constants. Compiler flags and version numbers change; check them against your toolchain.
 
-This file covers one process and its trust boundaries with the kernel, other processes, and foreign code. Protocol design, authentication, web security and network-service hardening belong in a separate file.
+This file covers one process and its trust boundaries with the kernel, other processes, and foreign code. Protocol design, authentication, web security and network-service hardening are in [high-level-security-rules.md](high-level-security-rules.md).
 
 ## How to use this file
 
