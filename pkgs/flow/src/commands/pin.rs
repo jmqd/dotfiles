@@ -62,9 +62,26 @@ pub fn execute(ctx: &Ctx, args: PinArgs) -> anyhow::Result<PinOutput> {
     match args.command {
         PinCommands::Check(args) => {
             let pins = select(&args.names)?;
+            let repo = &repo;
+            // Each check mostly waits on the network, so run them together and
+            // collect in registry order.
+            let data = std::thread::scope(|scope| {
+                let handles: Vec<_> = pins
+                    .into_iter()
+                    .map(|pin| scope.spawn(move || check(repo, pin)))
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|handle| {
+                        handle
+                            .join()
+                            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+                    })
+                    .collect()
+            });
             Ok(PinOutput {
                 command: "check",
-                data: pins.into_iter().map(|pin| check(&repo, pin)).collect(),
+                data,
             })
         }
         PinCommands::Bump(args) => {
