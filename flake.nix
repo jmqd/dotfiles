@@ -11,8 +11,10 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Commit on main after v0.6.0 that updates the dependencies behind most of
+    # the release's Go advisories. Return to a tag at the next release.
     notion-cli = {
-      url = "github:lox/notion-cli/v0.6.0";
+      url = "github:lox/notion-cli/f237f53ead3475716757caf726e6068d73bc4060";
       flake = false;
     };
     # Pinned to a release: this package handles decrypted secrets in every
@@ -107,14 +109,14 @@
         let
           pkgs = pkgsBySystem.${system};
         in
-        pkgs.buildGoModule {
+        pkgs.buildGoModule rec {
           pname = "notion-cli";
-          version = "0.6.0";
+          version = "0.6.0-unstable-2026-11-01";
           src = notion-cli;
-          vendorHash = "sha256-SXs/voGAlA66aGMUC6GzttSejo9kSSOVdujp5Nl9GZM=";
+          vendorHash = "sha256-nvdNSQ2wr3adSEon7EAYpDwOx2vyybq+t9qaZIDV2g4=";
 
           ldflags = [
-            "-X main.version=v0.6.0"
+            "-X main.version=v${version}"
           ];
 
           meta = with pkgs.lib; {
