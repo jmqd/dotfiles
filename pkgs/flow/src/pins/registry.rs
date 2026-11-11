@@ -64,8 +64,9 @@ pub enum SparkleVersion {
 }
 
 pub enum Manual {
-    /// A tag-pinned GitHub flake input; the pinned tag comes from `flake.lock`.
-    FlakeInputTag {
+    /// A GitHub flake input pinned in `flake.lock` to a release tag, or to a
+    /// commit when a fix has not been released yet.
+    FlakeInput {
         input: &'static str,
         repo: &'static str,
         reason: &'static str,
@@ -81,7 +82,7 @@ pub enum Manual {
 impl Manual {
     pub fn reason(&self) -> &'static str {
         match self {
-            Self::FlakeInputTag { reason, .. } | Self::NpmDependency { reason, .. } => reason,
+            Self::FlakeInput { reason, .. } | Self::NpmDependency { reason, .. } => reason,
         }
     }
 }
@@ -185,10 +186,10 @@ pub const PINS: &[Pin] = &[
     },
     Pin {
         name: "notion-cli",
-        kind: Kind::Manual(Manual::FlakeInputTag {
+        kind: Kind::Manual(Manual::FlakeInput {
             input: "notion-cli",
             repo: "lox/notion-cli",
-            reason: "edit the notion-cli input tag and vendorHash in flake.nix",
+            reason: "edit the notion-cli input ref, version and vendorHash in flake.nix",
         }),
     },
     Pin {
@@ -201,7 +202,7 @@ pub const PINS: &[Pin] = &[
     },
     Pin {
         name: "voxtype",
-        kind: Kind::Manual(Manual::FlakeInputTag {
+        kind: Kind::Manual(Manual::FlakeInput {
             input: "voxtype",
             repo: "peteonrails/voxtype",
             reason: "edit the voxtype input tag in flake.nix and regenerate pkgs/voxtype/Cargo.lock",

@@ -14,7 +14,7 @@ pub struct Versions {
 
 pub fn versions(repo: &Repo, manual: &Manual) -> anyhow::Result<Versions> {
     match manual {
-        Manual::FlakeInputTag {
+        Manual::FlakeInput {
             input,
             repo: github,
             ..
@@ -36,10 +36,15 @@ pub fn versions(repo: &Repo, manual: &Manual) -> anyhow::Result<Versions> {
             struct Original {
                 #[serde(rename = "ref")]
                 git_ref: Option<String>,
+                rev: Option<String>,
             }
             #[derive(Deserialize)]
             struct GithubRelease {
                 tag_name: String,
+            }
+            #[derive(Deserialize)]
+            struct Comparison {
+                status: String,
             }
 
             let path = repo.root().join("flake.lock");
@@ -55,18 +60,37 @@ pub fn versions(repo: &Repo, manual: &Manual) -> anyhow::Result<Versions> {
                 .and_then(|root| root.inputs.get(*input))
                 .and_then(serde_json::Value::as_str)
                 .with_context(|| format!("flake.lock has no direct input {input}"))?;
-            let pinned = lock
+            let original = lock
                 .nodes
                 .get(node_name)
-                .and_then(|node| node.original.as_ref()?.git_ref.clone())
-                .with_context(|| format!("flake.lock pins no tag for input {input}"))?;
+                .and_then(|node| node.original.as_ref())
+                .with_context(|| format!("flake.lock has no source for input {input}"))?;
             let latest: GithubRelease = fetch::get_json(&format!(
                 "https://api.github.com/repos/{github}/releases/latest"
             ))?;
-            Ok(Versions {
-                pinned: strip_v(pinned),
-                latest: strip_v(latest.tag_name),
-            })
+            match (&original.git_ref, &original.rev) {
+                (Some(tag), _) => Ok(Versions {
+                    pinned: strip_v(tag.clone()),
+                    latest: strip_v(latest.tag_name),
+                }),
+                // A commit pin carries fixes no release has yet. It stays
+                // current until a release contains commits it lacks.
+                (None, Some(rev)) => {
+                    let comparison: Comparison = fetch::get_json(&format!(
+                        "https://api.github.com/repos/{github}/compare/{}...{rev}",
+                        latest.tag_name
+                    ))?;
+                    let pinned = rev.get(..8).unwrap_or(rev).to_owned();
+                    let latest = match comparison.status.as_str() {
+                        "ahead" | "identical" => pinned.clone(),
+                        _ => strip_v(latest.tag_name),
+                    };
+                    Ok(Versions { pinned, latest })
+                }
+                (None, None) => {
+                    anyhow::bail!("flake.lock pins neither a tag nor a commit for input {input}")
+                }
+            }
         }
         Manual::NpmDependency {
             package_json,
