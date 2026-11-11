@@ -1,9 +1,9 @@
 {
-  "version": "1.6.1400",
+  "version": "1.6.1457",
   "sources": {
     "aarch64-darwin": {
-      "url": "https://dl.wisprflow.com/wispr-flow/darwin/arm64/dmgs/Flow-v1.6.1400.dmg",
-      "hash": "sha256-W7Q5Zi4waD3/MLzu6fkaPk1rlyP9uyburVeZygf4v4I="
+      "url": "https://dl.wisprflow.com/wispr-flow/darwin/arm64/dmgs/Flow-v1.6.1457.dmg",
+      "hash": "sha256-+Wcz2DwCZxuiTvVIqUpNlpiLBqtRVNKTM3AWm9QtkaY="
     }
   }
 }
