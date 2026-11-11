@@ -432,32 +432,25 @@ git clone https://github.com/jmqd/dotfiles.git ~/src/dotfiles
 bash ~/src/dotfiles/bin/hm-switch.sh
 ```
 
-The macOS bootstrap configures the [Nix community binary cache](https://nix-community.org/cache/)
-in the daemon, where cache URLs and signing keys must be trusted. On an existing
-Determinate Nix macOS installation, run this once:
+Binaries come only from `cache.nixos.org` and the Nix installer's defaults.
+Earlier versions of this repo also trusted the Nix community binary cache. On a
+Mac that was set up then, remove it once:
 
 ```bash
-sudo /bin/bash ~/src/dotfiles/bin/setup-nix-cache.sh
+sudo /bin/bash ~/src/dotfiles/bin/remove-nix-cache.sh
 ```
 
-This preserves installer-managed `nix.conf` and existing custom settings, adds
-`nix/cache.conf` through `nix.custom.conf`, and restarts the daemon when changed.
-It retains default caches and signature verification without expanding
-`trusted-users`. NixOS already declares this cache in its host configuration.
-
-Verify daemon access and effective cache settings after setup:
+This removes the `dotfiles-cache.conf` include from `nix.custom.conf`, renames
+the old file to `dotfiles-cache.conf.removed`, and restarts the daemon. Packages
+that only that cache carried, such as `wezterm` between nixpkgs builds, are then
+built locally. Check the result:
 
 ```bash
-nix store info --json
 nix config show substituters
 nix config show trusted-public-keys
-nix config show require-sigs
 ```
 
-The cache URL and `nix-community.cachix.org-1` signing key should appear, and
-`require-sigs` should remain `true`. `"trusted": 0` in the daemon response is
-expected for an ordinary client: using the configured cache does not require
-granting that client administrative Nix privileges.
+Neither should mention `nix-community.cachix.org`.
 
 `bin/hm-switch.sh` also trusts the homelab CA (`pki/homelab-ca.crt`) so
 `https://*.internal` works in browsers and CLI tools. The CA is limited to

@@ -135,8 +135,6 @@ main() {
 
 	ensure_nix
 	ensure_checkout
-	# Cache trust belongs to the daemon, not flake-provided client settings.
-	sudo /bin/bash "$checkout_dir/bin/setup-nix-cache.sh"
 
 	local flake_ref
 	flake_ref="$(detect_flake_ref)"
