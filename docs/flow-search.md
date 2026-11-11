@@ -172,6 +172,8 @@ On macOS/Darwin, Home Manager declares a `launchd` agent:
 
 Both variants point the webserver at the same local Zoekt index directory and listen on `127.0.0.1:6070` by default.
 
+The server has no authentication, so `pkgs/zoekt` patches it to answer only requests whose `Host` is `localhost` or an IP address. Open it as `http://127.0.0.1:6070` or `http://localhost:6070`; any other name gets `403`. This stops a web page from rebinding its own DNS name to the listener and reading search results.
+
 ## Is the long-running Zoekt service required?
 
 No, but it makes code search much faster. `zoekt-webserver -rpc` keeps the shards loaded and answers `/api/search`, while the `zoekt` CLI loads every shard and computes every match on each run.

@@ -1,0 +1,36 @@
+--- a/cmd/zoekt-webserver/main.go
++++ b/cmd/zoekt-webserver/main.go
+@@ -293,6 +293,7 @@
+ 
+ 	handler = grpcutil.MultiplexGRPC(grpcServer, handler)
+ 	handler = corsHandler(handler, *corsOrigin)
++	handler = literalHostHandler(handler)
+ 
+ 	srv := &http.Server{
+ 		Addr:    *listen,
+@@ -604,6 +605,25 @@
+ 	return s
+ }
+ 
++// literalHostHandler rejects requests whose Host header is a DNS name other
++// than localhost. A web page can point its own name at this listener (DNS
++// rebinding) and then read search results as same-origin; it cannot make the
++// browser send localhost or an IP address as the Host of that origin.
++func literalHostHandler(h http.Handler) http.Handler {
++	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		host := r.Host
++		if name, _, err := net.SplitHostPort(host); err == nil {
++			host = name
++		}
++		host = strings.TrimSuffix(strings.TrimPrefix(host, "["), "]")
++		if host != "localhost" && net.ParseIP(host) == nil {
++			http.Error(w, "host not allowed", http.StatusForbidden)
++			return
++		}
++		h.ServeHTTP(w, r)
++	})
++}
++
+ func corsHandler(h http.Handler, origin string) http.Handler {
+ 	if origin == "" {
+ 		return h
