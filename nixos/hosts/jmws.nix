@@ -83,7 +83,6 @@ in
   };
   nixpkgs.config = {
     allowUnfree = true;
-    permittedInsecurePackages = [ "googleearth-pro-7.3.7.1155" ];
   };
 
   fonts.packages = with pkgs; [

@@ -346,7 +346,6 @@ in
         [
           bambu-studio
           discord
-          googleearth-pro
           lutris
           slack
           spotify
