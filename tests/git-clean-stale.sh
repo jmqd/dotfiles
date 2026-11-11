@@ -52,10 +52,16 @@ done
 
 bash "$script" --apply >/dev/null
 [[ ! -e $root/stale ]] || fail "stale worktree still in place"
-trashed=("$XDG_DATA_HOME"/Trash/files/stale-*)
-[[ -d ${trashed[0]} ]] || fail "stale worktree not in the trash"
-records=("$XDG_DATA_HOME"/Trash/info/stale-*.trashinfo)
-[[ -f ${records[0]} ]] || fail "no trashinfo record"
+# macOS keeps trashed items directly in ~/.Trash with no trashinfo records.
+if [[ "$(uname -s)" == Darwin ]]; then
+	trashed=("$HOME"/.Trash/stale-*)
+	[[ -d ${trashed[0]} ]] || fail "stale worktree not in the trash"
+else
+	trashed=("$XDG_DATA_HOME"/Trash/files/stale-*)
+	[[ -d ${trashed[0]} ]] || fail "stale worktree not in the trash"
+	records=("$XDG_DATA_HOME"/Trash/info/stale-*.trashinfo)
+	[[ -f ${records[0]} ]] || fail "no trashinfo record"
+fi
 for kept in dirty unmerged recent locked; do
 	[[ -d $root/$kept ]] || fail "$kept worktree was removed"
 done
@@ -67,15 +73,22 @@ grep -qx 'notes' "$root/dirty/results.txt" || fail "dirty worktree contents chan
 git worktree add -q "$root/stuck" -b stuck main
 age "$root/stuck"
 mkdir -p "$root/blocked"
-: >"$root/blocked/Trash"
+if [[ "$(uname -s)" == Darwin ]]; then
+	blocker="$root/blocked/.Trash"
+	blocked_env=(HOME="$root/blocked")
+else
+	blocker="$root/blocked/Trash"
+	blocked_env=(XDG_DATA_HOME="$root/blocked")
+fi
+: >"$blocker"
 set +e
-XDG_DATA_HOME="$root/blocked" bash "$script" --apply >/dev/null 2>&1
+env "${blocked_env[@]}" bash "$script" --apply >/dev/null 2>&1
 status=$?
 set -e
 [[ $status -ne 0 ]] || fail "a failed move reported success"
 [[ -d $root/stuck ]] || fail "worktree lost when its move failed"
 git worktree list | grep -q "$root/stuck " || fail "unmoved worktree was unregistered"
-[[ -f $root/blocked/Trash ]] || fail "the blocking file was replaced"
+[[ -f $blocker ]] || fail "the blocking file was replaced"
 ! find "$root/blocked" -name 'stuck-*.trashinfo' | grep -q . || fail "a failed move left a trash record"
 
 # A worktree whose state cannot be read is kept, however old: here a corrupt index
