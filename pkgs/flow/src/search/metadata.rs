@@ -78,6 +78,12 @@ pub fn reindex(
         .context("failed to optimize metadata database")?;
     drop(connection);
 
+    // The schema turns off SQLite's own syncs. Flush once before the rename,
+    // or a crash just after it could leave a torn database at the live path.
+    fs::File::open(&temporary_path)
+        .and_then(|file| file.sync_all())
+        .with_context(|| format!("failed to sync {}", temporary_path.display()))?;
+
     fs::rename(&temporary_path, &config.metadata_db_path).with_context(|| {
         format!(
             "failed to move {} to {}",
