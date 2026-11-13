@@ -17,6 +17,7 @@ in
     ./raycast.nix
     ./tailscale.nix
     ./wispr-flow.nix
+    ./xcode.nix
   ];
 
   targets.darwin = {

@@ -823,6 +823,23 @@ System Settings the first time you run Wispr Flow.
 
 For updates, run `flow pin bump wispr-flow` (see [Pinned binaries](#pinned-binaries)).
 
+## xcode on macOS
+
+`home/darwin/xcode.nix` installs Xcode during the normal `hm-switch` when
+`/Applications` holds no Xcode (any `Xcode*.app`, including App Store and beta
+installs). It runs `xcodes install <version> --select` with `aria2` for the
+download, which accepts the license, runs first-launch setup and selects the
+new Xcode. An existing Xcode is never upgraded or replaced.
+
+Apple serves Xcode only to a signed-in Apple ID. The first install prompts for
+the Apple ID, its two-factor code and the macOS password, so run the switch
+from a terminal. xcodes keeps the Apple ID password in the keychain for later
+runs. A failed or skipped install warns and lets the rest of the switch finish;
+run `xcode-install` to retry.
+
+`jmq.xcode.version` sets the version (default `26.6`; Xcode 27 requires macOS
+26.6). The work profile sets `jmq.xcode.enable = false`.
+
 ## home manager backup mode
 
 This wrapper is only for standalone Home Manager, not NixOS hosts like `jmws`.
