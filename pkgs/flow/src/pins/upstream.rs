@@ -32,7 +32,11 @@ pub fn latest(upstream: &Upstream, artifact: Artifact) -> anyhow::Result<Release
             version_package,
             packages,
         } => npm_platforms(version_package, packages),
-        Upstream::GithubRelease { repo, assets } => github_release(repo, assets),
+        Upstream::GithubRelease {
+            repo,
+            tag_prefix,
+            assets,
+        } => github_release(repo, tag_prefix, assets),
         Upstream::Sparkle { feeds, version } => {
             let mut per_system = Vec::with_capacity(feeds.len());
             for (system, feed) in *feeds {
@@ -152,7 +156,11 @@ fn npm_platforms(
     })
 }
 
-fn github_release(repo: &str, assets: &[(&'static str, &'static str)]) -> anyhow::Result<Release> {
+fn github_release(
+    repo: &str,
+    tag_prefix: &str,
+    assets: &[(&'static str, &'static str)],
+) -> anyhow::Result<Release> {
     #[derive(Deserialize)]
     struct GithubRelease {
         tag_name: String,
@@ -170,8 +178,13 @@ fn github_release(repo: &str, assets: &[(&'static str, &'static str)]) -> anyhow
     ))?;
     let version = release
         .tag_name
-        .strip_prefix('v')
-        .with_context(|| format!("{repo} tag {} does not start with v", release.tag_name))?
+        .strip_prefix(tag_prefix)
+        .with_context(|| {
+            format!(
+                "{repo} tag {} does not start with {tag_prefix:?}",
+                release.tag_name
+            )
+        })?
         .to_owned();
     let mut sources = BTreeMap::new();
     for (system, name) in assets {

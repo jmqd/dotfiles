@@ -612,11 +612,11 @@ flow pin bump
 ```
 
 Managed pins: Claude Code, Codex desktop, OMP, Spotify, Tailscale, WhatsApp,
-and Wispr Flow. Spotify's URL is unversioned, so checking it downloads the DMG
-and reads the version from its `Info.plist`. A release whose artifact changes
-without a new version fails instead of moving the pin. `notion-cli`, `oracle`,
-and `voxtype` are reported but need lock-file work, so `flow pin` prints the
-manual step instead of bumping them.
+Wispr Flow and xcodes. Spotify's URL is unversioned, so checking it downloads
+the DMG and reads the version from its `Info.plist`. A release whose artifact
+changes without a new version fails instead of moving the pin. `notion-cli`,
+`oracle`, and `voxtype` are reported but need lock-file work, so `flow pin`
+prints the manual step instead of bumping them.
 `just audit-deps` runs `flow pin check`. Bumped apps reach the machine on the
 next `bin/hm-switch.sh`.
 
@@ -838,7 +838,10 @@ runs. A failed or skipped install warns and lets the rest of the switch finish;
 run `xcode-install` to retry.
 
 `jmq.xcode.version` sets the version (default `26.6`; Xcode 27 requires macOS
-26.6). The work profile sets `jmq.xcode.enable = false`.
+26.6). The work profile sets `jmq.xcode.enable = false`. `xcodes` itself is the
+signed, notarized release binary pinned in `pins/xcodes.json`; nixpkgs builds
+it from source with an uncached Swift toolchain. Bump it with
+`flow pin bump xcodes`.
 
 ## home manager backup mode
 

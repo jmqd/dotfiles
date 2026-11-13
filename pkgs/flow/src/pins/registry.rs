@@ -30,9 +30,10 @@ pub enum Upstream {
         version_package: &'static str,
         packages: &'static [(System, &'static str)],
     },
-    /// Assets of the latest GitHub release, tagged `v<version>`.
+    /// Assets of the latest GitHub release, tagged `<tag_prefix><version>`.
     GithubRelease {
         repo: &'static str,
+        tag_prefix: &'static str,
         assets: &'static [(System, &'static str)],
     },
     /// Sparkle appcast feeds; the newest item by build number wins.
@@ -122,6 +123,7 @@ pub const PINS: &[Pin] = &[
         kind: Kind::Managed(Managed {
             upstream: Upstream::GithubRelease {
                 repo: "can1357/oh-my-pi",
+                tag_prefix: "v",
                 assets: &[
                     ("aarch64-darwin", "omp-darwin-arm64"),
                     ("aarch64-linux", "omp-linux-arm64"),
@@ -182,6 +184,18 @@ pub const PINS: &[Pin] = &[
             },
             artifact: Artifact::File,
             flake_attr: Some("wispr-flow"),
+        }),
+    },
+    Pin {
+        name: "xcodes",
+        kind: Kind::Managed(Managed {
+            upstream: Upstream::GithubRelease {
+                repo: "XcodesOrg/xcodes",
+                tag_prefix: "",
+                assets: &[("aarch64-darwin", "xcodes.zip")],
+            },
+            artifact: Artifact::File,
+            flake_attr: Some("xcodes"),
         }),
     },
     Pin {

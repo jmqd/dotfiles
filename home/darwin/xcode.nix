@@ -6,10 +6,11 @@
 }:
 let
   cfg = config.jmq.xcode;
+  xcodes = pkgs.callPackage ../../pkgs/xcodes { };
 
   install = pkgs.writeShellApplication {
     name = "xcode-install";
-    runtimeInputs = [ pkgs.xcodes ];
+    runtimeInputs = [ xcodes ];
     text = ''
       readonly version=${lib.escapeShellArg cfg.version}
 
@@ -60,7 +61,7 @@ in
   config = lib.mkIf cfg.enable {
     home.packages = [
       install
-      pkgs.xcodes
+      xcodes
     ];
 
     # A failed download must not abort the rest of the switch; the retry is

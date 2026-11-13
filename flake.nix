@@ -660,6 +660,7 @@
             spotify = mkPinnedAppPkg "spotify" system;
             whatsapp = mkPinnedAppPkg "whatsapp" system;
             wispr-flow = wisprFlowPkg;
+            xcodes = mkPinnedAppPkg "xcodes" system;
           };
 
           checks = {

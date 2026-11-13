@@ -1,0 +1,9 @@
+{
+  "version": "2.2.0",
+  "sources": {
+    "aarch64-darwin": {
+      "url": "https://github.com/XcodesOrg/xcodes/releases/download/2.2.0/xcodes.zip",
+      "hash": "sha256-PDzmxVDweTAMV4t0HiDqBAX74e6oCLgALvWR1WjOpWQ="
+    }
+  }
+}
