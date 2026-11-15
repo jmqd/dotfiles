@@ -47,5 +47,9 @@ in
     JM_NAS_SHARED_DIR = "${nasRoot}/shared";
     JM_NAS_BACKUPS_DIR = "${nasRoot}/backups";
     JM_NAS_MEDIA_DIR = "${nasRoot}/media";
+
+    # Google Workspace accounts need a project for Gemini Code Assist OAuth (omp's
+    # google-gemini-cli login). A project ID is an identifier, not a credential.
+    GOOGLE_CLOUD_PROJECT = "jm-dev-ws";
   };
 }
