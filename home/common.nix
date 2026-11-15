@@ -89,6 +89,7 @@ in
       berkleyMono
       spotifyExport
       age
+      antigravity-cli
       aspellWithDicts
       awscli2
       basedpyright

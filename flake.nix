@@ -788,6 +788,7 @@
             config.allowUnfreePredicate =
               pkg:
               builtins.elem (nixpkgs.lib.getName pkg) [
+                "antigravity-cli"
                 "berkley-mono"
                 "claude-code"
                 "codex-desktop"
