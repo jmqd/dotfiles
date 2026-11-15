@@ -17,6 +17,9 @@ in
     JM_WEBSITE = "https://jm.dev";
     JM_GITHUB_USER = "jmqd";
     JM_GITHUB_PROFILE = "https://github.com/jmqd";
+    # Apple developer team. It is embedded in every app it signs: an identifier, not a
+    # credential.
+    JM_APPLE_TEAM_ID = "3YJW8RK579";
 
     # Public repo and local path conventions.
     JM_DOTFILES_REPO = "jmqd/dotfiles";
