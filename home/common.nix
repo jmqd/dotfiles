@@ -272,8 +272,9 @@ in
         kubeaudit
         kubescape
         osv-scanner
-        pkgsPreGcc16.prowler
-        pkgsPreGcc16.semgrep
+        # Hydra has no aarch64-linux prowler on unstable yet; see flake.nix.
+        (if pkgs.stdenv.hostPlatform.system == "aarch64-linux" then pkgsPreGcc16.prowler else prowler)
+        semgrep
         slsa-verifier
         syft
         trivy
