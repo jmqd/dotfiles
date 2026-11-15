@@ -83,21 +83,16 @@
           config.allowUnfree = true;
         }
       );
-      rustPkgsBySystem = nixpkgs.lib.genAttrs systems (
-        system:
-        import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        }
-      );
 
       # Local crates build with the newest stable Rust in the locked rust-overlay
       # rather than whichever rustc the Nixpkgs revision happens to ship.
+      # mkRustBin reuses the plain package set; applying the overlay would
+      # evaluate another copy of nixpkgs per system.
       rustPlatformFor =
         system:
         let
-          pkgs = rustPkgsBySystem.${system};
-          toolchain = pkgs.rust-bin.stable.latest.minimal;
+          pkgs = pkgsBySystem.${system};
+          toolchain = (rust-overlay.lib.mkRustBin { } pkgs).stable.latest.minimal;
         in
         pkgs.makeRustPlatform {
           cargo = toolchain;
@@ -750,14 +745,8 @@
           system,
           module,
           extraModules ? [ ],
-          nixpkgsConfig ? { },
+          pkgs,
         }:
-        let
-          pkgs = import nixpkgs {
-            inherit system;
-            config = nixpkgsConfig;
-          };
-        in
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
           extraSpecialArgs = {
@@ -798,8 +787,9 @@
         mkHome {
           inherit system;
           module = ./home/hosts/jmq-macos.nix;
-          nixpkgsConfig = {
-            allowUnfreePredicate =
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfreePredicate =
               pkg:
               builtins.elem (nixpkgs.lib.getName pkg) [
                 "berkley-mono"
@@ -820,10 +810,6 @@
           ]
           ++ extraModules;
         };
-
-      linuxNixpkgsConfig = {
-        allowUnfree = true;
-      };
 
       liteHomeModule =
         { lib, ... }:
@@ -881,24 +867,24 @@
         "linux-aarch64" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
-          nixpkgsConfig = linuxNixpkgsConfig;
+          pkgs = unfreePkgsBySystem.aarch64-linux;
         };
         "linux-aarch64-lite" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
           extraModules = [ liteHomeModule ];
-          nixpkgsConfig = linuxNixpkgsConfig;
+          pkgs = unfreePkgsBySystem.aarch64-linux;
         };
         "linux-x86_64" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
-          nixpkgsConfig = linuxNixpkgsConfig;
+          pkgs = unfreePkgsBySystem.x86_64-linux;
         };
         "linux-x86_64-lite" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
           extraModules = [ liteHomeModule ];
-          nixpkgsConfig = linuxNixpkgsConfig;
+          pkgs = unfreePkgsBySystem.x86_64-linux;
         };
       };
 
