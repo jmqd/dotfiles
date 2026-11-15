@@ -9,4 +9,8 @@
   services.omp-phone.enable = false;
 
   jmq.xcode.enable = false;
+
+  # The personal Mac's GCP project would become the silent default for work
+  # Google tooling (client libraries, Terraform, gemini-cli).
+  home.sessionVariables.GOOGLE_CLOUD_PROJECT = lib.mkForce null;
 }
