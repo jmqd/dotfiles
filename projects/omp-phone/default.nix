@@ -3,6 +3,7 @@
   rustPlatform,
   pkg-config,
   openssl,
+  aws-lc,
   cacert,
 }:
 rustPlatform.buildRustPackage {
@@ -27,7 +28,10 @@ rustPlatform.buildRustPackage {
   cargoLock.lockFile = ./Cargo.lock;
 
   nativeBuildInputs = [ pkg-config ];
-  buildInputs = [ openssl ];
+  buildInputs = [
+    aws-lc
+    openssl
+  ];
   preCheck = ''
     # Enrollment checks state ownership against HOME; Nix's default HOME is absent.
     export HOME="$(mktemp -d)"

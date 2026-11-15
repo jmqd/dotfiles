@@ -1,6 +1,8 @@
 {
   lib,
   rustPlatform,
+  pkg-config,
+  aws-lc,
 }:
 rustPlatform.buildRustPackage {
   pname = "spotify-export";
@@ -11,6 +13,9 @@ rustPlatform.buildRustPackage {
     filter = path: _type: !(builtins.elem (baseNameOf path) [ "target" ]);
   };
   cargoLock.lockFile = ./Cargo.lock;
+
+  nativeBuildInputs = [ pkg-config ];
+  buildInputs = [ aws-lc ];
 
   meta = {
     description = "Export a Spotify playlist's track metadata as TSV";
