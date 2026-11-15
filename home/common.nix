@@ -103,6 +103,7 @@ in
       cmake
       curl
       difftastic
+      entire
       fd
       flock
       fq
