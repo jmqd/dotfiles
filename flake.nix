@@ -147,12 +147,7 @@
         let
           pkgs = pkgsBySystem.${system};
         in
-        # Node 24 in nixpkgs still links brotli without the CVE-2026-111497
-        # fix; other majors carry it. Return to the default nodejs once
-        # NixOS/nixpkgs#576792 lands. oracle needs node >=24, so not 22.
-        pkgs.callPackage ./pkgs/oracle {
-          buildNpmPackage = pkgs.buildNpmPackage.override { nodejs = pkgs.nodejs_26; };
-        };
+        pkgs.callPackage ./pkgs/oracle { };
 
       # Manually pinned claude-code (nixpkgs lags behind upstream releases).
       mkClaudeCodePkg =
