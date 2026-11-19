@@ -140,6 +140,14 @@
         in
         pkgs.callPackage ./pkgs/oracle { };
 
+      # Manually pinned Antigravity CLI (nixpkgs lags behind upstream releases).
+      mkAntigravityCliPkg =
+        system:
+        let
+          pkgs = unfreePkgsBySystem.${system};
+        in
+        pkgs.callPackage ./pkgs/antigravity-cli { };
+
       # Manually pinned claude-code (nixpkgs lags behind upstream releases).
       mkClaudeCodePkg =
         system:
@@ -231,6 +239,7 @@
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
           oraclePkg = mkOraclePkg system;
+          antigravityCliPkg = mkAntigravityCliPkg system;
           claudeCodePkg = mkClaudeCodePkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
@@ -256,6 +265,7 @@
 
           config = lib.mkIf config.jmq.packageSets.customCli.enable {
             home.packages = [
+              antigravityCliPkg
               claudeCodePkg
               flowPkg
               pkgs.gws
@@ -306,6 +316,7 @@
           trueflowPkg = mkTrueflowPkg system;
           piPkg = mkPiPkg system;
           oraclePkg = mkOraclePkg system;
+          antigravityCliPkg = mkAntigravityCliPkg system;
           claudeCodePkg = mkClaudeCodePkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           wisprFlowPkg = mkWisprFlowPkg system;
@@ -625,6 +636,7 @@
           };
 
           packages = {
+            antigravity-cli = antigravityCliPkg;
             claude-code = claudeCodePkg;
             flow = flowPkg;
             gogcli = pkgs.gogcli;
@@ -650,6 +662,7 @@
           };
 
           checks = {
+            antigravity-cli = antigravityCliPkg;
             bootstrap-rust-tests = bootstrapRustTests;
             claude-code = claudeCodePkg;
             clean-stale-tests = cleanStaleTests;
@@ -788,7 +801,6 @@
             config.allowUnfreePredicate =
               pkg:
               builtins.elem (nixpkgs.lib.getName pkg) [
-                "antigravity-cli"
                 "berkley-mono"
                 "claude-code"
                 "codex-desktop"

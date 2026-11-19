@@ -89,7 +89,9 @@ in
       berkleyMono
       spotifyExport
       age
-      antigravity-cli
+      # antigravity-cli (agy) is the manually pinned package in flake.nix
+      # (mkAntigravityCliPkg / pkgs/antigravity-cli), installed via
+      # mkHomePackagesModule like claude-code.
       aspellWithDicts
       awscli2
       basedpyright

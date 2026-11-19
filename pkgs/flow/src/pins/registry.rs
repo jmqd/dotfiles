@@ -90,6 +90,22 @@ impl Manual {
 
 pub const PINS: &[Pin] = &[
     Pin {
+        name: "antigravity-cli",
+        kind: Kind::Managed(Managed {
+            upstream: Upstream::GithubRelease {
+                repo: "google-antigravity/antigravity-cli",
+                tag_prefix: "",
+                assets: &[
+                    ("aarch64-darwin", "agy_cli_mac_arm64.tar.gz"),
+                    ("aarch64-linux", "agy_cli_linux_arm64.tar.gz"),
+                    ("x86_64-linux", "agy_cli_linux_x64.tar.gz"),
+                ],
+            },
+            artifact: Artifact::File,
+            flake_attr: Some("antigravity-cli"),
+        }),
+    },
+    Pin {
         name: "claude-code",
         kind: Kind::Managed(Managed {
             upstream: Upstream::NpmPlatforms {
