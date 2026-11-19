@@ -341,10 +341,10 @@ export async function loadTarget(
 			};
 		}
 		case "range": {
-			const diff = await exec("git", ["diff", scope.value, "--no-ext-diff", "--minimal"], cwd);
+			const diff = await exec("git", ["diff", "--no-ext-diff", "--minimal", "--end-of-options", scope.value], cwd);
 			const content = truncateForReview(diff.stdout.trim());
 			if (!content) return null;
-			const focusedFiles = await listGitPaths(exec, cwd, ["diff", "--name-only", scope.value]);
+			const focusedFiles = await listGitPaths(exec, cwd, ["diff", "--name-only", "--end-of-options", scope.value]);
 			return {
 				targetName: `range ${scope.value}`,
 				reviewScope: `range ${scope.value}`,
@@ -356,12 +356,18 @@ export async function loadTarget(
 		case "commit": {
 			const shown = await exec(
 				"git",
-				["show", "--format=medium", "--patch", "--no-ext-diff", "--minimal", scope.value],
+				["show", "--format=medium", "--patch", "--no-ext-diff", "--minimal", "--end-of-options", scope.value],
 				cwd,
 			);
 			const content = truncateForReview(shown.stdout.trim());
 			if (!content) return null;
-			const focusedFiles = await listGitPaths(exec, cwd, ["show", "--format=", "--name-only", scope.value]);
+			const focusedFiles = await listGitPaths(exec, cwd, [
+				"show",
+				"--format=",
+				"--name-only",
+				"--end-of-options",
+				scope.value,
+			]);
 			return {
 				targetName: `commit ${scope.value}`,
 				reviewScope: `commit ${scope.value}`,

@@ -175,15 +175,15 @@ test("loadTarget covers staged, range, commit, in-repo file scope, and empty sta
 		[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- a`]: {
 			stdout: "\u001eabc123\u001fstaged precedent\na\ntests/a.test.ts\n",
 		},
-		"git diff HEAD~1..HEAD --no-ext-diff --minimal": { stdout: "diff --git a/range b/range\n" },
-		"git diff --name-only HEAD~1..HEAD": { stdout: "range\n" },
+		"git diff --no-ext-diff --minimal --end-of-options HEAD~1..HEAD": { stdout: "diff --git a/range b/range\n" },
+		"git diff --name-only --end-of-options HEAD~1..HEAD": { stdout: "range\n" },
 		[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- range`]: {
 			stdout: "\u001edef456\u001frange precedent\nrange\nrange.test.ts\n",
 		},
-		"git show --format=medium --patch --no-ext-diff --minimal HEAD": {
+		"git show --format=medium --patch --no-ext-diff --minimal --end-of-options HEAD": {
 			stdout: "commit abc123\n\n    Latest commit\n\ndiff --git a/c b/c\n",
 		},
-		"git show --format= --name-only HEAD": { stdout: "c\n" },
+		"git show --format= --name-only --end-of-options HEAD": { stdout: "c\n" },
 		[`git log --no-merges ${historyFormatArg} --name-only -n 10 -- c`]: {
 			stdout: "\u001e987fed\u001fcommit precedent\nc\ndocs/c.md\n",
 		},
