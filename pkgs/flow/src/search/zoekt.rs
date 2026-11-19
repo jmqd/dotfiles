@@ -87,17 +87,29 @@ pub fn reindex(
     fs::write(&contents_path, serde_json::to_vec(&contents)?)
         .with_context(|| format!("failed to write {}", contents_path.display()))?;
 
-    if config.zoekt_index_dir.exists() {
-        fs::remove_dir_all(&config.zoekt_index_dir)
-            .with_context(|| format!("failed to remove {}", config.zoekt_index_dir.display()))?;
+    let previous_index_dir = temporary_root.path().join("previous");
+    let had_previous = config.zoekt_index_dir.exists();
+    if had_previous {
+        fs::rename(&config.zoekt_index_dir, &previous_index_dir).with_context(|| {
+            format!(
+                "failed to stage previous index {} to {}",
+                config.zoekt_index_dir.display(),
+                previous_index_dir.display()
+            )
+        })?;
     }
-    fs::rename(&temporary_index_dir, &config.zoekt_index_dir).with_context(|| {
-        format!(
-            "failed to move {} to {}",
-            temporary_index_dir.display(),
-            config.zoekt_index_dir.display()
-        )
-    })?;
+    if let Err(error) = fs::rename(&temporary_index_dir, &config.zoekt_index_dir) {
+        if had_previous {
+            let _ = fs::rename(&previous_index_dir, &config.zoekt_index_dir);
+        }
+        return Err(error).with_context(|| {
+            format!(
+                "failed to move {} to {}",
+                temporary_index_dir.display(),
+                config.zoekt_index_dir.display()
+            )
+        });
+    }
 
     Ok(ZoektReindexStats {
         indexed_repo_count: repos.len(),
