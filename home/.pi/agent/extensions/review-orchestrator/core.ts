@@ -335,10 +335,14 @@ export async function loadTarget(
 			};
 		}
 		case "uncommitted": {
-			const target = await loadUncommittedTarget(cwd, { exec, readTextFile: readTextFileImpl });
+			const untrackedFiles = await listGitPaths(exec, cwd, ["ls-files", "--others", "--exclude-standard"]);
+			const target = await loadUncommittedTarget(cwd, {
+				exec,
+				readTextFile: readTextFileImpl,
+				untrackedFiles,
+			});
 			if (!target) return null;
 			const focusedFiles = await listGitPaths(exec, cwd, ["diff", "--name-only", "HEAD"]);
-			const untrackedFiles = await listGitPaths(exec, cwd, ["ls-files", "--others", "--exclude-standard"]);
 			return {
 				...target,
 				gitHistoryContext: await loadGitHistoryContext(cwd, { exec, focusedFiles, untrackedFiles }),
@@ -470,16 +474,18 @@ export async function loadUncommittedTarget(
 	{
 		exec,
 		readTextFile: readTextFileImpl = readTextFile,
-	}: { exec: CommandExecutor; readTextFile?: TextFileReader },
+		untrackedFiles: providedUntrackedFiles,
+	}: { exec: CommandExecutor; readTextFile?: TextFileReader; untrackedFiles?: string[] },
 ): Promise<BaseLoadedTarget | null> {
 	const diff = await exec("git", ["diff", "HEAD", "--no-ext-diff", "--minimal"], cwd);
 	const trackedDiff = diff.stdout.trim();
 
-	const untracked = await exec("git", ["ls-files", "--others", "--exclude-standard"], cwd);
-	const untrackedFiles = untracked.stdout
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
+	const untrackedFiles =
+		providedUntrackedFiles ??
+		(await exec("git", ["ls-files", "--others", "--exclude-standard"], cwd)).stdout
+			.split("\n")
+			.map((line) => line.trim())
+			.filter(Boolean);
 
 	const sections: string[] = [];
 
@@ -693,12 +699,28 @@ export function truncateToBudget(text: string, maxChars: number, note: string): 
 	return `${text.slice(0, available)}${suffix}`;
 }
 
+const MAX_READ_BYTES = MAX_REVIEW_CHARS * 4 + 4096;
+
 export async function readTextFile(filePath: string): Promise<string> {
-	const buffer = await fs.readFile(filePath);
-	if (buffer.includes(0)) {
-		throw new Error("Binary file");
+	const handle = await fs.open(filePath, "r");
+	try {
+		const stat = await handle.stat();
+		const targetBytes = stat.size > 0 ? Math.min(stat.size, MAX_READ_BYTES) : MAX_READ_BYTES;
+		const buffer = Buffer.allocUnsafe(targetBytes);
+		let offset = 0;
+		while (offset < buffer.length) {
+			const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, null);
+			if (bytesRead === 0) break;
+			offset += bytesRead;
+		}
+		const slice = buffer.subarray(0, offset);
+		if (slice.includes(0)) {
+			throw new Error("Binary file");
+		}
+		return slice.toString("utf8");
+	} finally {
+		await handle.close();
 	}
-	return buffer.toString("utf8");
 }
 
 export function truncateForReview(text: string): string {
