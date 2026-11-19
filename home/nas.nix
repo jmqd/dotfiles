@@ -48,7 +48,7 @@ let
 
         case "$(uname -s)" in
           Darwin)
-            sudo /sbin/mount -t nfs -o vers=4,resvport "$host:/$share" "$target"
+            sudo /sbin/mount -t nfs -o vers=4,resvport,nosuid,nodev "$host:/$share" "$target"
             ;;
           Linux)
             sudo mount -t nfs4 -o noatime,nosuid,nodev "$host:/$share" "$target"
