@@ -55,6 +55,7 @@ in
     home.sessionVariables = {
       SSL_CERT_FILE = caBundle;
       NIX_SSL_CERT_FILE = caBundle;
+      NODE_EXTRA_CA_CERTS = caBundle;
       CURL_CA_BUNDLE = caBundle;
       GIT_SSL_CAINFO = caBundle;
       REQUESTS_CA_BUNDLE = caBundle;
