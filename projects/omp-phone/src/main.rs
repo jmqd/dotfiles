@@ -675,15 +675,19 @@ async fn events(State(app): State<Arc<App>>, headers: HeaderMap) -> impl IntoRes
             tokio::time::Instant::now() + LOGIN_CHECK_INTERVAL,
             LOGIN_CHECK_INTERVAL,
         );
-        loop {
+        'outer: loop {
             if *shutdown.borrow() || !authenticated(&app, &headers) { break; }
             let sent = tokio::time::Instant::now();
             let snapshot = app.registry.lock().snapshot(&app.config.hostname);
             yield Ok::<_, Infallible>(Event::default().event("sessions").json_data(snapshot).expect("serializable session"));
-            tokio::select! {
-                _ = updates.recv() => {},
-                _ = shutdown.changed() => { break; },
-                _ = check_login.tick() => {},
+            loop {
+                tokio::select! {
+                    _ = updates.recv() => { break; },
+                    _ = shutdown.changed() => { break 'outer; },
+                    _ = check_login.tick() => {
+                        if !authenticated(&app, &headers) { break 'outer; }
+                    },
+                }
             }
             // Each snapshot carries every transcript, so a burst of updates yields one.
             tokio::select! {
