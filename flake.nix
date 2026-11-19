@@ -267,46 +267,46 @@
             # A prebuilt download, so lite homes that skip customCli keep it.
             { home.packages = [ antigravityCliPkg ]; }
             (lib.mkIf config.jmq.packageSets.customCli.enable {
-            home.packages = [
-              claudeCodePkg
-              flowPkg
-              pkgs.gws
-              notionCliPkg
-              oraclePkg
-              piPkg
-              trueflowPkg
-            ]
-            ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
-            services.omp-phone.package = ompPhonePkg;
-            programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
-              enable = true;
-              package = voxtypePkg;
-              model.name = "base.en";
-              service.enable = true;
-              settings.hotkey.enabled = true;
-            };
-            # Linux hosts with a BMC log as root instead (nixos/hosts/jmws-thermal.nix).
-            # Apple Silicon dies run near 100 °C under sustained load, so
-            # alert only past that.
-            launchd.agents.flow-thermal = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
-              enable = true;
-              config = {
-                ProgramArguments = [
-                  "${flowPkg}/bin/flow"
-                  "--automated"
-                  "thermal"
-                  "sample"
-                  "--notify"
-                  "--alert-at"
-                  "105"
-                ];
-                StartInterval = 60;
-                RunAtLoad = true;
-                ProcessType = "Background";
-                StandardOutPath = "/dev/null";
-                StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/flow-thermal.err.log";
+              home.packages = [
+                claudeCodePkg
+                flowPkg
+                pkgs.gws
+                notionCliPkg
+                oraclePkg
+                piPkg
+                trueflowPkg
+              ]
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
+              services.omp-phone.package = ompPhonePkg;
+              programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
+                enable = true;
+                package = voxtypePkg;
+                model.name = "base.en";
+                service.enable = true;
+                settings.hotkey.enabled = true;
               };
-            };
+              # Linux hosts with a BMC log as root instead (nixos/hosts/jmws-thermal.nix).
+              # Apple Silicon dies run near 100 °C under sustained load, so
+              # alert only past that.
+              launchd.agents.flow-thermal = lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
+                enable = true;
+                config = {
+                  ProgramArguments = [
+                    "${flowPkg}/bin/flow"
+                    "--automated"
+                    "thermal"
+                    "sample"
+                    "--notify"
+                    "--alert-at"
+                    "105"
+                  ];
+                  StartInterval = 60;
+                  RunAtLoad = true;
+                  ProcessType = "Background";
+                  StandardOutPath = "/dev/null";
+                  StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/flow-thermal.err.log";
+                };
+              };
             })
           ];
         };
