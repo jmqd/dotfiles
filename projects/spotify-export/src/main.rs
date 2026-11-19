@@ -67,7 +67,12 @@ fn parse_args() -> Result<Option<Args>> {
             "-h" | "--help" => return Ok(None),
             "-o" | "--output" => output = Some(PathBuf::from(value(&arg)?)),
             "--client-id" => client_id = Some(value(&arg)?),
-            "--port" => port = value(&arg)?.parse().map_err(|_| "--port must be 1-65535")?,
+            "--port" => {
+                port = value(&arg)?
+                    .parse::<std::num::NonZeroU16>()
+                    .map(std::num::NonZeroU16::get)
+                    .map_err(|_| "--port must be 1-65535")?
+            }
             flag if flag.starts_with('-') && flag.len() > 1 => {
                 return Err(format!("unknown option {flag}").into())
             }
@@ -609,8 +614,18 @@ fn wait_for_code(listener: &TcpListener, state: &str) -> Result<String> {
                 continue;
             }
         };
-        let target = request_line.split_whitespace().nth(1).unwrap_or("/");
-        let url = Url::parse(&format!("http://127.0.0.1{target}"))?;
+        let target = request_line.split_whitespace().nth(1).unwrap_or("");
+        let url = if target.starts_with('/') {
+            Url::parse(&format!("http://127.0.0.1{target}")).ok()
+        } else {
+            None
+        };
+        let Some(url) = url else {
+            let _ = stream.write_all(
+                b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+            continue;
+        };
         if url.path() != "/callback" {
             let _ = stream.write_all(
                 b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
