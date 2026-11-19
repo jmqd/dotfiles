@@ -143,16 +143,39 @@
     .badge.show { display: flex; }
     .toast { color: #9c9; font-size: 11px; }
   `);
+  const el = (tag, props = {}, ...children) => {
+    const node = document.createElement(tag);
+    for (const [key, value] of Object.entries(props)) {
+      if (key === "className") node.className = value;
+      else node.setAttribute(key, value);
+    }
+    node.append(...children);
+    return node;
+  };
   root.adoptedStyleSheets = [sheet];
-  root.innerHTML = `
-    <div class="panel" part="panel">
-      <p class="target"></p>
-      <textarea placeholder="What should change here?"></textarea>
-      <div class="row"><span class="hint">Enter saves · Shift+Enter newline · Esc cancels</span>
-        <button class="cancel">Cancel</button><button class="primary save">Save</button></div>
-    </div>
-    <div class="badge"><span class="count"></span><span class="toast"></span>
-      <button class="copy">Copy</button><button class="primary copy-clear">Copy &amp; clear</button></div>`;
+  root.append(
+    el(
+      "div",
+      { className: "panel", part: "panel" },
+      el("p", { className: "target" }),
+      el("textarea", { placeholder: "What should change here?" }),
+      el(
+        "div",
+        { className: "row" },
+        el("span", { className: "hint" }, "Enter saves · Shift+Enter newline · Esc cancels"),
+        el("button", { className: "cancel" }, "Cancel"),
+        el("button", { className: "primary save" }, "Save"),
+      ),
+    ),
+    el(
+      "div",
+      { className: "badge" },
+      el("span", { className: "count" }),
+      el("span", { className: "toast" }),
+      el("button", { className: "copy" }, "Copy"),
+      el("button", { className: "primary copy-clear" }, "Copy & clear"),
+    ),
+  );
   document.documentElement.append(host);
 
   const $ = (sel) => root.querySelector(sel);
@@ -171,7 +194,11 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => {
       toast.textContent = "";
-      render();
+      try {
+        render();
+      } catch {
+        badge.classList.remove("show");
+      }
     }, 2500);
   };
 
@@ -269,8 +296,8 @@
       $(".target").textContent = pending.element.selector;
       $(".target").title = pending.element.selector;
       panel.classList.add("open");
-      panel.style.left = `${Math.min(Math.max(8, e.clientX + 12), innerWidth - 348)}px`;
-      panel.style.top = `${Math.min(Math.max(8, e.clientY + 12), innerHeight - panel.offsetHeight - 8)}px`;
+      panel.style.left = `${Math.max(8, Math.min(e.clientX + 12, innerWidth - 348))}px`;
+      panel.style.top = `${Math.max(8, Math.min(e.clientY + 12, innerHeight - panel.offsetHeight - 8))}px`;
       textarea.focus({ preventScroll: true });
     },
     true,
