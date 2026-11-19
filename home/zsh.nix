@@ -89,20 +89,6 @@ in
       bindkey -M vicmd j backward-char
       bindkey -M vicmd l forward-char
 
-      TMOUT=1
-      TRAPALRM() {
-        (( ''${+_fzf_picker_open} )) || zle reset-prompt
-      }
-
-      # Redrawing the prompt while an fzf picker owns the terminal kills the
-      # picker within a second. The widgets run with a local flag that
-      # TRAPALRM sees through zsh's dynamic scoping.
-      for widget in fzf-file-widget fzf-cd-widget fzf-history-widget; do
-        functions[_unguarded_$widget]=$functions[$widget]
-        functions[$widget]="local _fzf_picker_open=1; _unguarded_$widget \"\$@\""
-      done
-      unset widget
-
       if [ -f ~/.env ]; then
         . ~/.env
       fi
