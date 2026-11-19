@@ -5,8 +5,12 @@ use anyhow::{Context as _, bail};
 use serde::Serialize;
 use std::collections::BTreeSet;
 use std::fs;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+const MAX_DIRTY_FILE_BYTES: u64 = 16 * 1024 * 1024;
+const BINARY_PROBE_BYTES: usize = 8192;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DirtyMatch {
@@ -56,20 +60,9 @@ pub fn search_repo(
         }
 
         let absolute_path = repo.path.join(&relative_path);
-        if !absolute_path.is_file() {
+        let Some(bytes) = read_dirty_text_file(&absolute_path) else {
             continue;
-        }
-
-        let bytes = match fs::read(&absolute_path) {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                tracing::debug!(path = %absolute_path.display(), error = %error, "skipping unreadable dirty file");
-                continue;
-            }
         };
-        if bytes.contains(&0) {
-            continue;
-        }
 
         let contents = String::from_utf8_lossy(&bytes);
         // Lowercasing never adds or removes a line break, so the lowercased
@@ -94,6 +87,61 @@ pub fn search_repo(
     }
 
     Ok(matches)
+}
+
+fn read_dirty_text_file(path: &Path) -> Option<Vec<u8>> {
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) => {
+            tracing::debug!(path = %path.display(), error = %error, "skipping unreadable dirty file");
+            return None;
+        }
+    };
+    let metadata = match file.metadata() {
+        Ok(metadata) => metadata,
+        Err(error) => {
+            tracing::debug!(path = %path.display(), error = %error, "skipping unreadable dirty file");
+            return None;
+        }
+    };
+    if !metadata.is_file() || metadata.len() > MAX_DIRTY_FILE_BYTES {
+        tracing::debug!(
+            path = %path.display(),
+            len = metadata.len(),
+            "skipping non-file or oversized dirty file"
+        );
+        return None;
+    }
+
+    let mut probe = [0u8; BINARY_PROBE_BYTES];
+    let mut probe_len = 0;
+    while probe_len < probe.len() {
+        match file.read(&mut probe[probe_len..]) {
+            Ok(0) => break,
+            Ok(read) => probe_len += read,
+            Err(error) => {
+                tracing::debug!(path = %path.display(), error = %error, "skipping unreadable dirty file");
+                return None;
+            }
+        }
+    }
+    if probe[..probe_len].contains(&0) {
+        return None;
+    }
+
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    bytes.extend_from_slice(&probe[..probe_len]);
+    if probe_len == probe.len() {
+        let remaining_cap = MAX_DIRTY_FILE_BYTES.saturating_sub(probe_len as u64);
+        if let Err(error) = file.take(remaining_cap + 1).read_to_end(&mut bytes) {
+            tracing::debug!(path = %path.display(), error = %error, "skipping unreadable dirty file");
+            return None;
+        }
+        if bytes.len() as u64 > MAX_DIRTY_FILE_BYTES || bytes[probe_len..].contains(&0) {
+            return None;
+        }
+    }
+    Some(bytes)
 }
 
 fn dirty_files(git_bin: &str, repo_path: &Path) -> anyhow::Result<BTreeSet<PathBuf>> {
