@@ -118,7 +118,7 @@ pub fn search_commits(
         params.push(Value::Text(repo_path.clone()));
     }
     if let Some(path_filter) = &filters.path_filter {
-        query.push_str(" AND changed_files LIKE ? ESCAPE '\\'");
+        query.push_str(" AND lower(changed_files) LIKE ? ESCAPE '\\'");
         params.push(Value::Text(format!(
             "%{}%",
             escape_like_pattern(&path_filter.to_lowercase())
@@ -246,7 +246,7 @@ fn insert_commits(connection: &Connection, commits: &[CommitRecord]) -> anyhow::
                 commit.authored_at,
                 commit.subject,
                 commit.body,
-                commit.changed_files.join("\n").to_lowercase(),
+                commit.changed_files.join("\n"),
                 commit.search_text,
             ])?;
         }
