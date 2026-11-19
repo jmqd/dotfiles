@@ -54,19 +54,22 @@
       ...
     }:
     let
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-linux"
+      ];
+
       # Packages that fail on current nixpkgs-unstable come from the pre-GCC 16
       # revision until their fixes land. Drop each use once it builds on
       # unstable, then drop this input:
       # - prowler on aarch64-linux: fixed by NixOS/nixpkgs#569147, but Hydra
       #   has no aarch64-linux build on unstable yet
       # - cutter: uic in Qt 6.12 rejects its .ui files, NixOS/nixpkgs#576576
-      pkgsPreGcc16For = system: import nixpkgs-pre-gcc16 { inherit system; };
-
-      systems = [
-        "aarch64-darwin"
-        "aarch64-linux"
-        "x86_64-linux"
-      ];
+      pkgsPreGcc16BySystem = nixpkgs.lib.genAttrs systems (
+        system: import nixpkgs-pre-gcc16 { inherit system; }
+      );
+      pkgsPreGcc16For = system: pkgsPreGcc16BySystem.${system};
 
       # One package set per system and config. Nix does not memoize
       # `import nixpkgs { … }`, so an import in each builder below evaluated
