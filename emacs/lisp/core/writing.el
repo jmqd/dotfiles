@@ -44,7 +44,7 @@ Programming buffers use `flyspell-prog-mode'; other buffers use
          (prog-mode . jmq/enable-spell-checking)
          (git-commit-mode . jmq/enable-spell-checking))
   :init
-  (setq ispell-program-name (jmq/find-spell-checker)
+  (setq ispell-program-name nil
         ispell-dictionary "en_US"
         ispell-personal-dictionary (expand-file-name "ispell-personal.pws" jmq/var-directory)
         flyspell-issue-message-flag nil
@@ -59,10 +59,11 @@ Programming buffers use `flyspell-prog-mode'; other buffers use
              langtool-show-message-at-point
              langtool-switch-default-language)
   :init
+  (setq langtool-default-language "en-US"
+        langtool-mother-tongue "en")
+  :config
   (setq langtool-bin (or (executable-find "languagetool-commandline")
                          (executable-find "languagetool")
-                         "languagetool-commandline")
-        langtool-default-language "en-US"
-        langtool-mother-tongue "en"))
+                         "languagetool-commandline")))
 
 (provide 'jmq-writing)

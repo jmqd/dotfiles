@@ -12,7 +12,6 @@
 
 (require 'use-package)
 
-(setq use-package-expand-minimally t
-      use-package-compute-statistics t)
+(setq use-package-expand-minimally t)
 
 (provide 'jmq-bootstrap)

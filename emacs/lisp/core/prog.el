@@ -1,7 +1,8 @@
 ;;; prog.el -*- lexical-binding: t; -*-
 
 (use-package exec-path-from-shell
-  :if (eq system-type 'darwin)
+  :if (and (eq system-type 'darwin)
+           (or (display-graphic-p) (daemonp)))
   :demand t
   :config
   (dolist (var '("LANG" "LC_ALL" "LC_CTYPE" "OSFONTDIR"))

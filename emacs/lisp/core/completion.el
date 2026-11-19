@@ -28,6 +28,7 @@
   (rfn-eshadow-update-overlay . vertico-directory-tidy))
 
 (use-package orderless
+  :defer t
   :init
   (setq completion-styles '(orderless basic)
         completion-category-defaults nil
@@ -39,7 +40,7 @@
   (marginalia-mode 1))
 
 (use-package consult
-  :after (vertico recentf))
+  :defer t)
 
 (use-package embark
   :bind
@@ -54,6 +55,7 @@
   (embark-collect-mode . consult-preview-at-point-mode))
 
 (use-package wgrep
+  :defer t
   :config
   (setq wgrep-auto-save-buffer t))
 
