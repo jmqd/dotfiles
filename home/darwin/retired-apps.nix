@@ -35,8 +35,11 @@ let
         fi
         local name
         name=$(basename "$app" .app)
-        printf 'Moving retired %s to the Trash.\n' "$app"
-        mv "$app" "$HOME/.Trash/$name.$(date +%s).app"
+        if ! mv "$app" "$HOME/.Trash/$name.$(date +%s).app"; then
+          printf 'Leaving %s: could not move it to the Trash.\n' "$app" >&2
+          return 0
+        fi
+        printf 'Moved retired %s to the Trash.\n' "$app"
       }
 
       ${lib.concatMapStrings (a: ''
