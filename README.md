@@ -620,6 +620,11 @@ work, so `flow pin` prints the manual step instead of bumping them.
 `just audit-deps` runs `flow pin check`. Bumped apps reach the machine on the
 next `bin/hm-switch.sh`.
 
+Hand-installed copies of apps that Home Manager now manages are listed in
+`home/darwin/retired-apps.nix`. Each switch moves a listed app to the Trash
+when its bundle ID matches and it is not running; anything else is left alone
+with a message.
+
 ## Cleaning idle files
 
 `clean-stale` deletes regenerable files that nothing has touched for 36 hours,

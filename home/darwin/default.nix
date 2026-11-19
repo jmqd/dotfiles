@@ -16,6 +16,7 @@ in
     ../common.nix
     ./raycast.nix
     ./tailscale.nix
+    ./retired-apps.nix
     ./wispr-flow.nix
     ./xcode.nix
   ];
