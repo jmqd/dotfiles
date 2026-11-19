@@ -173,13 +173,12 @@ pub fn resolve_repo_selector(
         || selector.starts_with('.')
         || selector.contains('/')
     {
-        let path = if selector == "~" || selector.starts_with("~/") {
-            let home = dirs::home_dir().context("failed to determine home directory")?;
-            if selector == "~" {
-                home
-            } else {
-                home.join(selector.trim_start_matches("~/"))
-            }
+        let path = if selector == "~" {
+            dirs::home_dir().context("failed to determine home directory")?
+        } else if let Some(rest) = selector.strip_prefix("~/") {
+            dirs::home_dir()
+                .context("failed to determine home directory")?
+                .join(rest)
         } else {
             let path = PathBuf::from(selector);
             if path.is_absolute() {
