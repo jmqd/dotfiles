@@ -11,6 +11,14 @@ let
       path = "/Applications/WhatsApp.app";
       bundleId = "net.whatsapp.WhatsApp";
     }
+    {
+      path = "/Applications/Spotify.app";
+      bundleId = "com.spotify.client";
+    }
+    {
+      path = "/Applications/WezTerm.app";
+      bundleId = "com.github.wez.wezterm";
+    }
   ];
 
   retire = pkgs.writeShellApplication {
