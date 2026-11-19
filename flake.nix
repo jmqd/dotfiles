@@ -263,9 +263,11 @@
             '';
           };
 
-          config = lib.mkIf config.jmq.packageSets.customCli.enable {
+          config = lib.mkMerge [
+            # A prebuilt download, so lite homes that skip customCli keep it.
+            { home.packages = [ antigravityCliPkg ]; }
+            (lib.mkIf config.jmq.packageSets.customCli.enable {
             home.packages = [
-              antigravityCliPkg
               claudeCodePkg
               flowPkg
               pkgs.gws
@@ -305,7 +307,8 @@
                 StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/flow-thermal.err.log";
               };
             };
-          };
+            })
+          ];
         };
 
       perSystem = flake-utils.lib.eachSystem systems (
