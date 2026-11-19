@@ -19,6 +19,7 @@
 
       "github.com" = {
         AddKeysToAgent = "yes";
+        IdentitiesOnly = "yes";
         IdentityFile = [ "~/.ssh/id_ed25519" ];
       }
       // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
