@@ -56,10 +56,6 @@ in
 
     history.extended = true;
 
-    sessionVariables = {
-      TERM = "xterm-256color";
-    };
-
     shellAliases = {
       g = "git";
       ga = "git add";
