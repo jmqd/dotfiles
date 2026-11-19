@@ -37,8 +37,19 @@ in
     enable = true;
     enableCompletion = true;
     # /bin/zsh and the Nix zsh differ in version and fpath. Sharing one dump
-    # makes each rebuild it (about 1 s) whenever the other ran last.
-    completionInit = ''autoload -U compinit && compinit -d "''${ZDOTDIR:-$HOME}/.zcompdump-$ZSH_VERSION"'';
+    # makes each rebuild it (about 1 s) whenever the other ran last. Skip the
+    # full fpath scan and compaudit when the dump is less than 24 hours old.
+    completionInit = ''
+      autoload -Uz compinit
+      () {
+        local dump="''${ZDOTDIR:-$HOME}/.zcompdump-$ZSH_VERSION"
+        if (( $# )); then
+          compinit -C -d "$dump"
+        else
+          compinit -d "$dump"
+        fi
+      } "''${ZDOTDIR:-$HOME}/.zcompdump-$ZSH_VERSION"(Nmh-24)
+    '';
 
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
