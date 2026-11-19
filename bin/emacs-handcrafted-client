@@ -58,11 +58,18 @@ if ! server_ready; then
 	echo "Starting handcrafted Emacs daemon (${server_name}); first launch may take a while..." >&2
 	mkdir -p "$(dirname "${log_file}")"
 	"${daemon_launcher}" >"${log_file}" 2>&1 &
+	daemon_pid=$!
 
 	ready=0
 	for _ in {1..600}; do
 		if server_ready; then
 			ready=1
+			break
+		fi
+		if ! kill -0 "${daemon_pid}" 2>/dev/null; then
+			if server_ready; then
+				ready=1
+			fi
 			break
 		fi
 		sleep 0.5
