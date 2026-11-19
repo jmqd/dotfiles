@@ -20,6 +20,7 @@
 
 (unless (file-directory-p jmq/var-directory)
   (make-directory jmq/var-directory t))
+(make-directory (expand-file-name "auto-save/" jmq/var-directory) t)
 
 (setq custom-file (expand-file-name "custom.el" jmq/var-directory)
       backup-directory-alist `(("." . ,(expand-file-name "backups/" jmq/var-directory)))

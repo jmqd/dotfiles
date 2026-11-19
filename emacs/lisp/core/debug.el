@@ -17,7 +17,7 @@
   "Register TEMPLATE under NAME, replacing any existing entry."
   (setq dap-debug-template-configurations
         (cl-remove-if (lambda (config)
-                        (equal name (plist-get config :name)))
+                        (equal name (car config)))
                       dap-debug-template-configurations))
   (dap-register-debug-template name template))
 
