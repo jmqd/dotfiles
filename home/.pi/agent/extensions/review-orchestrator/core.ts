@@ -85,7 +85,11 @@ export function normalizeScopeKind(value: string): ScopeKind {
 export function parseScope(args: string, defaultScope: ScopeKind): ScopeSpec | null {
 	const trimmed = args.trim();
 	const lowered = trimmed.toLowerCase();
-	if (!trimmed) return defaultScope === "commit" ? { kind: "commit", value: "HEAD" } : { kind: defaultScope };
+	if (!trimmed) {
+		if (defaultScope === "commit") return { kind: "commit", value: "HEAD" };
+		if (defaultScope === "range" || defaultScope === "file") return null;
+		return { kind: defaultScope };
+	}
 	if (lowered === "staged") return { kind: "staged" };
 	if (lowered === "working" || lowered === "uncommitted") return { kind: "uncommitted" };
 	if (lowered === "repo") return { kind: "repo" };

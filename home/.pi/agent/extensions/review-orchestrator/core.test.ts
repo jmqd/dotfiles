@@ -85,6 +85,8 @@ test("normalizeScopeKind maps aliases and defaults unknown values to staged", ()
 test("parseScope handles supported scopes and aliases", () => {
 	assert.deepEqual(parseScope("", "repo"), { kind: "repo" });
 	assert.deepEqual(parseScope("", "commit"), { kind: "commit", value: "HEAD" });
+	assert.equal(parseScope("", "range"), null);
+	assert.equal(parseScope("", "file"), null);
 	assert.deepEqual(parseScope("staged", "repo"), { kind: "staged" });
 	assert.deepEqual(parseScope("working", "staged"), { kind: "uncommitted" });
 	assert.deepEqual(parseScope("uncommitted", "staged"), { kind: "uncommitted" });
