@@ -527,17 +527,22 @@ fn save_token(
     };
     let dir = path.parent().ok_or("token path has no parent")?;
     fs::create_dir_all(dir)?;
-    let tmp = dir.join("token.json.tmp");
-    {
+    let tmp = dir.join(format!(".token.json.{}.tmp", random_urlsafe(8)?));
+    let write_result = (|| -> Result<()> {
         let mut opts = fs::OpenOptions::new();
-        opts.write(true).create(true).truncate(true);
+        opts.write(true).create_new(true);
         #[cfg(unix)]
         std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
         let mut file = opts.open(&tmp)?;
         file.write_all(&serde_json::to_vec(&stored)?)?;
         file.sync_all()?;
+        fs::rename(&tmp, path)?;
+        Ok(())
+    })();
+    if let Err(err) = write_result {
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
     }
-    fs::rename(&tmp, path)?;
     Ok(stored.access_token)
 }
 
