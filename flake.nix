@@ -223,6 +223,10 @@
                 "openvino-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
               };
             };
+            # nixpkgs' cargoSetupHook sets LIBSQLITE3_SYS_USE_PKG_CONFIG=1,
+            # which overrides rusqlite's `bundled` feature and links the
+            # system sqlite that upstream's flake does not provide.
+            buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.sqlite ];
             postPatch = (old.postPatch or "") + ''
               cp ${lockFile} Cargo.lock
             '';
