@@ -165,11 +165,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1792563513,
-        "narHash": "sha256-a7v4b2BAzffGRRVGnEVt7Z33gxHc0uxFMjAYEHmHeKE=",
+        "lastModified": 1794888373,
+        "narHash": "sha256-1bsxm5A9QDHI/Ib2AFK9drrBUxfg7MGsZVDhEQZVcEs=",
         "owner": "trueflow-dev",
         "repo": "trueflow",
-        "rev": "473fec184e1901db76081c6002a115c07cab2a94",
+        "rev": "fb930bc0c351cae427c8939b7164b388c9d4127e",
         "type": "github"
       },
       "original": {
