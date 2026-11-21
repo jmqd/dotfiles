@@ -658,6 +658,7 @@
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = codexDesktopPkg;
+            gemini = mkPinnedAppPkg "gemini" system;
             spotify = mkPinnedAppPkg "spotify" system;
             whatsapp = mkPinnedAppPkg "whatsapp" system;
             wispr-flow = wisprFlowPkg;
@@ -807,6 +808,7 @@
                 "berkley-mono"
                 "claude-code"
                 "codex-desktop"
+                "gemini"
                 "orbstack"
                 "raycast"
                 "spotify"

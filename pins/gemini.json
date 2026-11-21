@@ -1,0 +1,9 @@
+{
+  "version": "1.147.6.1557",
+  "sources": {
+    "aarch64-darwin": {
+      "url": "https://dl.google.com/release2/j33ro/release/Gemini.dmg",
+      "hash": "sha256-CSvAtB5vVGlZ8+8xbOg3woTDF3SQLKg8R+bcz5ZwJZs="
+    }
+  }
+}

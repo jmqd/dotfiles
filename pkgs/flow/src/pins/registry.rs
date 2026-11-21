@@ -48,7 +48,8 @@ pub enum Upstream {
     /// Tailscale's stable package index; one universal macOS installer.
     TailscaleStable { systems: &'static [System] },
     /// A URL that always serves the newest DMG; the version is read from the
-    /// bundle's Info.plist at `info_plist` inside the image.
+    /// bundle's Info.plist at `info_plist` inside the image. The path is a
+    /// 7-Zip wildcard, for images whose volume name carries the version.
     UnversionedDmg {
         systems: &'static [System],
         url: &'static str,
@@ -132,6 +133,19 @@ pub const PINS: &[Pin] = &[
             },
             artifact: Artifact::File,
             flake_attr: Some("codex-desktop"),
+        }),
+    },
+    Pin {
+        name: "gemini",
+        kind: Kind::Managed(Managed {
+            upstream: Upstream::UnversionedDmg {
+                systems: &["aarch64-darwin"],
+                url: "https://dl.google.com/release2/j33ro/release/Gemini.dmg",
+                // The volume is named "Gemini <version>".
+                info_plist: "*/Gemini.app/Contents/Info.plist",
+            },
+            artifact: Artifact::File,
+            flake_attr: Some("gemini"),
         }),
     },
     Pin {
