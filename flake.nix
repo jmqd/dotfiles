@@ -30,7 +30,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     voxtype = {
-      url = "github:peteonrails/voxtype/v1.1.1";
+      url = "github:peteonrails/voxtype/v1.3.0";
       inputs.flake-utils.follows = "flake-utils";
       inputs.nixpkgs.follows = "nixpkgs";
     };
@@ -204,13 +204,10 @@
         let
           pkgs = pkgsBySystem.${system};
           upstream = voxtype.packages.${system};
-          # Upstream's lock keeps webpki-roots and rustls-webpki releases that
-          # trust the compromised eMudhra intermediates (RUSTSEC-2026-0381 to
-          # 0383), plus rustls, quinn-proto and openssl releases with open
-          # advisories. pkgs/voxtype/Cargo.lock is upstream's lock after
-          #   cargo update -p rustls-webpki -p webpki-roots@<old> \
-          #     -p webpki-root-certs -p rustls -p quinn-proto -p bytes \
-          #     -p crossbeam-epoch -p openssl -p openssl-sys
+          # Upstream's lock keeps a quinn-udp release with an open advisory
+          # (RUSTSEC-2026-0538). pkgs/voxtype/Cargo.lock is upstream's lock
+          # after
+          #   cargo update -p quinn-udp
           # Regenerate it on each voxtype bump; drop it once upstream catches up.
           lockFile = ./pkgs/voxtype/Cargo.lock;
           unwrapped = upstream.voxtype-vulkan-unwrapped.overrideAttrs (old: {
