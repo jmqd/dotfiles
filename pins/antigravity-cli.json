@@ -1,17 +1,17 @@
 {
-  "version": "1.5.12",
+  "version": "1.5.14",
   "sources": {
     "aarch64-darwin": {
-      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.5.12/agy_cli_mac_arm64.tar.gz",
-      "hash": "sha256-+iuw5mRttw5mEO1BOC+f8j4mC49klCfE7xNhqqio28s="
+      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.5.14/agy_cli_mac_arm64.tar.gz",
+      "hash": "sha256-sBvdRZHhPd/LDgSb6nSun4PoCCmtz2SqpY9b+xpCWlQ="
     },
     "aarch64-linux": {
-      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.5.12/agy_cli_linux_arm64.tar.gz",
-      "hash": "sha256-WUBG3huRVh9/4WR2Nl44QwOOzKVvX1mvRc+dMJHkO9Q="
+      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.5.14/agy_cli_linux_arm64.tar.gz",
+      "hash": "sha256-5faaMSP6xml0swPZogHzgaD7MrPvhp2ROdqF1cr2eio="
     },
     "x86_64-linux": {
-      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.5.12/agy_cli_linux_x64.tar.gz",
-      "hash": "sha256-Dwy4Uc3J++3VBDJXCqaunEw5i56j8eI+d3b3B2Q8Wz4="
+      "url": "https://github.com/google-antigravity/antigravity-cli/releases/download/1.5.14/agy_cli_linux_x64.tar.gz",
+      "hash": "sha256-1YOGMi0gc+lrM/fMMrTpri22Io9YRANpcllnst5Ix7U="
     }
   }
 }
