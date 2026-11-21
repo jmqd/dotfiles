@@ -204,10 +204,11 @@
         let
           pkgs = pkgsBySystem.${system};
           upstream = voxtype.packages.${system};
-          # Upstream's lock keeps a quinn-udp release with an open advisory
-          # (RUSTSEC-2026-0538). pkgs/voxtype/Cargo.lock is upstream's lock
-          # after
-          #   cargo update -p quinn-udp
+          # Upstream's lock keeps releases with open advisories (most
+          # recently quinn-udp, RUSTSEC-2026-0538). pkgs/voxtype/Cargo.lock
+          # is upstream's lock after
+          #   cargo update -p rustls-webpki -p webpki-roots@<old> -p rustls \
+          #     -p quinn-proto -p quinn-udp -p bytes -p crossbeam-epoch
           # Regenerate it on each voxtype bump; drop it once upstream catches up.
           lockFile = ./pkgs/voxtype/Cargo.lock;
           unwrapped = upstream.voxtype-vulkan-unwrapped.overrideAttrs (old: {
@@ -220,6 +221,19 @@
                 "openvino-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
               };
             };
+            # nixpkgs' cargoSetupHook sets LIBSQLITE3_SYS_USE_PKG_CONFIG=1,
+            # which overrides rusqlite's `bundled` feature and links the
+            # system sqlite that upstream's flake does not provide.
+            buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.sqlite ];
+            # Racy upstream tests. The meeting_title one asserts the daemon
+            # has not yet rewritten the transcript after a live retitle, and
+            # a fast builder loses that race. The oauth ones re-bind local
+            # ports that parallel tests' forked children can still hold, so
+            # they fail with PortsBusy now and then (see free_port upstream).
+            checkFlags = (old.checkFlags or [ ]) ++ [
+              "--skip=a_running_meeting_is_retitled_through_the_daemon"
+              "--skip=meeting::actions::oauth::tests::"
+            ];
             postPatch = (old.postPatch or "") + ''
               cp ${lockFile} Cargo.lock
             '';
