@@ -1,9 +1,9 @@
 {
-  "version": "1.3.9.2055",
+  "version": "1.3.10.2586",
   "sources": {
     "aarch64-darwin": {
       "url": "https://download.scdn.co/SpotifyARM64.dmg",
-      "hash": "sha256-jI7EwpwtN/bS+i2NrVBuAsZR+/Vu8mw0/hvv21FEZ+0="
+      "hash": "sha256-g0TTMH5Tc22ANkK+T7N/bAJThQtSW57l+PPiu/jDLZM="
     }
   }
 }
