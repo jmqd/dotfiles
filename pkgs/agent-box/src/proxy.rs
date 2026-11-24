@@ -147,6 +147,17 @@ impl<T: TokenSource> Proxy<T> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
+        // Paths and reasons come from the container; escape control
+        // characters so one request is always one log line.
+        let mut escaped = String::with_capacity(line.len());
+        for c in line.chars() {
+            if c.is_control() {
+                escaped.extend(c.escape_default());
+            } else {
+                escaped.push(c);
+            }
+        }
+        let line = escaped;
         if let Ok(mut log) = self.log.lock() {
             // A log write failure must not fail the request it describes.
             if let Err(error) = writeln!(log, "{now} {line}") {

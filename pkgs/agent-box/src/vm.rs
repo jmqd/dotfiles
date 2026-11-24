@@ -1,14 +1,15 @@
 //! The colima VM and the containers that run inside it.
 //!
 //! The VM is the isolation boundary for files: it shares only the work root
-//! with the host, so a container escape reaches untrusted checkouts and
-//! nothing else. Lima's user-mode network would otherwise let containers
+//! with the host. Root in the VM can rewrite anything in the work root,
+//! including planting symlinks, so the host writes there only into fresh,
+//! randomly named directories under checked parents, and keeps its logs
+//! outside it. Lima's user-mode network would otherwise let containers
 //! reach the Mac's loopback services (through the host gateway) and the LAN,
 //! so a firewall in the VM rejects private destinations; only the session's
 //! proxy port on the host gateway is let through.
 
 use anyhow::{Context as _, bail, ensure};
-use std::ffi::OsString;
 use std::io::IsTerminal as _;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
@@ -183,19 +184,22 @@ fn docker() -> Command {
 /// once per flake revision and never changes afterwards.
 pub fn stage_flake(workroot: &Path, source: &Path) -> anyhow::Result<PathBuf> {
     let name = source.file_name().context("flake source has no name")?;
-    let flakes = workroot.join(".agent-box").join("flakes");
+    let flakes = real_dir_under(workroot, Path::new(".agent-box/flakes"))?;
     let staged = flakes.join(name);
     if staged.join("flake.nix").exists() {
         return Ok(staged);
     }
-    std::fs::create_dir_all(&flakes)?;
-    let mut partial = OsString::from(name);
-    partial.push(format!(".partial-{}", std::process::id()));
-    let partial = flakes.join(partial);
+    // A fresh, randomly named directory: nothing in the VM can have planted
+    // a symlink at the copy's destination.
+    let partial = tempfile::Builder::new()
+        .prefix(".partial-")
+        .tempdir_in(&flakes)
+        .context("could not create a staging directory")?;
+    let copy = partial.path().join("flake");
     let status = Command::new("cp")
         .arg("-R")
         .arg(source)
-        .arg(&partial)
+        .arg(&copy)
         .status()
         .context("failed to run cp")?;
     ensure!(
@@ -203,8 +207,27 @@ pub fn stage_flake(workroot: &Path, source: &Path) -> anyhow::Result<PathBuf> {
         "could not copy {} into the work root",
         source.display()
     );
-    std::fs::rename(&partial, &staged).context("could not finish staging the flake")?;
+    std::fs::rename(&copy, &staged).context("could not finish staging the flake")?;
     Ok(staged)
+}
+
+/// Creates `workroot/relative` and checks that no component under the work
+/// root is a symlink. Root in the VM can write anywhere in the work root, so
+/// a planted symlink would otherwise steer host writes outside it.
+pub fn real_dir_under(workroot: &Path, relative: &Path) -> anyhow::Result<PathBuf> {
+    let path = workroot.join(relative);
+    std::fs::create_dir_all(&path)?;
+    let mut current = workroot.to_path_buf();
+    for component in relative.components() {
+        current.push(component);
+        let metadata = std::fs::symlink_metadata(&current)?;
+        ensure!(
+            metadata.is_dir() && !metadata.file_type().is_symlink(),
+            "{} is not a plain directory; something in the VM replaced it",
+            current.display()
+        );
+    }
+    Ok(path)
 }
 
 /// Builds or downloads `installables` into the shared store, from a

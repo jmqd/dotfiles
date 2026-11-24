@@ -157,20 +157,24 @@ async fn run(key_file: &Path, args: RunArgs) -> anyhow::Result<ExitCode> {
     let store_paths = vm::realize(&flake, &installables(&args.packages))?;
 
     let workspace_path = target.workspace_path();
-    let workspace = workroot.join(&workspace_path);
-    std::fs::create_dir_all(&workspace)?;
-    // The container can write anything under `workspace`, including symlinks
-    // virtiofs keeps on the host, so the host never writes there. Session
-    // files live in a directory only the host writes and the container sees
-    // read-only.
-    let state = workroot.join(".agent-box");
-    let control = state.join("sessions").join(&workspace_path);
-    std::fs::create_dir_all(&control)?;
+    let workspace = vm::real_dir_under(&workroot, &workspace_path)?;
+    // The container can write anything under `workspace`, and root in the
+    // VM anything under the work root, so session files go into a fresh,
+    // randomly named directory the container sees read-only.
+    let sessions = vm::real_dir_under(&workroot, Path::new(".agent-box/sessions"))?;
+    let control = tempfile::Builder::new()
+        .prefix("session-")
+        .tempdir_in(&sessions)
+        .context("could not create the session directory")?;
     let ca = tls::SessionCa::new(&["github.com", "api.github.com"])?;
-    std::fs::write(control.join("ca.pem"), &ca.cert_pem)?;
-    std::fs::write(control.join("init.sh"), include_str!("box-init.sh"))?;
+    write_new(&control.path().join("ca.pem"), ca.cert_pem.as_bytes())?;
+    write_new(
+        &control.path().join("init.sh"),
+        include_str!("box-init.sh").as_bytes(),
+    )?;
 
-    let mut log_path = state.join("logs").join(&workspace_path);
+    // Logs stay off the share: nothing in the VM may choose where they go.
+    let mut log_path = log_root()?.join(&workspace_path);
     log_path.as_mut_os_string().push(".log");
     std::fs::create_dir_all(log_path.parent().context("log path has no parent")?)?;
     let log = std::fs::OpenOptions::new()
@@ -259,7 +263,7 @@ async fn run(key_file: &Path, args: RunArgs) -> anyhow::Result<ExitCode> {
     let status = vm::run_session(vm::Session {
         name: format!("agent-box-{}", random_hex(4)?),
         workspace: &workspace,
-        control: &control,
+        control: control.path(),
         env,
         pass_env: &args.pass_env,
         command: &args.command,
@@ -305,6 +309,28 @@ fn expand_home(path: &str) -> anyhow::Result<PathBuf> {
         }
         None => Ok(PathBuf::from(path)),
     }
+}
+
+/// Where proxy logs go: outside the work root, which the VM can rewrite.
+fn log_root() -> anyhow::Result<PathBuf> {
+    if cfg!(target_os = "macos") {
+        expand_home("~/Library/Logs/agent-box")
+    } else {
+        expand_home("~/.local/state/agent-box/logs")
+    }
+}
+
+/// Writes a file that must not exist yet, so a planted file or symlink makes
+/// the write fail instead of following it.
+fn write_new(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
+    use std::io::Write as _;
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .with_context(|| format!("could not create {}", path.display()))?
+        .write_all(contents)?;
+    Ok(())
 }
 
 pub fn random_hex(bytes: usize) -> anyhow::Result<String> {

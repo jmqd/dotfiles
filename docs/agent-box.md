@@ -80,9 +80,11 @@ flowchart LR
   open. The proxy tunnels only to public addresses on ports 443 and 80, and
   connects to the address it checked. Anything that ignores `HTTPS_PROXY`
   reaches GitHub anonymously.
-- **Session files.** The proxy CA and the startup script live outside the
-  workspace and are mounted read-only, so code from one run cannot plant a
-  symlink that makes the next run overwrite a host file.
+- **Host writes.** Root in the VM can rewrite anything in `~/agent-work`, so
+  the host writes there only into fresh, randomly named directories under
+  parents it checks are not symlinks, creating each file new. The session CA
+  and startup script go into such a directory and are mounted read-only.
+  Proxy logs stay outside the share entirely.
 
 **Remaining risk: CI.** A session that can push runs the repo's CI
 workflows on code it wrote, and those workflows can read whatever secrets
@@ -98,8 +100,8 @@ branches.
 | Path | Contents |
 |---|---|
 | `~/agent-work/<owner>/<repo>/<scope>/` | the workspace mounted at `/work`; `scope` is `repo`, `pr-N`, or `branch-NAME-HASH` |
-| `~/agent-work/.agent-box/sessions/…` | the session CA and startup script, mounted read-only |
-| `~/agent-work/.agent-box/logs/<owner>/<repo>/<scope>.log` | every proxied GitHub request and every denial |
+| `~/agent-work/.agent-box/sessions/session-*/` | the session CA and startup script, mounted read-only; removed when the session ends |
+| `~/Library/Logs/agent-box/<owner>/<repo>/<scope>.log` | every proxied GitHub request and every denial |
 | `~/agent-work/.agent-box/flakes/` | copies of this flake the VM builds agents from |
 | Docker volume `agent-box-nix` | the shared Nix store |
 
