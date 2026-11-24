@@ -70,10 +70,12 @@ in
     ".emacs.d/early-init.el".source = ../emacs/early-init.el;
     ".emacs.d/init.el".source = ../emacs/init.el;
     ".emacs.d/lisp".source = ../emacs/lisp;
-    "Applications/Emacs.app".source = "${config.programs.emacs.finalPackage}/Applications/Emacs.app";
     ".local/bin/emacs-handcrafted".source = ../bin/emacs-handcrafted;
     ".local/bin/emacs-handcrafted-client".source = ../bin/emacs-handcrafted-client;
     ".local/bin/emacs-handcrafted-daemon".source = ../bin/emacs-handcrafted-daemon;
+  }
+  // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+    "Applications/Emacs.app".source = "${config.programs.emacs.finalPackage}/Applications/Emacs.app";
   };
 
   home.sessionPath = [ handcraftedBinDir ];
@@ -81,6 +83,10 @@ in
   home.sessionVariables = {
     EDITOR = handcraftedClient;
     VISUAL = handcraftedClient;
+    # Match services.emacs's default `--fg-daemon` socket ("server") on both
+    # launchd and systemd so $EDITOR reuses the running daemon instead of
+    # cold-starting a second "handcrafted" daemon.
+    EMACS_HANDCRAFTED_SERVER = "server";
     EMACS_HANDCRAFTED_EMACS_BIN = "${config.programs.emacs.finalPackage}/bin/emacs";
     EMACS_HANDCRAFTED_EMACSCLIENT_BIN = "${config.programs.emacs.finalPackage}/bin/emacsclient";
   };

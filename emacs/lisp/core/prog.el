@@ -4,6 +4,10 @@
   :if (and (eq system-type 'darwin)
            (or (display-graphic-p) (daemonp)))
   :demand t
+  :init
+  ;; home/zsh.nix loads Nix profiles in ~/.zprofile, so a non-interactive login
+  ;; shell imports PATH and session vars without running interactive .zshrc.
+  (setq exec-path-from-shell-arguments '("-l"))
   :config
   (dolist (var '("LANG" "LC_ALL" "LC_CTYPE" "OSFONTDIR"))
     (add-to-list 'exec-path-from-shell-variables var))
@@ -62,6 +66,10 @@ state map shadows plain `corfu-map' entries, so bind the insert state too."
   (add-hook 'completion-at-point-functions #'cape-dabbrev 20)
   (add-hook 'completion-at-point-functions #'cape-file 30))
 
+;; Raise process read chunk size from Emacs's 64 KiB default for faster LSP
+;; JSON-RPC throughput (rust-analyzer, gopls, basedpyright, tsserver).
+(setq read-process-output-max (* 1024 1024))
+
 (use-package eglot
   :hook
   ((c-mode . eglot-ensure)
@@ -77,11 +85,15 @@ state map shadows plain `corfu-map' entries, so bind the insert state too."
    (zig-mode . eglot-ensure))
   :config
   (setq eglot-autoshutdown t
-        eglot-confirm-server-edits nil)
+        eglot-confirm-server-edits nil
+        eglot-sync-connect nil
+        eglot-events-buffer-config '(:size 0 :format full))
   (add-to-list 'eglot-server-programs
                '(python-mode . ("basedpyright-langserver" "--stdio")))
   (add-to-list 'eglot-server-programs
-               '((rust-mode rustic-mode) . ("rustup" "run" "stable" "rust-analyzer")))
+               '((rust-mode rustic-mode)
+                 . ("rustup" "run" "stable" "rust-analyzer"
+                    :initializationOptions (:cargo (:targetDir t)))))
   (add-to-list 'eglot-server-programs
                '((go-mode go-ts-mode) . ("gopls")))
   (add-to-list 'eglot-server-programs
