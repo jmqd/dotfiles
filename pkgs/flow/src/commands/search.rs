@@ -325,13 +325,14 @@ fn execute_reindex(
     _args: SearchReindexArgs,
 ) -> anyhow::Result<ReindexOutput> {
     let _lock = FileLock::acquire(&config.reindex_lock_path)?;
+    config.ensure_state_dirs()?;
     let mut discovered_repos = discover_repos(config)?;
     let mut indexable_repos = Vec::new();
     let mut heads = BTreeMap::new();
     let mut warnings = Vec::new();
 
-    for repo in &discovered_repos {
-        if let Some(head) = repo_head(&tools.git_bin, &repo.path)? {
+    for (repo, head) in collect_repo_heads(&tools.git_bin, &discovered_repos)? {
+        if let Some(head) = head {
             indexable_repos.push(repo.clone());
             heads.insert(repo.path.clone(), head);
         } else {
@@ -348,18 +349,28 @@ fn execute_reindex(
         tracing::warn!(error = %format!("{error:#}"), "ignoring unreadable repo manifest");
         Vec::new()
     });
-    let previous_names = previous_repos
+    let previous_names: BTreeMap<_, _> = previous_repos
         .into_iter()
         .filter_map(|repo| Some((repo.path, repo.zoekt_name?)))
         .collect();
-    let zoekt_stats = zoekt::reindex(
-        config,
-        &tools.zoekt_git_index_bin,
-        &indexable_repos,
-        &heads,
-        &previous_names,
-    )?;
-    let metadata_stats = metadata::reindex(config, &tools.git_bin, &indexable_repos)?;
+    let (zoekt_result, metadata_result) = std::thread::scope(|scope| {
+        let zoekt_handle = scope.spawn(|| {
+            zoekt::reindex(
+                config,
+                &tools.zoekt_git_index_bin,
+                &indexable_repos,
+                &heads,
+                &previous_names,
+            )
+        });
+        let metadata_result = metadata::reindex(config, &tools.git_bin, &indexable_repos);
+        let zoekt_result = zoekt_handle
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        (zoekt_result, metadata_result)
+    });
+    let zoekt_stats = zoekt_result?;
+    let metadata_stats = metadata_result?;
     for repo in &mut discovered_repos {
         repo.zoekt_name = zoekt_stats.repo_names.get(&repo.path).cloned();
     }
@@ -385,6 +396,60 @@ fn execute_reindex(
         last_reindex_at,
         warnings,
     })
+}
+
+fn collect_repo_heads<'a>(
+    git_bin: &str,
+    repos: &'a [DiscoveredRepo],
+) -> anyhow::Result<Vec<(&'a DiscoveredRepo, Option<String>)>> {
+    if repos.len() <= 1 {
+        let mut results = Vec::with_capacity(repos.len());
+        for repo in repos {
+            results.push((repo, repo_head(git_bin, &repo.path)?));
+        }
+        return Ok(results);
+    }
+
+    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    let workers = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(4)
+        .min(repos.len())
+        .max(1);
+    let next_index = AtomicUsize::new(0);
+    let cancelled = AtomicBool::new(false);
+    let slots: Vec<Mutex<Option<anyhow::Result<Option<String>>>>> =
+        (0..repos.len()).map(|_| Mutex::new(None)).collect();
+
+    std::thread::scope(|scope| {
+        for _ in 0..workers {
+            scope.spawn(|| {
+                while !cancelled.load(Ordering::Relaxed) {
+                    let idx = next_index.fetch_add(1, Ordering::Relaxed);
+                    if idx >= repos.len() {
+                        break;
+                    }
+                    let result = repo_head(git_bin, &repos[idx].path);
+                    if result.is_err() {
+                        cancelled.store(true, Ordering::Relaxed);
+                    }
+                    *slots[idx].lock().expect("slot lock") = Some(result);
+                }
+            });
+        }
+    });
+
+    let mut ordered = Vec::with_capacity(repos.len());
+    for (repo, slot) in repos.iter().zip(slots) {
+        let result = slot
+            .into_inner()
+            .expect("slot lock")
+            .expect("every repo up to first error was processed");
+        ordered.push((repo, result?));
+    }
+    Ok(ordered)
 }
 
 fn execute_status(config: &SearchConfig, _args: SearchStatusArgs) -> anyhow::Result<StatusOutput> {

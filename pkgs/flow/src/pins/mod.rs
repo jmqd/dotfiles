@@ -3,6 +3,7 @@
 //! Each managed pin lives in `pins/<name>.json` at the dotfiles root. Nix reads
 //! the file with `lib.importJSON`; `flow pin bump` is the only writer.
 
+pub mod cache;
 pub mod fetch;
 pub mod manual;
 pub mod registry;

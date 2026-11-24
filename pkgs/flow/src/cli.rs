@@ -118,6 +118,10 @@ pub struct SearchArgs {
 pub struct PinCheckArgs {
     /// Pins to check; all pins when omitted.
     pub names: Vec<String>,
+
+    /// Bypass cached HTTP header checks for unversioned DMG pins.
+    #[arg(long, default_value_t = false)]
+    pub refresh: bool,
 }
 
 #[derive(Args, Clone, Debug)]
@@ -128,6 +132,10 @@ pub struct PinBumpArgs {
     /// Write the new pin without building the package that uses it.
     #[arg(long, default_value_t = false)]
     pub no_build: bool,
+
+    /// Bypass cached HTTP header checks for unversioned DMG pins.
+    #[arg(long, default_value_t = false)]
+    pub refresh: bool,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -470,5 +478,32 @@ mod tests {
             log_format: None,
         };
         assert!(args.automated);
+    }
+
+    #[test]
+    fn parses_pin_refresh_flags() {
+        let check = Cli::try_parse_from(["flow", "pin", "check", "--refresh", "gemini"])
+            .expect("pin check parses");
+        match check.command {
+            Commands::Pin(crate::cli::PinArgs {
+                command: crate::cli::PinCommands::Check(args),
+            }) => {
+                assert!(args.refresh);
+                assert_eq!(args.names, vec!["gemini"]);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
+
+        let bump = Cli::try_parse_from(["flow", "pin", "bump", "--refresh", "--no-build"])
+            .expect("pin bump parses");
+        match bump.command {
+            Commands::Pin(crate::cli::PinArgs {
+                command: crate::cli::PinCommands::Bump(args),
+            }) => {
+                assert!(args.refresh);
+                assert!(args.no_build);
+            }
+            other => panic!("unexpected command: {other:?}"),
+        }
     }
 }

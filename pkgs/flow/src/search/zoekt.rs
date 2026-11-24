@@ -13,6 +13,8 @@ use std::net::{TcpStream, ToSocketAddrs};
 use std::os::unix::fs::MetadataExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
@@ -53,22 +55,117 @@ pub fn reindex(
     let temporary_index_dir = temporary_root.path().join("index");
     fs::create_dir_all(&temporary_index_dir)
         .with_context(|| format!("failed to create {}", temporary_index_dir.display()))?;
-    seed_with_current_shards(&config.zoekt_index_dir, &temporary_index_dir)?;
 
     let mut repo_names = BTreeMap::new();
     let mut contents = IndexContents::new();
-    for repo in repos {
-        let previous_name = previous_names.get(&repo.path).map(String::as_str);
-        let name = index_repo(
-            zoekt_git_index_bin,
-            &temporary_index_dir,
-            repo,
-            previous_name,
-        )?;
-        // Repos sharing a name share shards, which hold the last one indexed.
-        let version = heads.get(&repo.path).cloned().unwrap_or_default();
-        contents.insert(name.clone(), IndexedRepo { version, shards: 0 });
-        repo_names.insert(repo.path.clone(), name);
+    if repos.len() <= 1 {
+        seed_with_current_shards(&config.zoekt_index_dir, &temporary_index_dir, None)?;
+        for repo in repos {
+            let previous_name = previous_names.get(&repo.path).map(String::as_str);
+            let name = index_repo(
+                zoekt_git_index_bin,
+                &temporary_index_dir,
+                repo,
+                previous_name,
+                None,
+            )?;
+            // Repos sharing a name share shards, which hold the last one indexed.
+            let version = heads.get(&repo.path).cloned().unwrap_or_default();
+            contents.insert(name.clone(), IndexedRepo { version, shards: 0 });
+            repo_names.insert(repo.path.clone(), name);
+        }
+    } else {
+        let total_cpus = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(4);
+        let workers = total_cpus.min(repos.len()).clamp(1, 4);
+        let per_worker_parallelism = (total_cpus / workers).max(1);
+        let current_shards: Vec<String> = if config.zoekt_index_dir.exists() {
+            shard_files(&config.zoekt_index_dir)?.into_keys().collect()
+        } else {
+            Vec::new()
+        };
+
+        type RepoIndexResult = anyhow::Result<(PathBuf, String, Vec<String>)>;
+        let next_index = AtomicUsize::new(0);
+        let cancelled = AtomicBool::new(false);
+        let results: Vec<Mutex<Option<RepoIndexResult>>> =
+            (0..repos.len()).map(|_| Mutex::new(None)).collect();
+
+        std::thread::scope(|scope| {
+            for _ in 0..workers {
+                scope.spawn(|| {
+                    while !cancelled.load(Ordering::Relaxed) {
+                        let idx = next_index.fetch_add(1, Ordering::Relaxed);
+                        if idx >= repos.len() {
+                            break;
+                        }
+                        let repo = &repos[idx];
+                        let previous_name = previous_names.get(&repo.path).map(String::as_str);
+                        let repo_dir = temporary_root.path().join(format!("repo-{idx}"));
+                        let outcome = (|| -> anyhow::Result<(PathBuf, String, Vec<String>)> {
+                            fs::create_dir_all(&repo_dir).with_context(|| {
+                                format!("failed to create {}", repo_dir.display())
+                            })?;
+                            seed_selected_shards(
+                                &config.zoekt_index_dir,
+                                &repo_dir,
+                                &current_shards,
+                                previous_name,
+                            )?;
+                            let name = index_repo(
+                                zoekt_git_index_bin,
+                                &repo_dir,
+                                repo,
+                                previous_name,
+                                Some(per_worker_parallelism),
+                            )?;
+                            let owned_shards: Vec<String> = shard_files(&repo_dir)?
+                                .into_keys()
+                                .filter(|file_name| {
+                                    repo_name_from_shard(file_name).as_deref()
+                                        == Some(name.as_str())
+                                })
+                                .collect();
+                            Ok((repo_dir, name, owned_shards))
+                        })();
+                        if outcome.is_err() {
+                            cancelled.store(true, Ordering::Relaxed);
+                        }
+                        *results[idx].lock().expect("result slot lock") = Some(outcome);
+                    }
+                });
+            }
+        });
+
+        let mut staged_by_repo: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for (repo, slot) in repos.iter().zip(results) {
+            let (repo_dir, name, owned_shards) = slot
+                .into_inner()
+                .expect("result slot lock")
+                .expect("every repo up to first error was processed")?;
+            // Repos sharing a name share shards, which hold the last one indexed.
+            if let Some(older_shards) = staged_by_repo.remove(&name) {
+                for old_file in older_shards {
+                    let old_path = temporary_index_dir.join(&old_file);
+                    if old_path.exists() {
+                        fs::remove_file(&old_path)
+                            .with_context(|| format!("failed to replace {}", old_path.display()))?;
+                    }
+                }
+            }
+            for file_name in &owned_shards {
+                let from = repo_dir.join(file_name);
+                let to = temporary_index_dir.join(file_name);
+                fs::rename(&from, &to).with_context(|| {
+                    format!("failed to stage {} to {}", from.display(), to.display())
+                })?;
+            }
+            staged_by_repo.insert(name.clone(), owned_shards);
+            let version = heads.get(&repo.path).cloned().unwrap_or_default();
+            contents.insert(name.clone(), IndexedRepo { version, shards: 0 });
+            repo_names.insert(repo.path.clone(), name);
+        }
     }
 
     // Shards of repos that are gone or no longer indexable came along with the
@@ -123,8 +220,9 @@ fn index_repo(
     index_dir: &Path,
     repo: &DiscoveredRepo,
     previous_name: Option<&str>,
+    parallelism: Option<usize>,
 ) -> anyhow::Result<String> {
-    let mut written = run_zoekt_git_index(zoekt_git_index_bin, index_dir, repo, true)?;
+    let mut written = run_zoekt_git_index(zoekt_git_index_bin, index_dir, repo, true, parallelism)?;
     if written.is_empty() {
         let shards = shard_files(index_dir)?;
         let has_shard = |name: &str| {
@@ -137,7 +235,7 @@ fn index_repo(
         }
         // No record says which up-to-date shard is this repo's, so write it
         // again to learn its name.
-        written = run_zoekt_git_index(zoekt_git_index_bin, index_dir, repo, false)?;
+        written = run_zoekt_git_index(zoekt_git_index_bin, index_dir, repo, false, parallelism)?;
     }
     written_repo_name(written)
         .with_context(|| format!("reading the zoekt shard for {}", repo.path.display()))
@@ -162,12 +260,31 @@ struct IndexedRepo {
 /// `zoekt-git-index` skips repos whose shards are up to date. zoekt replaces a
 /// shard by renaming a new file over it, which leaves the live link intact.
 /// If linking fails, the new index starts empty and every repo is indexed.
-fn seed_with_current_shards(current: &Path, temporary: &Path) -> anyhow::Result<()> {
+fn seed_with_current_shards(
+    current: &Path,
+    temporary: &Path,
+    only_repo: Option<&str>,
+) -> anyhow::Result<()> {
     if !current.exists() {
         return Ok(());
     }
-    for file_name in shard_files(current)?.into_keys() {
-        if let Err(error) = fs::hard_link(current.join(&file_name), temporary.join(&file_name)) {
+    let shards: Vec<String> = shard_files(current)?.into_keys().collect();
+    seed_selected_shards(current, temporary, &shards, only_repo)
+}
+
+fn seed_selected_shards(
+    current: &Path,
+    temporary: &Path,
+    shards: &[String],
+    only_repo: Option<&str>,
+) -> anyhow::Result<()> {
+    for file_name in shards {
+        if let Some(repo_name) = only_repo
+            && repo_name_from_shard(file_name).as_deref() != Some(repo_name)
+        {
+            continue;
+        }
+        if let Err(error) = fs::hard_link(current.join(file_name), temporary.join(file_name)) {
             tracing::warn!(error = %error, "cannot link the current zoekt shards; indexing every repo");
             fs::remove_dir_all(temporary)
                 .and_then(|()| fs::create_dir_all(temporary))
@@ -184,11 +301,16 @@ fn run_zoekt_git_index(
     index_dir: &Path,
     repo: &DiscoveredRepo,
     incremental: bool,
+    parallelism: Option<usize>,
 ) -> anyhow::Result<Vec<String>> {
     let repo_cache = repo.root.as_ref().unwrap_or(&repo.path);
     let before = shard_files(index_dir)?;
-    let output = Command::new(zoekt_git_index_bin)
-        .arg(format!("-incremental={incremental}"))
+    let mut command = Command::new(zoekt_git_index_bin);
+    command.arg(format!("-incremental={incremental}"));
+    if let Some(parallelism) = parallelism {
+        command.arg(format!("-parallelism={parallelism}"));
+    }
+    let output = command
         .arg("-index")
         .arg(index_dir)
         .arg("-repo_cache")
@@ -846,6 +968,119 @@ mod tests {
         assert_eq!(
             super::scoped_query("x", Some("host/my repo(1)\"q"), Some("Dir/A b")),
             r#"(x) repo:^host\/my\x{20}repo\(1\)\"q$ file:dir\/a\x{20}b"#
+        );
+    }
+
+    #[test]
+    fn parallel_reindex_stages_isolated_shards_and_preserves_live_index_on_error() {
+        use super::reindex;
+        use crate::search::repo::DiscoveredRepo;
+        use std::collections::BTreeMap;
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        let state = sandbox.path().join("state");
+        fs::create_dir_all(&root).expect("src");
+
+        // Fake zoekt-git-index: writes `<basename>_v16.00000.zoekt` unless
+        // `-incremental=true` and the shard already exists, and fails for `fail`.
+        let fake_bin = sandbox.path().join("fake-zoekt-git-index.sh");
+        fs::write(
+            &fake_bin,
+            r#"#!/bin/sh
+set -eu
+inc=false
+idx=""
+repo=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -incremental=true) inc=true ;;
+    -incremental=false) inc=false ;;
+    -parallelism=*) ;;
+    -index) idx="$2"; shift ;;
+    -repo_cache) shift ;;
+    *) repo="$1" ;;
+  esac
+  shift
+done
+name="$(basename "$repo")"
+if [ "$name" = "fail" ]; then
+  echo "simulated failure" >&2
+  exit 1
+fi
+shard="$idx/${name}_v16.00000.zoekt"
+if [ "$inc" = "true" ] && [ -f "$shard" ]; then
+  exit 0
+fi
+printf '%s\n' "$name" > "$shard.tmp"
+mv "$shard.tmp" "$shard"
+"#,
+        )
+        .expect("write fake zoekt-git-index");
+        let mut perms = fs::metadata(&fake_bin).expect("meta").permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&fake_bin, perms).expect("chmod");
+
+        let make_repo = |name: &str| {
+            let path = root.join(name);
+            fs::create_dir_all(&path).expect("repo dir");
+            DiscoveredRepo {
+                name: name.to_owned(),
+                display_name: name.to_owned(),
+                path,
+                root: Some(root.clone()),
+                zoekt_name: None,
+            }
+        };
+
+        let repos = vec![make_repo("alpha"), make_repo("beta"), make_repo("gamma")];
+        let heads: BTreeMap<_, _> = repos
+            .iter()
+            .map(|r| (r.path.clone(), format!("commit-{}", r.name)))
+            .collect();
+        let config = SearchConfig {
+            roots: vec![root.clone()],
+            zoekt_dir: state.join("zoekt"),
+            zoekt_index_dir: state.join("zoekt/index"),
+            metadata_dir: state.join("metadata"),
+            metadata_db_path: state.join("metadata/commits.sqlite"),
+            repos_manifest_path: state.join("metadata/repos.json"),
+            state_path: state.join("state.json"),
+            reindex_lock_path: state.join("reindex.lock"),
+            state_dir: state,
+            zoekt_listen: "127.0.0.1:6070".to_owned(),
+            excluded_dir_names: Vec::new(),
+        };
+
+        let bin = fake_bin.display().to_string();
+        let first = reindex(&config, &bin, &repos, &heads, &BTreeMap::new())
+            .expect("initial parallel reindex");
+        assert_eq!(first.indexed_repo_count, 3);
+        assert_eq!(first.repo_names.len(), 3);
+        for name in ["alpha", "beta", "gamma"] {
+            assert!(
+                config
+                    .zoekt_index_dir
+                    .join(format!("{name}_v16.00000.zoekt"))
+                    .exists()
+            );
+        }
+
+        // Incremental second run reuses seeded shards via previous_names.
+        let second = reindex(&config, &bin, &repos, &heads, &first.repo_names)
+            .expect("incremental parallel reindex");
+        assert_eq!(second.repo_names, first.repo_names);
+
+        // Failing repo must not replace the existing live index.
+        let mut with_fail = repos;
+        with_fail.push(make_repo("fail"));
+        assert!(reindex(&config, &bin, &with_fail, &heads, &first.repo_names).is_err());
+        assert!(
+            config
+                .zoekt_index_dir
+                .join("alpha_v16.00000.zoekt")
+                .exists()
         );
     }
 }

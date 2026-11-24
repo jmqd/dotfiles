@@ -6,6 +6,8 @@ use rusqlite::{Connection, params, params_from_iter, types::Value};
 use serde::Serialize;
 use std::fs;
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::mpsc;
 use tempfile::NamedTempFile;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -68,10 +70,75 @@ pub fn reindex(
     initialize_schema(&connection)?;
 
     let mut commit_count = 0usize;
-    for repo in repos {
-        let commits = collect_repo_commits(git_bin, repo)?;
-        insert_commits(&connection, &commits)?;
-        commit_count += commits.len();
+    if repos.len() <= 1 {
+        for repo in repos {
+            let commits = collect_repo_commits(git_bin, repo)?;
+            insert_commits(&connection, &commits)?;
+            commit_count += commits.len();
+        }
+    } else {
+        let workers = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(4)
+            .min(repos.len())
+            .max(1);
+        let next_index = AtomicUsize::new(0);
+        let cancelled = AtomicBool::new(false);
+        let mut first_error: Option<(usize, anyhow::Error)> = None;
+
+        std::thread::scope(|scope| {
+            let (tx, rx) = mpsc::sync_channel::<(usize, anyhow::Result<Vec<CommitRecord>>)>(
+                workers.saturating_mul(2),
+            );
+            for _ in 0..workers {
+                let tx = tx.clone();
+                let next_index = &next_index;
+                let cancelled = &cancelled;
+                scope.spawn(move || {
+                    while !cancelled.load(Ordering::Relaxed) {
+                        let idx = next_index.fetch_add(1, Ordering::Relaxed);
+                        if idx >= repos.len() {
+                            break;
+                        }
+                        let result = collect_repo_commits(git_bin, &repos[idx]);
+                        if result.is_err() {
+                            cancelled.store(true, Ordering::Relaxed);
+                        }
+                        if tx.send((idx, result)).is_err() {
+                            break;
+                        }
+                    }
+                });
+            }
+            drop(tx);
+
+            for (idx, result) in rx {
+                match result {
+                    Ok(commits) => {
+                        if first_error.is_none() {
+                            match insert_commits(&connection, &commits) {
+                                Ok(()) => commit_count += commits.len(),
+                                Err(error) => {
+                                    cancelled.store(true, Ordering::Relaxed);
+                                    first_error = Some((idx, error));
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        cancelled.store(true, Ordering::Relaxed);
+                        match &first_error {
+                            Some((best_idx, _)) if *best_idx <= idx => {}
+                            _ => first_error = Some((idx, error)),
+                        }
+                    }
+                }
+            }
+        });
+
+        if let Some((_, error)) = first_error {
+            return Err(error);
+        }
     }
     connection
         .execute_batch("PRAGMA optimize;")
@@ -407,5 +474,121 @@ mod tests {
         assert_eq!(commits.len(), 1);
         assert_eq!(commits[0].commit_id, "abc123");
         assert_eq!(commits[0].changed_files, vec!["src/main.rs", "README.md"]);
+    }
+
+    #[test]
+    fn reindex_collects_multiple_repos_in_parallel_and_preserves_live_db_on_failure() {
+        use super::{CommitSearchFilters, reindex, search_commits};
+        use crate::search::config::SearchConfig;
+        use std::fs;
+        use std::path::Path;
+        use std::process::Command;
+        use tempfile::TempDir;
+
+        let sandbox = TempDir::new().expect("tempdir");
+        let root = sandbox.path().join("src");
+        let state = sandbox.path().join("state");
+        fs::create_dir_all(&root).expect("src dir");
+
+        let make_repo = |name: &str, subject: &str| {
+            let path = root.join(name);
+            fs::create_dir_all(&path).expect("repo dir");
+            for args in [
+                vec!["init", "-q"],
+                vec!["config", "user.name", "Flow Test"],
+                vec!["config", "user.email", "flow@example.com"],
+            ] {
+                assert!(
+                    Command::new("git")
+                        .arg("-C")
+                        .arg(&path)
+                        .args(args)
+                        .status()
+                        .expect("git")
+                        .success()
+                );
+            }
+            fs::write(path.join("file.txt"), format!("{name}\n")).expect("write");
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&path)
+                    .args(["add", "file.txt"])
+                    .status()
+                    .expect("git add")
+                    .success()
+            );
+            assert!(
+                Command::new("git")
+                    .arg("-C")
+                    .arg(&path)
+                    .args(["commit", "-q", "-m", subject])
+                    .status()
+                    .expect("git commit")
+                    .success()
+            );
+            DiscoveredRepo {
+                name: name.to_owned(),
+                display_name: name.to_owned(),
+                path,
+                root: Some(root.clone()),
+                zoekt_name: None,
+            }
+        };
+
+        let repos = vec![
+            make_repo("alpha", "alpha parallel commit"),
+            make_repo("beta", "beta parallel commit"),
+            make_repo("gamma", "gamma parallel commit"),
+        ];
+        let config = SearchConfig {
+            roots: vec![root.clone()],
+            zoekt_dir: state.join("zoekt"),
+            zoekt_index_dir: state.join("zoekt/index"),
+            metadata_dir: state.join("metadata"),
+            metadata_db_path: state.join("metadata/commits.sqlite"),
+            repos_manifest_path: state.join("metadata/repos.json"),
+            state_path: state.join("state.json"),
+            reindex_lock_path: state.join("reindex.lock"),
+            state_dir: state,
+            zoekt_listen: "127.0.0.1:6070".to_owned(),
+            excluded_dir_names: Vec::new(),
+        };
+
+        let stats = reindex(&config, "git", &repos).expect("parallel reindex succeeds");
+        assert_eq!(stats.commit_count, 3);
+
+        let matches = search_commits(
+            &config,
+            &CommitSearchFilters {
+                terms: vec!["parallel".to_owned()],
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .expect("search succeeds");
+        assert_eq!(matches.len(), 3);
+
+        // Failing reindex with one bogus repo must leave the live database intact.
+        let mut bad_repos = repos;
+        bad_repos.push(DiscoveredRepo {
+            name: "missing".to_owned(),
+            display_name: "missing".to_owned(),
+            path: Path::new("/nonexistent/repo/path").to_path_buf(),
+            root: Some(root),
+            zoekt_name: None,
+        });
+        assert!(reindex(&config, "git", &bad_repos).is_err());
+
+        let after_failure = search_commits(
+            &config,
+            &CommitSearchFilters {
+                terms: vec!["parallel".to_owned()],
+                limit: 10,
+                ..Default::default()
+            },
+        )
+        .expect("live db preserved");
+        assert_eq!(after_failure.len(), 3);
     }
 }

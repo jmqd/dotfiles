@@ -1,11 +1,15 @@
 //! Resolves the newest upstream release of a managed pin.
 
-use super::fetch::{self, Artifact};
+use super::cache::DmgCache;
+use super::fetch::{self, Artifact, HeadMetadata};
 use super::registry::{SparkleVersion, Upstream};
+use super::{PinFile, System};
+use crate::logging::tracing;
 use anyhow::{Context as _, bail};
 use base64::Engine as _;
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::sync::Mutex;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Release {
@@ -26,7 +30,18 @@ impl Candidate {
     }
 }
 
-pub fn latest(upstream: &Upstream, artifact: Artifact) -> anyhow::Result<Release> {
+#[derive(Default)]
+pub struct LatestOptions<'a> {
+    pub pinned: Option<&'a PinFile>,
+    pub cache: Option<&'a Mutex<DmgCache>>,
+    pub refresh: bool,
+}
+
+pub fn latest(
+    upstream: &Upstream,
+    artifact: Artifact,
+    options: &LatestOptions<'_>,
+) -> anyhow::Result<Release> {
     match upstream {
         Upstream::NpmPlatforms {
             version_package,
@@ -94,30 +109,84 @@ pub fn latest(upstream: &Upstream, artifact: Artifact) -> anyhow::Result<Release
             systems,
             url,
             info_plist,
-        } => {
-            // The URL never changes, so the version is only knowable from the
-            // artifact itself.
+        } => resolve_unversioned_dmg_with(systems, url, options, fetch::head, |url| {
             let prefetched = fetch::prefetch(url, artifact)?;
             let plist = fetch::extract_from_archive(&prefetched.store_path, info_plist)?;
             let version = bundle_short_version(&plist)
                 .with_context(|| format!("reading {info_plist} from {url}"))?;
-            Ok(Release {
-                version,
+            Ok((version, prefetched.hash))
+        }),
+    }
+}
+
+fn resolve_unversioned_dmg_with(
+    systems: &[System],
+    url: &str,
+    options: &LatestOptions<'_>,
+    head_fn: impl FnOnce(&str) -> anyhow::Result<HeadMetadata>,
+    prefetch_fn: impl FnOnce(&str) -> anyhow::Result<(String, String)>,
+) -> anyhow::Result<Release> {
+    // Issue HEAD before any prefetch so we can skip downloading ~170 MiB when
+    // the remote validator matches our cached version/hash, and so a cache miss
+    // records headers captured before the download rather than after.
+    let head = match head_fn(url) {
+        Ok(meta) => Some(meta),
+        Err(error) => {
+            tracing::debug!(url, error = %format!("{error:#}"), "HTTP HEAD failed; falling back to prefetch");
+            None
+        }
+    };
+
+    if !options.refresh
+        && let (Some(head), Some(cache)) = (head.as_ref(), options.cache)
+    {
+        let hit = cache
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .lookup(url, head, options.pinned, systems)
+            .cloned();
+        if let Some(entry) = hit {
+            tracing::debug!(url, version = %entry.version, "unversioned DMG header cache hit");
+            return Ok(Release {
+                version: entry.version,
                 sources: systems
                     .iter()
                     .map(|system| {
                         (
                             (*system).to_owned(),
                             Candidate {
-                                url: (*url).to_owned(),
-                                hash: Some(prefetched.hash.clone()),
+                                url: url.to_owned(),
+                                hash: Some(entry.hash.clone()),
                             },
                         )
                     })
                     .collect(),
-            })
+            });
         }
     }
+
+    let (version, hash) = prefetch_fn(url)?;
+    if let Some(cache) = options.cache {
+        cache
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .record(url, head.as_ref(), version.clone(), hash.clone());
+    }
+    Ok(Release {
+        version,
+        sources: systems
+            .iter()
+            .map(|system| {
+                (
+                    (*system).to_owned(),
+                    Candidate {
+                        url: url.to_owned(),
+                        hash: Some(hash.clone()),
+                    },
+                )
+            })
+            .collect(),
+    })
 }
 
 fn npm_platforms(
@@ -137,18 +206,38 @@ fn npm_platforms(
     const REGISTRY: &str = "https://registry.npmjs.org";
 
     let latest: Manifest = fetch::get_json(&format!("{REGISTRY}/{version_package}/latest"))?;
+    let version = &latest.version;
+    let results: Vec<anyhow::Result<(String, Candidate)>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = packages
+            .iter()
+            .map(|(system, package)| {
+                let url = format!("{REGISTRY}/{package}/{version}");
+                scope.spawn(move || -> anyhow::Result<(String, Candidate)> {
+                    let manifest: Manifest = fetch::get_json(&url)?;
+                    // npm's integrity is already an SRI string that fetchurl accepts.
+                    Ok((
+                        (*system).to_owned(),
+                        Candidate {
+                            url: manifest.dist.tarball,
+                            hash: Some(manifest.dist.integrity),
+                        },
+                    ))
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+            })
+            .collect()
+    });
     let mut sources = BTreeMap::new();
-    for (system, package) in packages {
-        let manifest: Manifest =
-            fetch::get_json(&format!("{REGISTRY}/{package}/{}", latest.version))?;
-        // npm's integrity is already an SRI string that fetchurl accepts.
-        sources.insert(
-            (*system).to_owned(),
-            Candidate {
-                url: manifest.dist.tarball,
-                hash: Some(manifest.dist.integrity),
-            },
-        );
+    for result in results {
+        let (system, candidate) = result?;
+        sources.insert(system, candidate);
     }
     Ok(Release {
         version: latest.version,
@@ -362,5 +451,110 @@ mod tests {
         );
         assert!(sri_from_github_digest("sha512:00").is_err());
         assert!(sri_from_github_digest("sha256:zz").is_err());
+    }
+
+    #[test]
+    fn unversioned_dmg_uses_header_cache_and_respects_refresh() {
+        use super::{LatestOptions, resolve_unversioned_dmg_with};
+        use crate::pins::cache::DmgCache;
+        use crate::pins::fetch::HeadMetadata;
+        use crate::pins::{PinFile, Source};
+        use std::collections::BTreeMap;
+        use std::sync::Mutex;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        const URL: &str = "https://example.com/App.dmg";
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = Mutex::new(DmgCache::load_from(dir.path().join("pin-headers.json")));
+        let pin = PinFile {
+            version: "1.0.0".to_owned(),
+            sources: BTreeMap::from([(
+                "aarch64-darwin".to_owned(),
+                Source {
+                    url: URL.to_owned(),
+                    hash: "sha256-v1".to_owned(),
+                },
+            )]),
+        };
+        let head_v1 = HeadMetadata {
+            etag: Some("\"v1\"".to_owned()),
+            last_modified: None,
+            content_length: Some(100),
+        };
+        let prefetches = AtomicUsize::new(0);
+
+        // Cold cache: prefetches once and records headers.
+        let opts = LatestOptions {
+            pinned: Some(&pin),
+            cache: Some(&cache),
+            refresh: false,
+        };
+        let r1 = resolve_unversioned_dmg_with(
+            &["aarch64-darwin"],
+            URL,
+            &opts,
+            |_| Ok(head_v1.clone()),
+            |_| {
+                prefetches.fetch_add(1, Ordering::SeqCst);
+                Ok(("1.0.0".to_owned(), "sha256-v1".to_owned()))
+            },
+        )
+        .expect("cold check");
+        assert_eq!(r1.version, "1.0.0");
+        assert_eq!(prefetches.load(Ordering::SeqCst), 1);
+
+        // Warm cache with matching ETag and pinned hash: skips prefetch.
+        let r2 = resolve_unversioned_dmg_with(
+            &["aarch64-darwin"],
+            URL,
+            &opts,
+            |_| Ok(head_v1.clone()),
+            |_| {
+                prefetches.fetch_add(1, Ordering::SeqCst);
+                Ok(("1.0.0".to_owned(), "sha256-v1".to_owned()))
+            },
+        )
+        .expect("warm check");
+        assert_eq!(r2.version, "1.0.0");
+        assert_eq!(prefetches.load(Ordering::SeqCst), 1);
+
+        // --refresh bypasses the cache.
+        let refresh_opts = LatestOptions {
+            pinned: Some(&pin),
+            cache: Some(&cache),
+            refresh: true,
+        };
+        let _ = resolve_unversioned_dmg_with(
+            &["aarch64-darwin"],
+            URL,
+            &refresh_opts,
+            |_| Ok(head_v1.clone()),
+            |_| {
+                prefetches.fetch_add(1, Ordering::SeqCst);
+                Ok(("1.0.0".to_owned(), "sha256-v1".to_owned()))
+            },
+        )
+        .expect("refresh check");
+        assert_eq!(prefetches.load(Ordering::SeqCst), 2);
+
+        // Changed ETag invalidates cache and prefetches the new version.
+        let head_v2 = HeadMetadata {
+            etag: Some("\"v2\"".to_owned()),
+            last_modified: None,
+            content_length: Some(120),
+        };
+        let r3 = resolve_unversioned_dmg_with(
+            &["aarch64-darwin"],
+            URL,
+            &opts,
+            |_| Ok(head_v2),
+            |_| {
+                prefetches.fetch_add(1, Ordering::SeqCst);
+                Ok(("2.0.0".to_owned(), "sha256-v2".to_owned()))
+            },
+        )
+        .expect("changed etag");
+        assert_eq!(r3.version, "2.0.0");
+        assert_eq!(prefetches.load(Ordering::SeqCst), 3);
     }
 }
