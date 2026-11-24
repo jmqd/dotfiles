@@ -354,13 +354,38 @@ is_idle() {
 	[ -z "$hit" ]
 }
 
+# Prints the directory prefixes under which in_use may be queried.
+open_path_roots() {
+	local dir resolved
+	{
+		printf '%s\n' "$home" ${search_roots[@]+"${search_roots[@]}"} ${temp_roots[@]+"${temp_roots[@]}"} \
+			"$cache_home" "$data_home" "$cargo_home" "$rustup_home" "$dylint_drivers" \
+			"${XDG_CONFIG_HOME:-$home/.config}"
+		package_caches
+	} | while IFS= read -r dir; do
+		[ -n "$dir" ] || continue
+		dir="${dir%/}"
+		[ -n "$dir" ] || dir="/"
+		printf '%s\n' "$dir"
+		if resolved="$(canonical_dir "$dir")" && [ "$resolved" != "$dir" ]; then
+			printf '%s\n' "$resolved"
+		fi
+	done
+}
+
 # Lists every path our processes hold open or work in, plus all parents,
 # so a directory is in use exactly when its path appears. Only absolute
-# paths count: /proc also links to sockets, pipes, and anonymous inodes.
+# paths under monitored roots count: /proc also links to sockets, pipes,
+# and anonymous inodes.
 snapshot_open_paths() {
+	local is_lsof=0 roots
+	roots="$(open_path_roots)"
+	if command -v lsof >/dev/null 2>&1; then
+		is_lsof=1
+	fi
 	{
-		if command -v lsof >/dev/null 2>&1; then
-			lsof -nP -w -u "$uid" -Fn 2>/dev/null | sed -n 's|^n\(/.*\)|\1|p' || true
+		if [ "$is_lsof" -eq 1 ]; then
+			lsof -nP -w -u "$uid" -Fn 2>/dev/null || true
 		elif [ -d /proc/self/fd ]; then
 			local proc
 			for proc in /proc/[0-9]*; do
@@ -370,14 +395,49 @@ snapshot_open_paths() {
 		else
 			warn "cannot list open files (no lsof or /proc); relying on timestamps alone"
 		fi
-	} | awk '
-		!/^\// { next }
-		{ p = $0; sub(/ \(deleted\)$/, "", p); while (p != "" && p != "/") { print p; sub(/\/[^\/]*$/, "", p) } }
-	' | LC_ALL=C sort -u >"$open_paths"
+	} | ROOTS="$roots" awk -v is_lsof="$is_lsof" '
+		BEGIN {
+			n = split(ENVIRON["ROOTS"], raw, "\n")
+			nr = 0
+			all = 0
+			for (i = 1; i <= n; i++) {
+				if (raw[i] == "") continue
+				if (raw[i] == "/") { all = 1; break }
+				if (!rseen[raw[i]]++) {
+					nr++
+					r[nr] = raw[i]
+					rs[nr] = raw[i] "/"
+					rl[nr] = length(rs[nr])
+				}
+			}
+		}
+		function under_root(path,    i) {
+			if (all) return 1
+			for (i = 1; i <= nr; i++) {
+				if (path == r[i] || substr(path, 1, rl[i]) == rs[i]) return 1
+			}
+			return 0
+		}
+		{
+			if (is_lsof) {
+				if (substr($0, 1, 2) != "n/") next
+				p = substr($0, 2)
+			} else {
+				if (substr($0, 1, 1) != "/") next
+				p = $0
+			}
+			sub(/ \(deleted\)$/, "", p)
+			if (!under_root(p)) next
+			while (p != "" && p != "/" && !seen[p]++) {
+				print p
+				sub(/\/[^\/]*$/, "", p)
+			}
+		}
+	' >"$open_paths"
 }
 
 in_use() {
-	grep -Fxq -- "$1" "$open_paths"
+	[ -s "$open_paths" ] && grep -Fxq -- "$1" "$open_paths"
 }
 
 # Rejects names that would break the tab- and newline-separated plan.
@@ -446,22 +506,33 @@ $code
 	find "$out" -type f -exec cat {} + 2>/dev/null || true
 }
 
-# Passes on the NUL-separated paths from stdin that plannable has no
-# verdict for and that fit the line-based results.
-unprobed_paths() {
-	local path
-	while IFS= read -r -d '' path; do
-		safe_path "$path" || continue
-		case "$plannable_yes$plannable_no" in *"$nl$path$nl"*) continue ;; esac
-		printf '%s\0' "$path"
-	done
-}
-
 # Runs check_plannable on the NUL-separated paths on stdin, in parallel,
 # and caches the results for plannable. Paths it skips or misses are
 # checked when plannable asks.
 prefetch_plannable() {
-	local probe path ok
+	local probe path ok batch seen="$nl"
+	local paths=()
+	while IFS= read -r -d '' path; do
+		safe_path "$path" || continue
+		case "$plannable_yes$plannable_no$seen" in *"$nl$path$nl"*) continue ;; esac
+		seen="$seen$path$nl"
+		paths+=("$path")
+	done
+	[ "${#paths[@]}" -gt 0 ] || return 0
+	if [ "${#paths[@]}" -le 2 ]; then
+		for path in "${paths[@]}"; do
+			if check_plannable "$path"; then
+				plannable_yes="$plannable_yes$path$nl"
+			else
+				plannable_no="$plannable_no$path$nl"
+			fi
+		done
+		return 0
+	fi
+	batch=$(((${#paths[@]} + parallel_jobs - 1) / parallel_jobs))
+	if [ "$batch" -gt 8 ]; then
+		batch=8
+	fi
 	probe="$(declare -p cutoff reads_after reads_before open_paths gnu_stat)
 $(declare -f probe_paths check_plannable is_idle in_use on_parent_fs)
 probe_paths \"\$@\""
@@ -471,7 +542,7 @@ probe_paths \"\$@\""
 		else
 			plannable_no="$plannable_no$path$nl"
 		fi
-	done < <(unprobed_paths | parallel_runs 1 "$probe")
+	done < <(printf '%s\0' "${paths[@]}" | parallel_runs "$batch" "$probe")
 }
 
 # Prefetches the paths listed one per line in FILE.
@@ -653,8 +724,14 @@ assess_checkout() {
 		checkout_risk="git is not installed"
 		return
 	fi
-	if ! git_dir="$(git_in "$dir" rev-parse --path-format=absolute --git-dir 2>/dev/null)" ||
-		! checkout_common="$(git_in "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)"; then
+	local rev_out
+	if ! rev_out="$(git_in "$dir" rev-parse --path-format=absolute --git-dir --git-common-dir 2>/dev/null)"; then
+		checkout_risk="not a readable git checkout"
+		return
+	fi
+	git_dir="${rev_out%%"$nl"*}"
+	checkout_common="${rev_out#*"$nl"}"
+	if [ -z "$git_dir" ] || [ -z "$checkout_common" ] || [ "$rev_out" = "$git_dir" ]; then
 		checkout_risk="not a readable git checkout"
 		return
 	fi
@@ -893,7 +970,7 @@ discover_cache_checkouts() {
 # other tagged caches, git checkouts, direnv layout dirs, nix out-links,
 # and toolchain pins.
 classify_discoveries() {
-	local path dir list
+	local path dir list tag_line
 	for list in rust-targets build-caches checkouts direnvs outlinks pins; do
 		: >"$work/$list.unsorted"
 	done
@@ -902,7 +979,12 @@ classify_discoveries() {
 		dir="${path%/*}"
 		case "$path" in
 		*/CACHEDIR.TAG)
-			[ "$(head -c 43 "$path" 2>/dev/null)" = "Signature: 8a477f597d28d172789f06886806bc55" ] || continue
+			tag_line=""
+			IFS= read -r tag_line <"$path" 2>/dev/null || true
+			case "$tag_line" in
+			"Signature: 8a477f597d28d172789f06886806bc55"*) ;;
+			*) continue ;;
+			esac
 			if grep -q 'created by cargo' "$path" 2>/dev/null; then
 				if [ -f "$dir/.rustc_info.json" ]; then
 					printf '%s\n' "$dir" >>"$work/rust-targets.unsorted"
@@ -1091,11 +1173,18 @@ cache_roots() {
 
 plan_package_caches() {
 	local unit
+	local existing=()
 	while IFS= read -r unit <&3; do
 		if [ -e "$unit" ]; then
-			plan_path cache "$unit"
+			existing+=("$unit")
 		fi
 	done 3< <(package_caches)
+	if [ "${#existing[@]}" -gt 0 ]; then
+		prefetch_plannable < <(printf '%s\0' "${existing[@]}")
+		for unit in "${existing[@]}"; do
+			plan_path cache "$unit"
+		done
+	fi
 	plan_entries cache "$rustup_home/downloads"
 	plan_entries cache "$rustup_home/tmp"
 	# Cargo's sources and git checkouts stay: cargo cleans them by its own
@@ -1169,16 +1258,77 @@ worktree_candidates() {
 	done <"$work/checkouts"
 }
 
+# Runs read-only worktree assessment on each path argument inside its own
+# scratch dir so parallel workers never collide on temp files.
+probe_worktrees() {
+	local dir orig_work="$work"
+	work="$orig_work/wt.$$"
+	mkdir -p "$work"
+	for dir; do
+		assess_checkout "$dir"
+		if [ "$checkout_linked" -eq 1 ] && [ -z "$checkout_risk" ] && ! ignored_regenerable "$dir"; then
+			checkout_risk="ignored $ignored_keeper may not be regenerable"
+		fi
+		# Prefix optional fields with x so IFS=tab never collapses empty ones.
+		printf '%s\t%s\t%s\tx%s\tx%s\n' \
+			"$dir" "$checkout_linked" "$checkout_merged" "$checkout_common" "$checkout_risk"
+	done
+	work="$orig_work"
+}
+
 # Plans removal of idle linked worktrees that hold nothing beyond what
 # their repository keeps and regenerable build output.
 plan_worktrees() {
-	local dir
+	local dir probe wt_dir wt_linked wt_merged wt_common wt_risk i
+	local wt_dirs=()
 	worktree_candidates >"$work/worktree-candidates"
 	prefetch_plannable <"$work/worktree-candidates"
 	while IFS= read -r -d '' dir <&3; do
 		if under_planned "$dir" || ! plannable "$dir"; then
 			continue
 		fi
+		wt_dirs+=("$dir")
+	done 3<"$work/worktree-candidates"
+	[ "${#wt_dirs[@]}" -gt 0 ] || return 0
+	if [ "${#wt_dirs[@]}" -gt 1 ]; then
+		probe="$(declare -p work nl tab age have_git command_keys cutoff reads_after reads_before)
+$(declare -f probe_worktrees assess_checkout is_idle git_in config_runs_commands has_submodules default_branch_refs untracked_in_ref diff_merged ignored_regenerable)
+probe_worktrees \"\$@\""
+		while IFS="$tab" read -r wt_dir wt_linked wt_merged wt_common wt_risk; do
+			wt_common="${wt_common#x}"
+			wt_risk="${wt_risk#x}"
+			assessed+=("$wt_dir")
+			assessed_risk+=("$wt_risk")
+			assessed_linked+=("$wt_linked")
+			assessed_common+=("$wt_common")
+			assessed_merged+=("$wt_merged")
+		done < <(printf '%s\0' "${wt_dirs[@]}" | parallel_runs 1 "$probe")
+		for dir in "${wt_dirs[@]}"; do
+			i=0
+			while [ "$i" -lt "${#assessed[@]}" ]; do
+				if [ "${assessed[$i]}" = "$dir" ]; then
+					checkout_risk="${assessed_risk[$i]}"
+					checkout_linked="${assessed_linked[$i]}"
+					checkout_common="${assessed_common[$i]}"
+					checkout_merged="${assessed_merged[$i]}"
+					break
+				fi
+				i=$((i + 1))
+			done
+			[ "$checkout_linked" -eq 1 ] || continue
+			if [ -n "$checkout_risk" ]; then
+				note "$dir" "$checkout_risk"
+				continue
+			fi
+			if [ "$checkout_merged" -eq 1 ]; then
+				add merged-worktree worktree "$dir" "$checkout_common"
+			else
+				add worktree worktree "$dir" "$checkout_common"
+			fi
+		done
+		return 0
+	fi
+	for dir in "${wt_dirs[@]}"; do
 		assess_cached "$dir"
 		[ "$checkout_linked" -eq 1 ] || continue
 		if [ -z "$checkout_risk" ] && ! ignored_regenerable "$dir"; then
@@ -1193,7 +1343,7 @@ plan_worktrees() {
 		else
 			add worktree worktree "$dir" "$checkout_common"
 		fi
-	done 3<"$work/worktree-candidates"
+	done
 }
 
 # Plans `git worktree prune` for repositories whose worktree entries point
@@ -1260,7 +1410,7 @@ link_older() {
 
 # link_older, for a symlink we own.
 link_idle() {
-	[ -n "$(find "$1" -maxdepth 0 -user "$uid" -print 2>/dev/null)" ] && link_older "$1"
+	[ -n "$(find "$1" -maxdepth 0 -type l -user "$uid" ! -newermm "$cutoff" ! -newercm "$cutoff" -print 2>/dev/null)" ]
 }
 
 # Nix out-links (result, result-*) and direnv layout dirs are GC roots.
@@ -1269,14 +1419,23 @@ link_idle() {
 # loaded it days ago still runs its tools.
 plan_nix_roots() {
 	local path
+	local idle_direnvs=()
 	while IFS= read -r path <&3; do
 		if link_idle "$path" && ! in_use "$path"; then
 			add link nix "$path"
 		fi
 	done 3<"$work/outlinks"
 	while IFS= read -r path <&3; do
-		in_use "${path%/.direnv}" || plan_path nix "$path"
+		if ! in_use "${path%/.direnv}"; then
+			idle_direnvs+=("$path")
+		fi
 	done 3<"$work/direnvs"
+	if [ "${#idle_direnvs[@]}" -gt 0 ]; then
+		prefetch_plannable < <(printf '%s\0' "${idle_direnvs[@]}")
+		for path in "${idle_direnvs[@]}"; do
+			plan_path nix "$path"
+		done
+	fi
 }
 
 # Prints, space-separated, the generations of PROFILE past the newest
@@ -1410,6 +1569,7 @@ plan_rustup_toolchains() {
 			esac
 		done 3<"$work/pins"
 	} >"$work/selected-toolchains"
+	local candidate_dirs=() candidate_names=() i
 	for dir in "$rustup_home/toolchains"/*; do
 		[ -d "$dir" ] && [ ! -L "$dir" ] || continue
 		name="${dir##*/}"
@@ -1423,10 +1583,21 @@ plan_rustup_toolchains() {
 		' "$work/selected-toolchains")"
 		if [ -n "$selector" ]; then
 			note "$dir" "selected by $selector"
-		elif plannable "$dir"; then
-			add toolchain toolchain "$dir" "$name"
+		else
+			candidate_dirs+=("$dir")
+			candidate_names+=("$name")
 		fi
 	done
+	if [ "${#candidate_dirs[@]}" -gt 0 ]; then
+		prefetch_plannable < <(printf '%s\0' "${candidate_dirs[@]}")
+		i=0
+		while [ "$i" -lt "${#candidate_dirs[@]}" ]; do
+			if plannable "${candidate_dirs[$i]}"; then
+				add toolchain toolchain "${candidate_dirs[$i]}" "${candidate_names[$i]}"
+			fi
+			i=$((i + 1))
+		done
+	fi
 }
 
 # Cargo records when it last used each extracted crate source and git
@@ -1510,12 +1681,21 @@ human_kb() {
 # paths that occupy no blocks, since deleting them frees nothing. Links
 # and commands free space only through a collector.
 size_plan() {
-	local method label path arg
+	local method label path arg batch
+	local tree_paths=()
 	while IFS="$tab" read -r method label path arg; do
 		if deletes_tree "$method"; then
-			printf '%s\0' "$path"
+			tree_paths+=("$path")
 		fi
-	done <"$plan" | parallel_runs 1 'du -skx -- "$@" 2>/dev/null' >"$work/sizes"
+	done <"$plan"
+	: >"$work/sizes"
+	if [ "${#tree_paths[@]}" -gt 0 ]; then
+		batch=$(((${#tree_paths[@]} + parallel_jobs - 1) / parallel_jobs))
+		if [ "$batch" -gt 8 ]; then
+			batch=8
+		fi
+		printf '%s\0' "${tree_paths[@]}" | parallel_runs "$batch" 'du -skx -- "$@" 2>/dev/null' >"$work/sizes"
+	fi
 	awk -F '\t' -v trees="$tree_methods" "$awk_trees"'
 		FILENAME == ARGV[1] { kb[substr($0, index($0, "\t") + 1)] = $1; next }
 		{

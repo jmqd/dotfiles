@@ -528,15 +528,80 @@ expect_no_deletions() {
 	fi
 }
 
+# Run the independent read-only checks concurrently against the finished fixture.
+bin_nops="$fixture/bin-nops"
+mkdir -p "$bin_nops"
+for entry in "$bin"/*; do
+	[ "${entry##*/}" = ps ] && continue
+	ln -s "$entry" "$bin_nops/${entry##*/}"
+done
+printf '#!%s\nexit 1\n' "$bash_path" >"$bin_nops/ps"
+chmod +x "$bin_nops/ps"
+
+out_200h="$fixture/out-200h"
+out_badtemp="$fixture/out-badtemp"
+out_main="$fixture/out-main"
+out_nops="$fixture/out-nops"
+out_nolsof="$fixture/out-nolsof"
+out_nonint="$fixture/out-nonint"
+
+run --age 200h --dry-run >"$out_200h" &
+pid_200h=$!
+
+(
+	export CLEAN_STALE_TEMP_ROOTS="$src:/"
+	run --dry-run
+) >"$out_badtemp" 2>&1 &
+pid_badtemp=$!
+
+run --dry-run >"$out_main" &
+pid_main=$!
+
+PATH="$bin_nops" run --dry-run >"$out_nops" &
+pid_nops=$!
+
+pid_nolsof=""
+if [ -e "$bin/lsof" ] && [ -d /proc/self/fd ]; then
+	bin_nolsof="$fixture/bin-nolsof"
+	mkdir -p "$bin_nolsof"
+	for entry in "$bin"/*; do
+		[ "${entry##*/}" = lsof ] && continue
+		ln -s "$entry" "$bin_nolsof/${entry##*/}"
+	done
+	PATH="$bin_nolsof" run --dry-run >"$out_nolsof" &
+	pid_nolsof=$!
+fi
+
+run </dev/null >"$out_nonint" 2>&1 &
+pid_nonint=$!
+
+rc=0
+wait "$pid_200h" || rc=$?
+[ "$rc" -eq 0 ] || fail "200h dry run failed (status $rc):$nl$(cat "$out_200h")"
+rc=0
+wait "$pid_badtemp" || rc=$?
+[ "$rc" -eq 0 ] || fail "bad temp roots dry run failed (status $rc):$nl$(cat "$out_badtemp")"
+rc=0
+wait "$pid_main" || rc=$?
+[ "$rc" -eq 0 ] || fail "main dry run failed (status $rc):$nl$(cat "$out_main")"
+rc=0
+wait "$pid_nops" || rc=$?
+[ "$rc" -eq 0 ] || fail "no-ps dry run failed (status $rc):$nl$(cat "$out_nops")"
+if [ -n "$pid_nolsof" ]; then
+	rc=0
+	wait "$pid_nolsof" || rc=$?
+	[ "$rc" -eq 0 ] || fail "no-lsof dry run failed (status $rc):$nl$(cat "$out_nolsof")"
+fi
+status=0
+wait "$pid_nonint" || status=$?
+[ "$status" -eq 1 ] || fail "non-interactive run without --yes: expected status 1, got $status"
+
 # Nothing in the fixture is 200 hours old yet.
-output="$(run --age 200h --dry-run)"
+output="$(cat "$out_200h")"
 expect_no_deletions "200h threshold"
 
 # Every idle entry of a temp root goes, so / and roots in HOME are refused.
-output="$(
-	export CLEAN_STALE_TEMP_ROOTS="$src:/"
-	run --dry-run 2>&1
-)"
+output="$(cat "$out_badtemp")"
 for root in "$src" /; do
 	case "$output" in *"skipping temp dir $root: it is / or inside HOME"*) ;; *) fail "temp root $root was accepted" ;; esac
 done
@@ -544,7 +609,7 @@ if planned | grep -Fxq -- "$src/legacy"; then
 	fail "a temp root inside HOME swept $src/legacy"
 fi
 
-output="$(run --dry-run)"
+output="$(cat "$out_main")"
 for marker in "$filtered_marker" "$embedded_marker"; do
 	[ ! -e "$marker" ] || fail "dry run ran a filter from a checkout's git config: $marker"
 done
@@ -571,15 +636,14 @@ done
 for name in "${installed[@]}"; do
 	case "$output" in *"rustup toolchain uninstall $name$nl"*) fail "dry run uninstalls $name" ;; esac
 done
+case "$output" in *"cargo +nightly -Zgc clean gc --max-src-age=2160minutes --max-git-co-age=2160minutes$nl"*) ;; *) fail "dry run does not run cargo gc${nl}$output" ;; esac
 [ ! -s "$calls" ] || fail "dry run ran collectors:$nl$(cat "$calls")"
 assert_kept "${expected_gone[@]}" "${expected_kept[@]}"
 
 # Without lsof, Linux reads open files from /proc, where many fds link to
 # sockets, pipes, and anonymous inodes rather than paths.
-if [ -e "$bin/lsof" ] && [ -d /proc/self/fd ]; then
-	mv "$bin/lsof" "$fixture/lsof"
-	output="$(run --dry-run)"
-	mv "$fixture/lsof" "$bin/lsof"
+if [ -n "$pid_nolsof" ]; then
+	output="$(cat "$out_nolsof")"
 	for path in "$tmp/busy" "$src/busyenv/.direnv"; do
 		if planned | grep -Fxq -- "$path"; then
 			fail "dry run without lsof lists busy path $path"
@@ -588,28 +652,17 @@ if [ -e "$bin/lsof" ] && [ -d /proc/self/fd ]; then
 fi
 
 # A ps without start times (BusyBox) cannot tell an owner is gone.
-mv "$bin/ps" "$fixture/ps"
-printf '#!%s\nexit 1\n' "$bash_path" >"$bin/ps"
-chmod +x "$bin/ps"
-output="$(run --dry-run)"
-mv "$fixture/ps" "$bin/ps"
+output="$(cat "$out_nops")"
 if planned | grep -Fxq -- "$HOME/.omp/wt/live"; then
 	fail "dry run without ps start times lists the live omp copy"
 fi
 
 # Cargo GC runs only with a nightly already installed; it never installs one.
-case "$output" in *"cargo +nightly -Zgc clean gc --max-src-age=2160minutes --max-git-co-age=2160minutes$nl"*) ;; *) fail "dry run does not run cargo gc${nl}$output" ;; esac
 mv "$toolchains/nightly-test-host" "$fixture/nightly-test-host"
 output="$(run --dry-run)"
 mv "$fixture/nightly-test-host" "$toolchains/nightly-test-host"
 case "$output" in *"clean gc"*) fail "dry run without a nightly runs cargo gc" ;; esac
 [ ! -s "$calls" ] || fail "dry run without a nightly ran:$nl$(cat "$calls")"
-
-set +e
-run </dev/null >/dev/null 2>&1
-status=$?
-set -e
-[ "$status" -eq 1 ] || fail "non-interactive run without --yes: expected status 1, got $status"
 assert_kept "${expected_gone[@]}"
 
 if ! output="$(run --yes 2>&1)"; then
