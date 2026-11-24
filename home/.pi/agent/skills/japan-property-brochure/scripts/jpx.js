@@ -39,7 +39,8 @@
   const noHash = (u) => u.split("#")[0];
 
   // Labels that mark a label/value pair when a site uses plain divs or spans
-  // instead of <th>/<td> or <dt>/<dd>.
+  // instead of <th>/<td> or <dt>/<dd>. English ones are stored folded, as
+  // labelKey returns them, for the sites written for foreign buyers.
   const LABELS = new Set([
     "価格", "販売価格", "物件価格", "所在地", "住所", "物件所在地", "交通", "沿線・駅", "最寄駅",
     "最寄り駅", "アクセス", "土地面積", "敷地面積", "建物面積", "延床面積", "延べ床面積",
@@ -53,9 +54,21 @@
     "物件番号", "物件種目", "物件種別", "種別", "物件名", "学区", "会社名", "商号", "免許番号",
     "国土法届出", "セットバック", "建築確認番号", "総区画数", "区画面積", "水道", "ガス", "下水",
     "排水", "電気", "温泉", "管理会社", "別荘地名", "標高",
+    "price", "saleprice", "askingprice", "location", "address", "landarea", "lotarea", "lotsize",
+    "landsize", "floorarea", "buildingarea", "totalfloorarea", "grossfloorarea", "buildingsize",
+    "layout", "floorplan", "yearbuilt", "completed", "constructiondate", "structure", "construction",
+    "buildingstructure", "floors", "stories", "storeys", "access", "neareststation", "transportation",
+    "landrights", "landtenure", "zoning", "propertytype", "parking", "currentstatus", "remarks",
   ]);
 
-  const labelKey = (s) => clean(s).replace(/[：:\s]/g, "").replace(/[（(].*$/, "");
+  // A label reduced for lookup: no bullet, colon, space or parenthetical, lower case.
+  const labelKey = (s) =>
+    clean(s)
+      .replace(/^[●■◆◇▼▶▷・□○◎]+/, "")
+      .replace(/[（(][^）)]*[）)]/g, "")
+      .replace(/[（(].*$/, "")
+      .replace(/[：:\s]/g, "")
+      .toLowerCase();
 
   // ---------------------------------------------------------------- pairs
 
@@ -75,62 +88,125 @@
     return "";
   };
 
+  // Some sites draw their labels as images; the alt text is the label.
+  const labelText = (cell) => textOf(cell) || clean((cell.querySelector("img[alt]") || { alt: "" }).alt);
+  const isLabel = (cell) => LABELS.has(labelKey(labelText(cell)));
+
+  // Rows that state the labels of a results table once, for listings laid
+  // out one per row, or one small table per listing under a shared header
+  // table. Returns [{tr, labels}], labels indexed by column.
+  const headerRows = () => {
+    const out = [];
+    for (const tr of document.querySelectorAll("tr")) {
+      const cells = [...tr.cells];
+      const known = cells.filter(isLabel).length;
+      // More than half must be known labels: a detail table whose rows
+      // alternate label and value reaches exactly half, and stays out.
+      if (known < 3 || known * 2 <= cells.length) continue;
+      const labels = [];
+      for (const cell of cells) for (let i = 0; i < cell.colSpan; i++) labels.push(labelText(cell));
+      out.push({ tr, labels });
+    }
+    return out;
+  };
+
   // Label/value pairs under `root`, in document order.
   // Returns [{label, value, section}]. A label may repeat.
+  // opts.headerRows: the page's headerRows(), to also read rows of bare
+  // cells by the header above them. Only for result cards: on a detail page
+  // such a table lists other properties.
   const pairs = (root, opts) => {
     root = root || document.body;
     const withSection = !opts || opts.sections !== false;
     const found = [];
     const claimed = new Set();
-    const push = (labelEl, label, value) => {
+    const push = (labelEl, label, value, valueEl) => {
       // Portals append tooltip text ("ヒント") to labels on a second line.
-      label = clean(label).split("\n")[0].replace(/[：:]\s*$/, "");
+      label = clean(label).split("\n")[0].replace(/^[●■◆◇▼▶▷・□○◎]+/, "").replace(/[：:]\s*$/, "");
       value = clean(value);
       if (!label || !value || label.length > 40 || label === value) return;
       if (labelEl.closest("nav,header,footer")) return;
+      // A row that holds a form control is part of an inquiry form, not listing data.
+      if (valueEl && valueEl.querySelector && valueEl.querySelector("input:not([type='hidden']),select,textarea")) return;
       found.push({ el: labelEl, label, value });
       claimed.add(labelEl);
     };
 
-    for (const tr of root.querySelectorAll("tr")) {
+    // The header a row of bare cells belongs to: one as wide as the row, in
+    // the row's own table, or else the nearest one above it.
+    const headerFor = (tr, width) => {
+      const table = tr.closest("table");
+      let above = null;
+      for (const header of (opts && opts.headerRows) || []) {
+        if (header.tr === tr || header.labels.length !== width) continue;
+        if (header.tr.closest("table") === table) return header;
+        if (header.tr.compareDocumentPosition(tr) & Node.DOCUMENT_POSITION_FOLLOWING) above = header;
+      }
+      return above;
+    };
+
+    const rows = root.tagName === "TR" ? [root] : [...root.querySelectorAll("tr")];
+    for (const tr of rows) {
       const cells = [...tr.children].filter((c) => c.tagName === "TH" || c.tagName === "TD");
+      if (cells.length >= 3 && cells.every((c) => c.tagName === "TD") && !cells.some(isLabel)) {
+        const header = headerFor(tr, cells.reduce((n, c) => n + c.colSpan, 0));
+        if (header) {
+          let column = 0;
+          for (const cell of cells) {
+            // A cell spanning several columns answers to no single label.
+            if (cell.colSpan === 1) push(cell, header.labels[column], textOf(cell), cell);
+            column += cell.colSpan;
+          }
+          continue;
+        }
+      }
       for (let i = 0; i < cells.length; i++) {
         if (cells[i].tagName !== "TH") continue;
         const vals = [];
         let j = i + 1;
         while (j < cells.length && cells[j].tagName === "TD") vals.push(textOf(cells[j++]));
-        if (vals.length) push(cells[i], textOf(cells[i]), vals.join("\n"));
+        if (vals.length) push(cells[i], labelText(cells[i]), vals.join("\n"), cells[i + 1]);
       }
       // Two-cell rows without <th>: accept when the first cell is a known label.
-      if (cells.length === 2 && cells[0].tagName === "TD" && LABELS.has(labelKey(textOf(cells[0])))) {
-        push(cells[0], textOf(cells[0]), textOf(cells[1]));
+      if (cells.length === 2 && cells[0].tagName === "TD" && LABELS.has(labelKey(labelText(cells[0])))) {
+        push(cells[0], labelText(cells[0]), textOf(cells[1]), cells[1]);
       }
     }
 
     for (const dt of root.querySelectorAll("dt")) {
       const vals = [];
       let n = dt.nextElementSibling;
+      const first = n;
       while (n && n.tagName === "DD") {
         vals.push(textOf(n));
         n = n.nextElementSibling;
       }
-      if (vals.length) push(dt, textOf(dt), vals.join("\n"));
+      if (vals.length) push(dt, labelText(dt), vals.join("\n"), first);
     }
 
-    // Plain elements whose whole text is a known label; value is the next sibling.
-    for (const el of root.querySelectorAll("div,span,p,li,b,strong,label,h3,h4,h5,em,i")) {
-      if (claimed.has(el) || el.childElementCount > 1) continue;
+    // Plain elements whose whole text is a known label; the value is the next
+    // sibling that says something (separator spans, often hidden, are skipped).
+    const separator = /^[：:\s/|]*$/;
+    for (const el of root.querySelectorAll("div,span,p,li,b,strong,label,h3,h4,h5,em,i,td")) {
+      if (claimed.has(el) || el.childElementCount > 1 || el.closest("th,dt")) continue;
       const own = textOf(el);
-      if (own.length > 16 || !LABELS.has(labelKey(own))) continue;
-      if (el.closest("th,dt")) continue;
-      let val = "";
-      const sib = el.nextElementSibling;
-      if (sib && !LABELS.has(labelKey(textOf(sib)))) val = textOf(sib);
-      if (!val && el.parentElement) {
-        const whole = textOf(el.parentElement);
-        if (whole.startsWith(own) && whole.length < 400) val = clean(whole.slice(own.length).replace(/^[：:]/, ""));
+      if (own.length <= 16 && LABELS.has(labelKey(own))) {
+        let val = "";
+        let sib = el.nextElementSibling;
+        while (sib && separator.test(textOf(sib))) sib = sib.nextElementSibling;
+        if (sib && !LABELS.has(labelKey(textOf(sib)))) val = textOf(sib);
+        if (!val && el.parentElement) {
+          const whole = textOf(el.parentElement);
+          if (whole.startsWith(own) && whole.length < 400) val = clean(whole.slice(own.length).replace(/^[：:]/, ""));
+        }
+        if (val && val.length < 2000) push(el, own, val, sib);
+        continue;
       }
-      if (val && val.length < 2000) push(el, own, val);
+      // "価格：1,980万円" written as one run of text in one element.
+      if (el.childElementCount === 0 && own.length <= 300) {
+        const m = own.match(/^([^：:\n]{1,16})[：:]\s*(\S[\s\S]*)$/);
+        if (m && LABELS.has(labelKey(m[1]))) push(el, m[1], m[2], null);
+      }
     }
 
     found.sort((a, b) => (a.el.compareDocumentPosition(b.el) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1));
@@ -149,7 +225,9 @@
 
   // ---------------------------------------------------------------- images
 
-  const CHROME_IMG = /(logo|sprite|icon|ico_|_ico|btn|button|banner|bnr|spacer|blank|loading|arrow|pixel|tracking|favicon|noimage|no_image|nophoto|qr|badge|line_|twitter|facebook|instagram)/i;
+  // Site furniture and placeholders, by file name: "No_Photo", a lazy-load
+  // "Dummy_Photo", a map spinner. A placeholder must not pass for a photo.
+  const CHROME_IMG = /(logo|sprite|icon|ico_|_ico|btn|button|banner|bnr|spacer|spinner|blank|loading|arrow|pixel|tracking|favicon|noimage|no_?image|no_?photo|dummy|pagetop|page_top|recruit|qr|badge|line_|twitter|facebook|instagram)/i;
 
   const largestFromSrcset = (srcset) => {
     let best = null;
@@ -167,8 +245,10 @@
   };
 
   // Per-host rules that turn a thumbnail URL into the largest stored image.
-  // Each returns candidate URLs, best first; the downloader keeps the largest
-  // one that actually loads, so a wrong guess costs one request, not a photo.
+  // Each returns candidate URLs, best first. The downloader takes the first
+  // that returns a picture no smaller than the one on the page, and the URL
+  // as captured always stays the last candidate, so a wrong guess costs a
+  // request, not a photo.
   const UPSCALE = [
     {
       host: /(^|\.)suumo\.(jp|com)$/,
@@ -195,20 +275,44 @@
         return [big.href];
       },
     },
+    {
+      host: /(^|\.)yimg\.jp$/,
+      // Yahoo!不動産 resizes by query (...jpg?...&w=188&h=188) and answers a
+      // request larger than the stored photo with a "no image" placeholder.
+      // The bare path is the stored photo.
+      fn: (u) => (u.search && /realestate/.test(u.hostname + u.pathname) ? [u.origin + u.pathname] : []),
+    },
+    {
+      host: /(^|\.)tokyu-resort\.co\.jp$/,
+      // .../img/bukken/{small|medium|large}/{photo}.jpg: large is 1024 px.
+      fn: (u) => (/\/(small|medium)\//.test(u.pathname) ? [u.origin + u.pathname.replace(/\/(small|medium)\//, "/large/") + u.search] : []),
+    },
+    {
+      host: /(^|\.)miraie-net\.com$/,
+      // 三井のリハウス: .../{n}_pcViewLargerHeight.jpg and its sibling sizes
+      // are views of .../{n}_original.jpg (1920 px).
+      fn: (u) => {
+        const m = u.pathname.match(/^(.*\/[^/_]+)_[A-Za-z]+\.jpg$/);
+        return m && !u.pathname.endsWith("_original.jpg") ? [u.origin + m[1] + "_original.jpg" + u.search] : [];
+      },
+    },
   ];
 
-  const sizeParamCandidates = (u) => {
-    // Generic resizers: drop or enlarge width/height style parameters.
+  // Guesses for hosts without a rule. Both only remove a size restriction;
+  // asking a resizer for a larger size is not tried, because many answer
+  // with an upscaled image or a "no image" placeholder.
+  const genericCandidates = (u) => {
+    const out = [];
     const keys = ["w", "h", "width", "height", "size", "wd", "ht", "maxwidth", "maxheight"];
-    if (!keys.some((k) => u.searchParams.has(k))) return [];
-    const bare = new URL(u.href);
-    const big = new URL(u.href);
-    for (const k of keys) {
-      if (!u.searchParams.has(k)) continue;
-      bare.searchParams.delete(k);
-      if (/^\d+$/.test(u.searchParams.get(k))) big.searchParams.set(k, "1600");
+    if (keys.some((k) => u.searchParams.has(k))) {
+      const bare = new URL(u.href);
+      for (const k of keys) bare.searchParams.delete(k);
+      out.push(bare.href);
     }
-    return [big.href, bare.href];
+    // WordPress names its thumbnails photo-300x200.jpg beside photo.jpg.
+    const original = u.pathname.replace(/-\d{2,4}x\d{2,4}(\.(?:jpe?g|png|webp))$/i, "$1");
+    if (original !== u.pathname) out.push(u.origin + original);
+    return out;
   };
 
   const bestCandidates = (url) => {
@@ -220,7 +324,7 @@
     }
     const out = [];
     for (const rule of UPSCALE) if (rule.host.test(u.hostname)) out.push(...rule.fn(u));
-    out.push(...sizeParamCandidates(u));
+    if (!out.length) out.push(...genericCandidates(u));
     out.push(url);
     return [...new Set(out.filter(Boolean))];
   };
@@ -349,6 +453,9 @@
     };
     const html = document.documentElement.innerHTML;
     let m;
+    // Google Maps embeds carry the position as !2d<lon>!3d<lat>.
+    const reEmbed = /!2d(-?\d{2,3}\.\d{3,})!3d(-?\d{2}\.\d{3,})/g;
+    while ((m = reEmbed.exec(html))) add(m[2], m[1], m[0], "wgs84");
     const reQuery = /[?&](?:q|ll|sll|center|query|daddr|destination|markers|loc)=(?:[a-z]*:)?(-?\d{2}\.\d{3,})(?:,|%2C)\s*(-?\d{2,3}\.\d{3,})/gi;
     while ((m = reQuery.exec(html))) add(m[1], m[2], m[0], "wgs84");
     const reAt = /@(-?\d{2}\.\d{3,}),(-?\d{2,3}\.\d{3,})/g;
@@ -386,13 +493,22 @@
 
   // ---------------------------------------------------------------- cards
 
-  const PRICE = /([0-9０-９][0-9０-９,，.．]*\s*億\s*(?:[0-9０-９][0-9０-９,，.．]*\s*万)?|[0-9０-９][0-9０-９,，.．]*\s*万)\s*円|価格(?:応談|未定|相談)/;
-  const AREA = /[0-9０-９][0-9０-９,，.．]*\s*(?:m2|m²|㎡|平米|坪)/i;
-  const NOT_DETAIL = /(inquir|shiryou|siryo|contact|toiawase|favorite|okiniiri|request|mailto|login|print|kengaku|reserve|javascript:|\/map\/?$|tel:)/i;
+  const PRICE = /([0-9０-９][0-9０-９,，.．]*\s*億\s*(?:[0-9０-９][0-9０-９,，.．]*\s*万)?|[0-9０-９][0-9０-９,，.．]*\s*万)\s*円|価格(?:応談|未定|相談)|[¥￥]\s?[0-9][0-9,.]*|JPY\s?[0-9]|[0-9.]+\s*(?:million|billion)\s*yen/i;
+  const AREA = /[0-9０-９][0-9０-９,，.．]*\s*(?:m2|m²|㎡|平米|坪|sq\.?\s?m|sqm|sq\.?\s?ft|tsubo)/i;
+  const NOT_DETAIL = /(inquir|shiryou|siryo|contact|toiawase|favorite|okiniiri|request|mailto|login|print|kengaku|reserve|javascript:|\/map\/?$|maps\.google|google\.[^/]+\/maps|goo\.gl\/|tel:)/i;
 
+  // Detail links of one list look alike. The strict shape keeps the words of
+  // the path; the loose shape keeps only where its numbers are, for sites
+  // that put an area name in each listing's path (/karuizawa/detail/123).
   const urlShape = (href) => {
     const u = new URL(href);
-    return u.hostname + u.pathname.replace(/[0-9]+/g, "#").replace(/[A-Za-z]*#[A-Za-z#_-]*/g, "#");
+    return "s:" + u.hostname + u.pathname.replace(/[0-9]+/g, "#").replace(/[A-Za-z]*#[A-Za-z#_-]*/g, "#");
+  };
+  const looseShape = (href) => {
+    const u = new URL(href);
+    const segments = u.pathname.split("/").filter(Boolean);
+    if (!segments.some((s) => /\d/.test(s))) return null;
+    return "l:" + u.hostname + "/" + segments.map((s) => (/\d/.test(s) ? "#" : "*")).join("/");
   };
 
   const lowestCommonAncestor = (els) => {
@@ -414,54 +530,59 @@
     }
     const byShape = new Map();
     for (const href of byHref.keys()) {
-      const shape = urlShape(href);
-      if (!byShape.has(shape)) byShape.set(shape, []);
-      byShape.get(shape).push(href);
+      for (const shape of [urlShape(href), looseShape(href)]) {
+        if (!shape) continue;
+        if (!byShape.has(shape)) byShape.set(shape, []);
+        byShape.get(shape).push(href);
+      }
     }
-    let best = null;
+    const best = { s: null, l: null };
     for (const [shape, hrefs] of byShape) {
       const hrefSet = new Set(hrefs);
       const cards = [];
       for (const href of hrefs) {
+        const holdsAnother = (node) => {
+          for (const a of node.querySelectorAll("a[href]")) {
+            const h = noHash(a.href || "");
+            if (h !== href && hrefSet.has(h)) return true;
+          }
+          return false;
+        };
         let el = lowestCommonAncestor(byHref.get(href));
+        // One link in two far-apart places (a menu and a footer) has no card around both.
+        if (holdsAnother(el)) el = byHref.get(href)[0];
         while (el.parentElement && el.parentElement !== document.body) {
           const p = el.parentElement;
-          if ((p.innerText || "").length > 6000) break;
-          let foreign = false;
-          for (const a of p.querySelectorAll("a[href]")) {
-            const h = noHash(a.href || "");
-            if (h !== href && hrefSet.has(h)) {
-              foreign = true;
-              break;
-            }
-          }
-          if (foreign) break;
+          if ((p.innerText || "").length > 6000 || holdsAnother(p)) break;
           el = p;
         }
         const t = el.innerText || "";
         if (PRICE.test(t) && AREA.test(t)) cards.push({ el, href });
       }
-      if (cards.length && (!best || cards.length > best.cards.length)) best = { shape, cards };
+      const kind = shape[0];
+      if (cards.length && (!best[kind] || cards.length > best[kind].cards.length)) best[kind] = { shape, cards };
     }
-    if (!best) return [];
+    // The loose shape also sweeps in menu links that happen to hold a number,
+    // so it is believed only when it finds clearly more cards than the strict one.
+    const chosen = best.l && (!best.s || best.l.cards.length >= 1.5 * best.s.cards.length) ? best.l : best.s;
+    if (!chosen) return [];
     // Cards of one list share a tag and class even when some link elsewhere
     // (a promoted listing, a development page). Once most guessed cards agree
     // on a signature, take every element with that signature.
     const signature = (el) => el.tagName.toLowerCase() + [...el.classList].map((c) => "." + CSS.escape(c)).join("");
     const counts = new Map();
-    for (const c of best.cards) counts.set(signature(c.el), (counts.get(signature(c.el)) || 0) + 1);
+    for (const c of chosen.cards) counts.set(signature(c.el), (counts.get(signature(c.el)) || 0) + 1);
     const [common, n] = [...counts].sort((a, b) => b[1] - a[1])[0];
-    if (!common.includes(".") || n < 0.6 * best.cards.length) return best.cards;
-    const known = new Map(best.cards.map((c) => [c.el, c.href]));
+    if (!common.includes(".") || n < 0.6 * chosen.cards.length) return chosen.cards;
+    const known = new Map(chosen.cards.map((c) => [c.el, c.href]));
     const all = [];
     for (const el of document.querySelectorAll(common)) {
       const t = el.innerText || "";
       if (!PRICE.test(t) || !AREA.test(t)) continue;
-      const link = [...el.querySelectorAll("a[href]")].find((a) => /^https?:/.test(a.href) && !NOT_DETAIL.test(a.href));
-      const href = known.get(el) || (link ? noHash(link.href) : null);
+      const href = known.get(el) || linkOf(el, null);
       if (href) all.push({ el, href });
     }
-    return all.length >= best.cards.length ? all : best.cards;
+    return all.length >= chosen.cards.length ? all : chosen.cards;
   };
 
   const titleOf = (el, href) => {
@@ -471,7 +592,29 @@
     for (const a of el.querySelectorAll("a[href]")) {
       if (noHash(a.href) === href && textOf(a).length > longest.length) longest = textOf(a);
     }
-    return longest.slice(0, 200);
+    // A card that is one big link: its name is the first line that is not a "see details" caption.
+    const lines = (longest || (el.tagName === "TR" ? "" : textOf(el))).split("\n");
+    const named = lines.find((line) => line && !/^(?:物件)?詳細|もっと見る|詳しく見る|^more\b|^view\b|^details?\b/i.test(line));
+    return (named || "").slice(0, 200);
+  };
+
+  // The detail-page URL of a card found by selector: a link inside it, the
+  // card itself or a link around it, or a URL in an onclick handler.
+  // A link to the site itself is preferred: a card's first link is often a
+  // map on another site, and its detail page never is.
+  const linkOf = (el, linkSelector) => {
+    const usable = (a) => (a && a.href && /^https?:/.test(a.href) ? noHash(a.href) : null);
+    if (linkSelector && usable(el.querySelector(linkSelector))) return usable(el.querySelector(linkSelector));
+    if (el.tagName === "A" && usable(el)) return usable(el);
+    const site = location.hostname.replace(/^www\./, "");
+    const onSite = (a) => a.hostname === site || a.hostname.endsWith("." + site);
+    const inner = [...el.querySelectorAll("a[href]")].filter((a) => usable(a) && !NOT_DETAIL.test(a.href));
+    const pick = inner.find(onSite) || inner[0];
+    if (pick) return usable(pick);
+    if (usable(el.closest("a[href]"))) return usable(el.closest("a[href]"));
+    const clickable = el.hasAttribute("onclick") ? el : el.querySelector("[onclick]");
+    const m = ((clickable && clickable.getAttribute("onclick")) || "").match(/['"]((?:https?:\/)?\/[^'"\s]+|[^'"\s]+\.(?:html?|php)[^'"\s]*)['"]/);
+    return m ? absUrl(m[1]) : null;
   };
 
   // Listing cards on a search-results page.
@@ -480,22 +623,16 @@
   // Returns [{url, title, pairs, text, image}].
   const cards = (opts) => {
     opts = opts || {};
-    let found;
-    if (opts.selector) {
-      found = [...document.querySelectorAll(opts.selector)].map((el) => {
-        const a = (opts.link && el.querySelector(opts.link)) ||
-          [...el.querySelectorAll("a[href]")].find((x) => /^https?:/.test(x.href) && !NOT_DETAIL.test(x.href));
-        return { el, href: a ? noHash(a.href) : null };
-      });
-    } else {
-      found = guessCards();
-    }
+    const found = opts.selector
+      ? [...document.querySelectorAll(opts.selector)].map((el) => ({ el, href: linkOf(el, opts.link) }))
+      : guessCards();
+    const headers = headerRows();
     return found.map(({ el, href }) => {
       const img = images(el).find((i) => !i.chrome);
       return {
         url: href,
         title: titleOf(el, href),
-        pairs: pairs(el, { sections: false }),
+        pairs: pairs(el, { sections: false, headerRows: headers }),
         text: textOf(el).slice(0, opts.textLimit || 1500),
         image: img ? img.url : null,
       };
@@ -641,13 +778,33 @@
     return out;
   };
 
+  // Values of the form controls matching `selector`, with the text beside
+  // each, for reading the choices a search form offers (its municipalities).
+  // Nothing is filled in or submitted.
+  const values = (selector) => {
+    const out = [];
+    const seen = new Set();
+    for (const el of document.querySelectorAll(selector)) {
+      const value = el.value;
+      if (!value || seen.has(value)) continue;
+      seen.add(value);
+      const named = el.tagName === "OPTION" ? el : el.closest("label") || (el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)) || el.parentElement;
+      out.push({ value, text: textOf(named).slice(0, 80) });
+    }
+    return out;
+  };
+
   // Signs that the site served a block page instead of content.
   const blocked = () => {
     const t = (document.title + " " + textOf(document.body).slice(0, 1500)).toLowerCase();
-    const signs = ["access denied", "forbidden", "captcha", "are you a robot", "アクセスが集中", "アクセスを制限", "アクセスが制限", "不正なアクセス", "認証にご協力", "ロボットではありません", "しばらく時間をおいて", "request blocked", "just a moment", "verify you are human", "pardon our interruption"];
+    const signs = [
+      "access denied", "forbidden", "captcha", "are you a robot", "アクセスが集中", "アクセスを制限", "アクセスが制限", "不正なアクセス",
+      "認証にご協力", "ロボットではありません", "しばらく時間をおいて", "request blocked", "just a moment", "verify you are human",
+      "pardon our interruption", "you have been blocked", "attention required", "confirm you are human", "unusual traffic",
+    ];
     return signs.filter((s) => t.includes(s));
   };
 
-  window.JPX = { version: VERSION, pairs, images, coords, jsonld, cards, pageInfo, blocks, detail, links, settle, autoScroll, blocked, bestCandidates };
+  window.JPX = { version: VERSION, pairs, images, coords, jsonld, cards, pageInfo, blocks, detail, links, values, settle, autoScroll, blocked, bestCandidates };
   return VERSION;
 })();
