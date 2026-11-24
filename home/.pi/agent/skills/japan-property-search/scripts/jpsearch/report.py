@@ -4,29 +4,12 @@ from __future__ import annotations
 
 import csv
 import html
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 import criteria
 import text
 from criteria import Profile
 from workspace import Workspace, write_json
-
-FLAG_LABELS = {
-    "leasehold": "Leasehold land",
-    "no_rebuild": "Cannot be rebuilt",
-    "urbanisation_control": "Urbanisation control area",
-    "setback": "Setback required",
-    "notice": "Disclosure item (告知事項)",
-    "tenant_occupied": "Tenant in place",
-    "under_negotiation": "Under negotiation",
-    "unregistered_part": "Part unregistered",
-    "slope_or_retaining_wall": "Slope or retaining wall",
-    "hazard_zone": "Hazard zone mentioned",
-    "farmland": "Farmland involved",
-    "natural_park": "Natural park zone",
-    "non_conforming": "Non-conforming building",
-    "pre_1981_seismic_code": "Pre-1981 seismic code",
-}
 
 CHANGE_LABELS = {
     "new": "New",
@@ -38,8 +21,8 @@ CHANGE_LABELS = {
 
 SECTIONS = (
     (criteria.MATCH, "Matches", "Every criterion is met and confirmed from the listing."),
-    (criteria.NEAR_MISS, "Near misses", "Just under a threshold, or a mixed structure to confirm."),
-    (criteria.UNVERIFIED, "Unverified", "Nothing rules these out, but the listing leaves a criterion unstated."),
+    (criteria.NEAR_MISS, "Near misses and points to confirm", "Just under a threshold, or one point stands between the listing and a match."),
+    (criteria.UNVERIFIED, "Unverified", "Nothing rules these out, but a criterion is unstated or the listing page could not be read."),
 )
 
 
@@ -57,16 +40,23 @@ def oku_man(value: Optional[int]) -> str:
     return (parts or "0") + "円"
 
 
-def area(m2: Optional[float]) -> str:
+def area(m2: Optional[float], variants: Optional[List[float]] = None) -> str:
     if m2 is None:
         return "not stated"
-    return "{:,.2f} m² ({:,.1f} tsubo)".format(m2, text.to_tsubo(m2))
+    stated = "{:,.2f} m² ({:,.1f} tsubo)".format(m2, text.to_tsubo(m2))
+    others = [v for v in variants or [] if v != m2]
+    if others:
+        # Agents listing one house sometimes quote different figures; show them rather than pick silently.
+        stated += "; other listings say " + ", ".join("{:,.2f}".format(v) for v in others)
+    return stated
 
 
 def structure_label(prop: Dict[str, Any]) -> str:
     kind = prop.get("structure")
     if kind is None:
         return "not stated" + (" (text mentions concrete)" if prop.get("concrete_hint") else "")
+    if prop.get("structure_variants"):
+        return "listings disagree: " + " / ".join(v["text"] for v in prop["structure_variants"])
     if kind == text.MIXED:
         name = "mixed: " + " + ".join(criteria.STRUCTURE_NAMES.get(p, p) for p in prop.get("structure_parts") or [])
     else:
@@ -160,7 +150,7 @@ def _card(prop: Dict[str, Any], run_year: int) -> str:
             extra = " from " + yen(prop["previous_price_jpy"])
         chips.append('<span class="chip change">%s%s</span>' % (_e(change), _e(extra)))
     for flag in prop.get("flags") or []:
-        chips.append('<span class="chip flag">%s</span>' % _e(FLAG_LABELS.get(flag, flag)))
+        chips.append('<span class="chip flag">%s</span>' % _e(criteria.FLAGS.get(flag, flag)))
     price = yen(prop.get("price_jpy"))
     if prop.get("price_max_jpy"):
         price += " to " + yen(prop["price_max_jpy"])
@@ -168,11 +158,11 @@ def _card(prop: Dict[str, Any], run_year: int) -> str:
     picture = (
         '<img src="%s" alt="" loading="lazy" referrerpolicy="no-referrer">' % _e(image)
         if image
-        else '<div class="noimg">no photo on the result card</div>'
+        else '<div class="noimg">no photo captured</div>'
     )
     facts = [
-        ("Land", area(prop.get("land_m2"))),
-        ("Building", area(prop.get("building_m2"))),
+        ("Land", area(prop.get("land_m2"), prop.get("land_m2_variants"))),
+        ("Building", area(prop.get("building_m2"), prop.get("building_m2_variants"))),
         ("Structure", structure_label(prop)),
         ("Built", built_label(prop, run_year)),
         ("Layout", prop.get("layout") or "not stated"),
@@ -180,10 +170,16 @@ def _card(prop: Dict[str, Any], run_year: int) -> str:
         ("Location", location_label(prop)),
         ("Access", prop.get("access") or "not stated"),
     ]
-    if prop.get("zoning") or prop.get("coverage_far"):
-        facts.append(("Zoning", " · ".join(x for x in (prop.get("zoning"), prop.get("coverage_far")) if x)))
-    if prop.get("road"):
-        facts.append(("Road", prop["road"]))
+    optional = (
+        ("Zoning", prop.get("zoning")),
+        ("Coverage / floor-area ratio", " / ".join(x for x in (prop.get("coverage_far"), prop.get("far")) if x)),
+        ("Road", prop.get("road")),
+        ("Services", " · ".join(x for x in (prop.get("water"), prop.get("sewer"), prop.get("gas")) if x)),
+        ("Hot spring", prop.get("hot_spring")),
+        ("Management fee", prop.get("management_fee")),
+        ("Renovation", prop.get("renovation")),
+    )
+    facts += [(label, value) for label, value in optional if value]
     fact_html = "".join("<div><dt>%s</dt><dd>%s</dd></div>" % (_e(k), _e(v)) for k, v in facts)
     why = "; ".join(prop.get("open_points") or [])
     links = " · ".join(
@@ -205,7 +201,7 @@ def _card(prop: Dict[str, Any], run_year: int) -> str:
         picture,
         _e(price),
         _e(oku_man(prop.get("price_jpy"))),
-        _e(prop.get("title") or "(untitled listing)"),
+        _e(prop.get("title") or prop.get("address") or "(untitled listing)"),
         "".join(chips),
         '<div class="why">Open point: %s</div>' % _e(why) if why else "",
         '<div class="note">%s</div>' % _e(prop["note"]) if prop.get("note") else "",
@@ -227,21 +223,40 @@ def _criteria_summary(profile: Profile) -> str:
     if profile.built_year_min:
         parts.append("built %d or later" % profile.built_year_min)
     parts.append("near-miss band %g%%" % profile.near_miss_percent)
+    for verb, flags in (("held for review", profile.review_flags), ("rejected", profile.reject_flags)):
+        if flags:
+            parts.append("%s: %s" % (verb, ", ".join(criteria.FLAGS[f].lower() for f in flags)))
     return " · ".join(parts)
 
 
-def _coverage_table(rows: Iterable[Dict[str, Any]]) -> str:
+def coverage_note(row: Dict[str, Any]) -> str:
+    """What a reader must know about a source's run, in one line: what failed and how much was left unread."""
+    notes = list(row["problems"])
+    for count, wording in (
+        (row["details_failed"], "%d detail page%s could not be read"),
+        (row["details_gone"], "%d listing page%s no longer available"),
+        (row["details_deferred"], "%d detail page%s left for a later run (raise max_detail_pages or run again)"),
+        (row["details_unread"], "%d detail page%s not fetched yet"),
+    ):
+        if count:
+            notes.append(wording % (count, "" if count == 1 else "s"))
+    if row["truncated"]:
+        notes.append("page limit reached on %d search(es)" % len(row["truncated"]))
+    return "; ".join(notes)
+
+
+def _is_manual(row: Dict[str, Any]) -> bool:
+    return row["outcome"] == "manual"
+
+
+def _coverage_table(rows: List[Dict[str, Any]]) -> str:
+    """What each source that was searched, or should have been, yielded."""
     body = []
     for row in rows:
-        css = {"searched": "ok", "partial": "partial", "failed": "failed", "incomplete": "failed"}.get(row["outcome"], "")
-        detail = "; ".join(row["problems"])
-        if row["truncated"]:
-            detail = (detail + "; " if detail else "") + "page limit reached on %d search(es)" % len(row["truncated"])
-        if row["outcome"] == "manual":
-            detail = row["manual"]
+        css = {"searched": "ok", "browsed by hand": "ok", "partial": "partial", "failed": "failed", "incomplete": "failed"}.get(row["outcome"], "")
         body.append(
             "<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td class=\"%s\">%s</td><td>%d</td><td>%d</td><td>%d</td><td>%s</td></tr>"
-            % (_e(row["home"]), _e(row["name"]), _e(row["kind"]), css, _e(row["outcome"]), row["pages"], row["cards"], row["details"], _e(detail))
+            % (_e(row["home"]), _e(row["name"]), _e(row["kind"]), css, _e(row["outcome"]), row["pages"], row["cards"], row["details"], _e(coverage_note(row)))
         )
     return (
         "<table><thead><tr><th>Source</th><th>Kind</th><th>Outcome</th><th>Pages</th><th>Cards</th>"
@@ -249,11 +264,22 @@ def _coverage_table(rows: Iterable[Dict[str, Any]]) -> str:
     )
 
 
+def _manual_table(rows: List[Dict[str, Any]]) -> str:
+    """Sources nobody has browsed in this run, most productive first."""
+    body = [
+        "<tr><td><a href=\"%s\">%s</a></td><td class=\"id\">%s</td><td>%s</td><td>%s</td></tr>"
+        % (_e(row["home"]), _e(row["name"]), _e(row["id"]), _e(row["kind"]), _e(row["access"]))
+        for row in sorted(rows, key=lambda r: (r["rank"], r["kind"], r["id"]))
+    ]
+    return "<table><thead><tr><th>Source</th><th>Id</th><th>Kind</th><th>Access</th></tr></thead><tbody>%s</tbody></table>" % "".join(body)
+
+
 def html_report(
     ws: Workspace,
     profile: Profile,
     properties: List[Dict[str, Any]],
     gone: List[Dict[str, Any]],
+    dropped: List[Dict[str, Any]],
     coverage: List[Dict[str, Any]],
     rejected_count: int,
     listing_count: int,
@@ -263,8 +289,9 @@ def html_report(
     dismissed = [p for p in properties if p.get("mark") == "dismissed"]
     counts = {status: sum(1 for p in shown if p["status"] == status) for status, _t, _d in SECTIONS}
     new = sum(1 for p in shown if p.get("change") == "new")
-    searched = sum(1 for r in coverage if r["outcome"] in ("searched", "partial"))
+    searched = sum(1 for r in coverage if r["outcome"] in ("searched", "partial", "browsed by hand"))
     troubled = sum(1 for r in coverage if r["outcome"] in ("partial", "failed", "incomplete"))
+    unsearched = sum(1 for r in coverage if _is_manual(r) and r["covers_profile"])
     out = [
         "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
@@ -280,6 +307,7 @@ def html_report(
         "<div><b>%d</b><span>Delisted</span></div>" % len(gone),
         "<div><b>%d</b><span>Sources searched</span></div>" % searched,
         "<div><b>%d</b><span>Sources with problems</span></div>" % troubled,
+        "<div><b>%d</b><span>Sources not searched</span></div>" % unsearched,
         "</div>",
     ]
     for status, title, blurb in SECTIONS:
@@ -298,6 +326,16 @@ def html_report(
                 % (_e(row["id"]), _e(row.get("title")), _e(row.get("address")), _e(yen(last)), _e(row.get("first_seen")))
             )
         out.append("</tbody></table>")
+    if dropped:
+        out.append("<h2>Ruled out since the last run (%d)</h2><p class=\"sub\">Candidates of an earlier run that are still listed "
+                   "and that this run's reading rejects.</p>" % len(dropped))
+        out.append("<table><thead><tr><th>Id</th><th>Property</th><th>Why</th></tr></thead><tbody>")
+        for row in dropped:
+            out.append(
+                "<tr><td class=\"id\">%s</td><td>%s<br>%s</td><td>%s</td></tr>"
+                % (_e(row["id"]), _e(row.get("title")), _e(row.get("address")), _e(row["reason"]))
+            )
+        out.append("</tbody></table>")
     if dismissed:
         out.append("<h2>Dismissed (%d)</h2><table><tbody>" % len(dismissed))
         for p in sorted(dismissed, key=lambda p: p["id"]):
@@ -306,9 +344,18 @@ def html_report(
                 % (_e(p["id"]), _e(p.get("title")), _e(yen(p.get("price_jpy"))), _e(p.get("note")))
             )
         out.append("</tbody></table>")
-    out.append("<h2>Coverage</h2><p class=\"sub\">A source marked manual has no search this tool can run; browse it by hand as its note says. "
+    tried = [r for r in coverage if not _is_manual(r)]
+    unbrowsed = [r for r in coverage if _is_manual(r) and r["covers_profile"]]
+    out.append("<h2>Coverage</h2><p class=\"sub\">What each source yielded in this run. "
                "Rejected listings and the reason for each are in rejected.csv.</p>")
-    out.append(_coverage_table(coverage))
+    out.append(_coverage_table(tried))
+    if unbrowsed:
+        out.append(
+            "<h2>Not searched (%d)</h2><p class=\"sub\">Sources that list property in the profile's areas and were not read in this run: "
+            "they have no search this tool can run, or they keep automated browsers out. Most productive first. "
+            "<code>jpsearch sources --id ID</code> prints how to search one by hand.</p>" % len(unbrowsed)
+        )
+        out.append(_manual_table(unbrowsed))
     out.append("</main></body></html>")
     return "\n".join(out)
 
@@ -316,8 +363,14 @@ def html_report(
 # ---------------------------------------------------------------- Markdown, CSV, JSON
 
 
-def markdown_report(ws: Workspace, profile: Profile, properties: List[Dict[str, Any]], gone: List[Dict[str, Any]], coverage: List[Dict[str, Any]]) -> str:
-    run_year = int(ws.run_date[:4])
+def markdown_report(
+    ws: Workspace,
+    profile: Profile,
+    properties: List[Dict[str, Any]],
+    gone: List[Dict[str, Any]],
+    dropped: List[Dict[str, Any]],
+    coverage: List[Dict[str, Any]],
+) -> str:
     shown = [p for p in properties if p.get("mark") != "dismissed"]
     lines = ["# Japan property search, run %s" % ws.run, "", _criteria_summary(profile), ""]
     for status, title, _blurb in SECTIONS:
@@ -349,20 +402,29 @@ def markdown_report(ws: Workspace, profile: Profile, properties: List[Dict[str, 
         lines += ["## Delisted since the last run (%d)" % len(gone), ""]
         lines += ["- %s: %s, %s" % (g["id"], g.get("title") or "", g.get("address") or "") for g in gone]
         lines.append("")
-    lines += ["## Coverage", "", "| Source | Outcome | Pages | Cards | Notes |", "|---|---|---|---|---|"]
+    if dropped:
+        lines += ["## Ruled out since the last run (%d)" % len(dropped), ""]
+        lines += ["- %s: %s, %s: %s" % (d["id"], d.get("title") or "", d.get("address") or "", d["reason"]) for d in dropped]
+        lines.append("")
+    lines += ["## Coverage", "", "| Source | Outcome | Pages | Cards | Detail pages | Notes |", "|---|---|---|---|---|---|"]
     for row in coverage:
-        note = row["manual"] if row["outcome"] == "manual" else "; ".join(row["problems"])
-        lines.append("| %s | %s | %d | %d | %s |" % (row["name"], row["outcome"], row["pages"], row["cards"], note.replace("|", "/")))
+        if not _is_manual(row):
+            lines.append(
+                "| %s | %s | %d | %d | %d | %s |"
+                % (row["name"], row["outcome"], row["pages"], row["cards"], row["details"], coverage_note(row).replace("|", "/"))
+            )
+    unbrowsed = sorted((r for r in coverage if _is_manual(r) and r["covers_profile"]), key=lambda r: (r["rank"], r["kind"], r["id"]))
+    if unbrowsed:
+        lines += ["", "Not searched, to browse by hand (%d, most productive first): %s." % (len(unbrowsed), ", ".join(r["id"] for r in unbrowsed))]
     lines.append("")
-    _ = run_year
     return "\n".join(lines)
 
 
 _CSV_FIELDS = (
     "id", "status", "change", "mark", "zone", "price_jpy", "price_max_jpy", "land_m2", "building_m2", "built_year",
-    "built_month", "structure", "floors", "basement", "layout", "prefecture", "municipality", "address", "access",
-    "land_right", "zoning", "coverage_far", "road", "flags", "open_points", "first_seen", "sources", "listing_count",
-    "url", "all_urls", "title", "note",
+    "built_month", "structure", "structure_text", "floors", "basement", "layout", "prefecture", "municipality", "address",
+    "access", "land_right", "zoning", "coverage_far", "road", "water", "sewer", "gas", "hot_spring", "management_fee",
+    "flags", "open_points", "first_seen", "sources", "listing_count", "url", "all_urls", "title", "note",
 )
 
 
@@ -383,6 +445,7 @@ def write_all(
     properties: List[Dict[str, Any]],
     rejected: List[Dict[str, Any]],
     gone: List[Dict[str, Any]],
+    dropped: List[Dict[str, Any]],
     coverage: List[Dict[str, Any]],
     listing_count: int,
 ) -> Dict[str, str]:
@@ -397,9 +460,9 @@ def write_all(
         "rejected": run / "rejected.csv",
         "coverage": run / "coverage.json",
     }
-    paths["html"].write_text(html_report(ws, profile, properties, gone, coverage, len(rejected), listing_count), encoding="utf-8")
-    paths["markdown"].write_text(markdown_report(ws, profile, properties, gone, coverage), encoding="utf-8")
-    write_json(paths["json"], {"run": ws.run, "profile": profile.name, "properties": properties, "delisted": gone})
+    paths["html"].write_text(html_report(ws, profile, properties, gone, dropped, coverage, len(rejected), listing_count), encoding="utf-8")
+    paths["markdown"].write_text(markdown_report(ws, profile, properties, gone, dropped, coverage), encoding="utf-8")
+    write_json(paths["json"], {"run": ws.run, "profile": profile.name, "properties": properties, "delisted": gone, "ruled_out": dropped})
     write_json(paths["coverage"], coverage)
     with paths["csv"].open("w", newline="", encoding="utf-8-sig") as handle:
         writer = csv.DictWriter(handle, fieldnames=_CSV_FIELDS)

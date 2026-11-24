@@ -1,6 +1,7 @@
 """Where a search keeps its files.
 
     <home>/profile.json                 the buyer's criteria (edit this)
+    <home>/sources.json                 optional: the buyer's own source entries, laid over the shipped registry
     <home>/search/state.json            what earlier runs saw: first seen, prices, marks
     <home>/search/cache/discover/       city lists per site, reused between runs
     <home>/search/runs/<date>/          one run: plan, raw captures, report
@@ -43,6 +44,7 @@ class Workspace:
         self.run = run
         self.run_date = run[:10]
         self.profile_path = home / "profile.json"
+        self.sources_path = home / "sources.json"
         self.search_dir = home / "search"
         self.state_path = self.search_dir / "state.json"
         self.discover_dir = self.search_dir / "cache" / "discover"

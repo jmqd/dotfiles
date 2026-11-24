@@ -12,13 +12,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import criteria
-import dedupe
 import pipeline
 import plan as planning
 import registry
 import report
 import robots
 import state as state_store
+import text
 from workspace import Workspace, default_home, today, url_key, write_json
 
 SKILL_DIR = Path(__file__).resolve().parent.parent.parent
@@ -34,7 +34,7 @@ def _load(args: argparse.Namespace) -> Tuple[Workspace, criteria.Profile, List[r
     ws = _workspace(args)
     if not ws.profile_path.exists():
         raise SystemExit("no profile at %s; run `jpsearch init` first" % ws.profile_path)
-    return ws, criteria.load_profile(ws.profile_path), registry.load_registry(), state_store.load(ws)
+    return ws, criteria.load_profile(ws.profile_path), registry.load_registry(overlay=ws.sources_path), state_store.load(ws)
 
 
 def _cmd_init(args: argparse.Namespace) -> int:
@@ -51,7 +51,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
 
 def _cmd_plan(args: argparse.Namespace) -> int:
     ws, profile, sources, state = _load(args)
-    document = planning.Planner(ws, profile, sources, state).build()
+    document = planning.Planner(ws, profile, sources, state, retry_failed=args.retry_failed).build()
     document["jpx"] = str(JPX_PATH)
     write_json(ws.plan_path, document)
     counts = document["counts"]
@@ -73,6 +73,31 @@ def _rejection(verdict: criteria.Verdict) -> str:
     return "; ".join(verdict.reasons(criteria.FAIL))
 
 
+_UNREAD = (
+    (planning.GONE, "the listing page is no longer available: it may have been withdrawn"),
+    (planning.FAILED, "its detail page could not be read"),
+    (planning.DISALLOWED, "robots.txt forbids reading its detail page: open the link to check it"),
+    (planning.DEFERRED, "its detail page was left for a later run: the detail-page limit was reached"),
+)
+
+
+def _unread_detail(prop: Dict[str, Any], detail_tasks: Dict[str, Dict[str, Any]]) -> List[str]:
+    """Why a property is judged from its result card alone, when it is.
+
+    Without this a page that was never read looks the same in the report as
+    a page that states nothing.
+    """
+    if prop["has_detail"]:
+        return []
+    tasks = [detail_tasks[url] for url in prop["urls"] if url in detail_tasks]
+    for status, wording in _UNREAD:
+        task = next((t for t in tasks if t["status"] == status), None)
+        if task is not None:
+            detail = " (%s)" % task["why"] if status == planning.FAILED and task.get("why") else ""
+            return [wording + detail]
+    return ["its detail page has not been read yet"]
+
+
 def _cmd_build(args: argparse.Namespace) -> int:
     ws, profile, sources, state = _load(args)
     planner = planning.Planner(ws, profile, sources, state)
@@ -80,51 +105,48 @@ def _cmd_build(args: argparse.Namespace) -> int:
     document["jpx"] = str(JPX_PATH)
     write_json(ws.plan_path, document)
     coverage = planning.coverage(document, sources, profile)
+    detail_tasks = {t["url"]: t for t in document["tasks"] if t["kind"] == "detail"}
 
     records, captures = pipeline.usable_details(ws, state, profile.detail_cache_days)
     state_store.remember_details(state, ws.run_date, records)
     merged = pipeline.merged_listings(planner.cards, records, captures)
 
     rejected: List[Dict[str, Any]] = []
-    live: List[Dict[str, Any]] = []
-    for listing in merged:
-        verdict = criteria.judge(profile, listing)
-        if verdict.status == criteria.REJECTED:
-            rejected.append(dict(listing, reason=_rejection(verdict)))
-        else:
-            live.append(listing)
-
     candidates: List[Dict[str, Any]] = []
-    for group in dedupe.cluster(live):
-        prop = dedupe.merge(group)
-        verdict = criteria.judge(profile, prop)
+    for judged in pipeline.judged_properties(profile, merged):
+        prop, verdict = judged.prop, judged.verdict
         if verdict.status == criteria.REJECTED:
-            rejected.extend(dict(listing, reason=_rejection(verdict)) for listing in group)
+            rejected.extend(dict(listing, reason=_rejection(verdict)) for listing in judged.listings)
             continue
         prop["status"] = verdict.status
         prop["zone"] = verdict.zone
-        prop["open_points"] = verdict.reasons(criteria.UNKNOWN, criteria.NEAR)
+        prop["open_points"] = verdict.reasons(criteria.UNKNOWN, criteria.NEAR) + _unread_detail(prop, detail_tasks)
         prop["checks"] = [{"criterion": c.criterion, "result": c.result, "detail": c.detail} for c in verdict.checks]
         candidates.append(prop)
 
     searched = [row["id"] for row in coverage if row["outcome"] == "searched"]
-    annotated = state_store.apply_run(state, ws.run, ws.run_date, candidates, searched)
+    ruled_out = {listing["url"]: listing["reason"] for listing in rejected}
+    annotated = state_store.apply_run(state, ws.run, ws.run_date, candidates, searched, ruled_out)
     gone = state_store.gone(state, ws.run_date)
+    dropped = state_store.dropped(state, ws.run)
     state_store.save(ws, state)
-    paths = report.write_all(ws, profile, annotated, rejected, gone, coverage, len(merged))
+    paths = report.write_all(ws, profile, annotated, rejected, gone, dropped, coverage, len(merged))
 
     by_status: Dict[str, int] = {}
     for prop in annotated:
         by_status[prop["status"]] = by_status.get(prop["status"], 0) + 1
     print("listings read: %d; rejected: %d" % (len(merged), len(rejected)))
     print("properties: " + (", ".join("%s %d" % (k, by_status[k]) for k in sorted(by_status)) or "none"))
-    print("new this run: %d; delisted: %d" % (sum(1 for p in annotated if p["change"] == "new"), len(gone)))
+    print("new this run: %d; delisted: %d; ruled out: %d" % (sum(1 for p in annotated if p["change"] == "new"), len(gone), len(dropped)))
     unfinished = document["counts"].get(planning.TODO, 0) + document["counts"].get(planning.WAITING, 0)
     if unfinished:
-        print("WARNING: %d tasks were still unfetched; this report is incomplete" % unfinished)
+        print("WARNING: %d pages were still unfetched; this report is incomplete" % unfinished)
     for row in coverage:
-        if row["outcome"] in ("failed", "partial", "incomplete"):
-            print("source %s: %s (%s)" % (row["id"], row["outcome"], "; ".join(row["problems"])[:200]))
+        if row["outcome"] in ("failed", "partial", "incomplete", "not applicable"):
+            print("source %s: %s (%s)" % (row["id"], row["outcome"], report.coverage_note(row)[:300]))
+    unbrowsed = sum(1 for row in coverage if row["outcome"] == "manual" and row["covers_profile"])
+    if unbrowsed:
+        print("not searched: %d sources to browse by hand (`jpsearch sources --mode manual`)" % unbrowsed)
     for name in ("html", "markdown", "csv", "json", "rejected"):
         print("%-9s %s" % (name, paths[name]))
     return 0
@@ -174,16 +196,66 @@ def _cmd_add(args: argparse.Namespace) -> int:
         "url": url,
         "by_hand": True,
     }
+    if args.prefecture:
+        prefecture = text.parse_address(args.prefecture).prefecture
+        if prefecture is None:
+            print("error: --prefecture must name a prefecture, such as 長野県 or Nagano", file=sys.stderr)
+            return 2
+        task["prefecture"] = prefecture
     write_json(out, {"task": task, "fetched_at": datetime.datetime.now().astimezone().isoformat(), "error": None, "result": result})
     count = len(result.get("cards") or []) if args.kind == "list" else len(result.get("pairs") or [])
     print("filed %s (%d %s) as %s" % (url, count, "cards" if args.kind == "list" else "fields", out))
     return 0
 
 
-def _cmd_sources(_args: argparse.Namespace) -> int:
-    for source in registry.load_registry():
-        mode = "auto" if source.searches else "manual"
-        print("%-18s %-10s %-6s %-8s %s  %s" % (source.id, source.kind, mode, source.access, source.verified, source.home))
+def _mode(source: registry.Source) -> str:
+    return "auto" if source.searches else "manual"
+
+
+def _areas_label(source: registry.Source) -> str:
+    if not source.areas:
+        return "nationwide"
+    names = [text.PREF_ROMAJI[p] for p in source.areas]
+    return ", ".join(names[:4]) + (" +%d" % (len(names) - 4) if len(names) > 4 else "")
+
+
+def _print_source(source: registry.Source) -> None:
+    print("%s  %s (%s)" % (source.id, source.name, source.name_ja))
+    print("kind: %s; mode: %s; access: %s; rank: %d; checked: %s" % (source.kind, _mode(source), source.access, source.rank, source.verified or "never"))
+    print("home: %s" % source.home)
+    print("covers: %s" % (source.coverage or _areas_label(source)))
+    for search in source.searches:
+        print("search (%s, per %s): %s" % (search.listing_type, search.scope, search.url))
+    for heading, body in (("Notes", source.notes), ("How to search it by hand", source.manual), ("Largest photos", source.photo_rule)):
+        if body:
+            print("\n%s:\n%s" % (heading, body))
+
+
+def _cmd_sources(args: argparse.Namespace) -> int:
+    sources = registry.load_registry(overlay=_workspace(args).sources_path)
+    if args.id:
+        source = next((s for s in sources if s.id == args.id), None)
+        if source is None:
+            print("error: no source with id %r; run `jpsearch sources` for the list" % args.id, file=sys.stderr)
+            return 1
+        _print_source(source)
+        return 0
+    area = None
+    if args.area:
+        area = text.parse_address(args.area).prefecture
+        if area is None:
+            print("error: --area must name a prefecture, such as 長野県 or Nagano", file=sys.stderr)
+            return 2
+    chosen = [
+        s for s in sources
+        if (not args.mode or _mode(s) == args.mode) and (not args.kind or s.kind == args.kind) and (area is None or s.covers((area,)))
+    ]
+    # Automated sources first, then by how many matching houses a source held when last checked.
+    chosen.sort(key=lambda s: (_mode(s) != "auto", s.rank, registry.KINDS.index(s.kind), s.id))
+    print("%-22s %-10s %-6s %-10s %-4s %s" % ("id", "kind", "mode", "access", "rank", "covers"))
+    for source in chosen:
+        print("%-22s %-10s %-6s %-10s %-4d %s" % (source.id, source.kind, _mode(source), source.access, source.rank, _areas_label(source)))
+    print("%d sources; `jpsearch sources --id ID` prints how to search one" % len(chosen))
     return 0
 
 
@@ -208,6 +280,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=_cmd_init)
 
     p = sub.add_parser("plan", parents=[common], help="write plan.json: what to fetch next, given what is already captured")
+    p.add_argument("--retry-failed", action="store_true", help="queue every page whose load failed again, however often it was tried")
     p.set_defaults(func=_cmd_plan)
 
     p = sub.add_parser("build", parents=[common], help="judge, deduplicate and report everything captured in this run")
@@ -225,9 +298,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--source", required=True, help="source id from `jpsearch sources`, or a new short id for an unlisted site")
     p.add_argument("--listing-type", default="used_house", help="used_house (default), new_house, land or villa")
     p.add_argument("--url", help="page URL, when the capture does not carry it")
+    p.add_argument("--prefecture", help="the prefecture a results page was filtered to, for sites whose cards omit it")
     p.set_defaults(func=_cmd_add)
 
-    p = sub.add_parser("sources", help="list the source registry")
+    p = sub.add_parser("sources", parents=[common], help="list the source registry, or print one source in full")
+    p.add_argument("--mode", choices=["auto", "manual"], help="auto: this tool can search it; manual: browse it by hand")
+    p.add_argument("--kind", choices=list(registry.KINDS))
+    p.add_argument("--area", help="only sources covering this prefecture")
+    p.add_argument("--id", help="print everything about one source, including how to search it by hand")
     p.set_defaults(func=_cmd_sources)
 
     p = sub.add_parser("robots", help="check URLs against a saved robots.txt; exit 1 if any is disallowed")

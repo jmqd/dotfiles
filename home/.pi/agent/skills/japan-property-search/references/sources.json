@@ -6,10 +6,14 @@
       "name_ja": "SUUMO（スーモ）",
       "kind": "portal",
       "coverage": "nationwide",
+      "areas": [],
       "home": "https://suumo.jp/",
       "verified": "2026-11-25",
       "access": "ok",
-      "notes": "robots.txt disallows the search-form target /jj/bukken/ichiran/JJ012FC001/. The theme path /chukoikkodate/{pref}/nj_316/ is allowed and lists a whole prefecture once kb=1 lifts its price floor; it takes the same hb, tb, sort and paging parameters (verified: Nagano's total equals the sum of its city counts, and Tokyo's Suginami cards match the Suginami city search). hb and tb accept only their listed values, largest 150, so results are sorted by building area, largest first, and paging stops below the threshold. Structure is only on the detail page (構造・工法). One house is often listed by several agents. Fallback if nj_316 stops working: the city form /chukoikkodate/{pref}/sc_{city}/ with the same parameters; cities are linked from /chukoikkodate/{pref}/city/.",
+      "rank": 1,
+      "notes": "robots.txt disallows the search-form target /jj/bukken/ichiran/JJ012FC001/. The theme path /chukoikkodate/{pref}/nj_316/ is allowed and lists a whole prefecture once kb=1 lifts its price floor; it takes the same hb, tb, sort and paging parameters (verified: Nagano's total equals the sum of its city counts, and Tokyo's Suginami cards match the Suginami city search). hb and tb accept only their listed values, largest 150, so results are sorted by building area, largest first, and paging stops below the threshold. Structure is only on the detail page (構造・工法). One house is often listed by several agents.",
+      "manual": "If the prefecture path stops working, use the city form: https://suumo.jp/chukoikkodate/{pref}/sc_{city}/?kb=1&hb=150&tb=150&po=10&pj=2&pc=100 (cities are linked from https://suumo.jp/chukoikkodate/{pref}/city/). Read cards with JPX.cards({ selector: '.property_unit' }) and stop when 建物面積 falls below the profile's minimum.",
+      "photo_rule": "https://img01.suumo.com/jj/resizeImage?src=gazo%2Fbukken%2F...jpg&w=..&h=.. is a view of https://img01.suumo.com/front/gazo/bukken/...jpg, 1000 px on the long side. The gallery's full list is in hidden inputs and lightbox links; JPX reads both.",
       "searches": [
         {
           "listing_type": "used_house",
@@ -23,6 +27,207 @@
           "page_first": 1,
           "max_pages": 12,
           "hints": { "card": ".property_unit", "hits": ".pagination_set-hit" }
+        }
+      ]
+    },
+    {
+      "id": "yahoo",
+      "name": "Yahoo! Real Estate",
+      "name_ja": "Yahoo!不動産",
+      "kind": "portal",
+      "coverage": "nationwide",
+      "areas": [],
+      "home": "https://realestate.yahoo.co.jp/",
+      "verified": "2026-11-25",
+      "access": "ok",
+      "rank": 1,
+      "notes": "The search path is /used/house/search/{region}/{prefecture}/ with a plain query string. robots.txt disallows the bare search root with a query, any bracketed parameter (*?*[*]=) and start=, so the path form with ba_from, la_from, sort and page is the allowed one. ba_from (building) takes any number; la_from (land) takes values up to 500 only, and a larger one returns a system error page. There is no structure filter and structure is not on the cards. Cards have no labels: land and building share the line '土地 200.2m2 / 建物 138.81m2'. Whole rental blocks (賃貸中, 1R/1K layouts) are filed as used houses. Verified for Tokyo (03/13) and Nagano (04/20); the other region numbers follow the site's own region list.",
+      "manual": "Open https://realestate.yahoo.co.jp/used/house/search/{region}/{pref}/?ba_from=250&la_from=500&sort=-ba&sort=-info_open&sort=min_st&sort=p_from&sort=-area&sort=-age (30 per page, &page=2 ...). For Tokyo's wards use la_from=190. Read cards with JPX.cards({ selector: 'li.ListBukken2__list__item' }).",
+      "photo_rule": "https://realestate-pctr.c.yimg.jp/ds/realestate-buy-image/...jpg?...&w=188&h=188 -> the same URL without its query string is the stored photo (854x570 measured). Asking for more than the stored size returns a 'no image' placeholder.",
+      "searches": [
+        {
+          "listing_type": "used_house",
+          "scope": "prefecture",
+          "url": "https://realestate.yahoo.co.jp/used/house/search/{pref}/?ba_from={building_min}&la_from={land_min}&sort=-ba&sort=-info_open&sort=min_st&sort=p_from&sort=-area&sort=-age&page={page}",
+          "pref_format": "slugs",
+          "pref_slugs": {
+            "北海道": "01/01",
+            "青森県": "02/02", "岩手県": "02/03", "宮城県": "02/04", "秋田県": "02/05", "山形県": "02/06", "福島県": "02/07",
+            "茨城県": "03/08", "栃木県": "03/09", "群馬県": "03/10", "埼玉県": "03/11", "千葉県": "03/12", "東京都": "03/13",
+            "神奈川県": "03/14", "山梨県": "03/19",
+            "新潟県": "04/15", "富山県": "04/16", "石川県": "04/17", "福井県": "04/18", "長野県": "04/20",
+            "岐阜県": "05/21", "静岡県": "05/22", "愛知県": "05/23", "三重県": "05/24",
+            "滋賀県": "06/25", "京都府": "06/26", "大阪府": "06/27", "兵庫県": "06/28", "奈良県": "06/29", "和歌山県": "06/30",
+            "鳥取県": "07/31", "島根県": "07/32", "岡山県": "07/33", "広島県": "07/34", "山口県": "07/35",
+            "徳島県": "08/36", "香川県": "08/37", "愛媛県": "08/38", "高知県": "08/39",
+            "福岡県": "09/40", "佐賀県": "09/41", "長崎県": "09/42", "熊本県": "09/43", "大分県": "09/44", "宮崎県": "09/45",
+            "鹿児島県": "09/46", "沖縄県": "09/47"
+          },
+          "building_min": "free",
+          "land_min": { "free_up_to": 500 },
+          "sorted_by": "building_desc",
+          "per_page": 30,
+          "max_pages": 20,
+          "hints": { "card": "li.ListBukken2__list__item", "hits": "#_ResultCountDisplay" }
+        }
+      ]
+    },
+    {
+      "id": "fudousan-japan",
+      "name": "Fudousan Japan (industry-wide site)",
+      "name_ja": "不動産ジャパン",
+      "kind": "aggregator",
+      "coverage": "nationwide; carries the listings of the four trade associations (全宅連, 全日, FRK, 全住協)",
+      "areas": [],
+      "home": "https://www.fudousan.or.jp/",
+      "verified": "2026-11-25",
+      "access": "ok",
+      "rank": 1,
+      "notes": "A search must name its municipalities (m_adr[]); none gives HTTP 400. All of a prefecture's codes fit in one URL (61 for Nagano). bld_area_from and land_from take any number. sort1=ASRT05 is building area, largest first. Every card states 建物構造 (ＲＣ, ＳＲＣ, 木造, 鉄骨造, その他), so wooden houses are ruled out without opening them. The site is slow: 10 to 45 s a page, and now and then a CloudFront 502 or 504 that succeeds on a second try. robots.txt disallows /system/photo/, where the photos of FRK members' listings live.",
+      "manual": "Open https://www.fudousan.or.jp/property/buy/{pref code}/area?ptm%5B%5D=0102, tick the municipalities, then add &is_new%5B%5D=NWUS02&bld_area_from=250&land_from=1000&sort1=ASRT05&limit=100 to the result URL. Read cards with JPX.cards({ selector: 'div.prop-row', link: 'a.prop-title-link' }).",
+      "photo_rule": "全宅連 listings: https://storage3.zentaku.or.jp/prod/.../image/{id}_{hash}.jpg at stored size (640 px long side); no larger form found. FRK listings use /system/photo/frk/{id}.gif, which robots.txt disallows.",
+      "searches": [
+        {
+          "listing_type": "used_house",
+          "scope": "prefecture",
+          "url": "https://www.fudousan.or.jp/property/buy/{pref}/area/list?ptm%5B%5D=0102&{cities}&is_new%5B%5D=NWUS02&bld_area_from={building_min}&land_from={land_min}&sort1=ASRT05&limit=100&page={page}",
+          "pref_format": "code",
+          "cities_param": "m_adr%5B%5D",
+          "cities_per_url": 24,
+          "building_min": "free",
+          "land_min": "free",
+          "sorted_by": "building_desc",
+          "per_page": 100,
+          "max_pages": 10,
+          "hints": { "card": "div.prop-row", "link": "a.prop-title-link" },
+          "discover": {
+            "url": "https://www.fudousan.or.jp/property/buy/{pref}/area?ptm%5B%5D=0102",
+            "inputs": "input[name=\"m_adr[]\"]"
+          }
+        }
+      ]
+    },
+    {
+      "id": "hatomark",
+      "name": "Hatomark Site (Zentakuren)",
+      "name_ja": "ハトマークサイト",
+      "kind": "portal",
+      "coverage": "nationwide; listings of 全宅連 member agents",
+      "areas": [],
+      "home": "https://www.hatomarksite.com/",
+      "verified": "2026-11-25",
+      "access": "ok",
+      "rank": 2,
+      "notes": "Same search engine as 不動産ジャパン, which also carries these listings; this site adds map coordinates and more photos on the detail page. bld_area_from takes any number. Its land filter (land_area_all_from) is unreliable (it returned lots below the value asked for), so land is not filtered in the URL. sort1=ASRT36 is building area, largest first. Structure is not on the cards.",
+      "manual": "Open https://www.hatomarksite.com/search/zentaku/buy/house/area/{pref code}, tick the municipalities, then add &newuse%5B%5D=used&bld_area_from=250&sort1=ASRT36&limit=100 to the result URL. JPX.cards() reads the cards as they are.",
+      "photo_rule": "https://storage3.zentaku.or.jp/prod/.../regsys/{id}/image/...jpg at stored size (640 px long side); no larger form found.",
+      "searches": [
+        {
+          "listing_type": "used_house",
+          "scope": "prefecture",
+          "url": "https://www.hatomarksite.com/search/zentaku/buy/house/area/{pref}/list?{cities}&newuse%5B%5D=used&bld_area_from={building_min}&sort1=ASRT36&limit=100&page={page}",
+          "pref_format": "code",
+          "cities_param": "m_adr%5B%5D",
+          "cities_per_url": 100,
+          "building_min": "free",
+          "sorted_by": "building_desc",
+          "per_page": 100,
+          "max_pages": 10,
+          "hints": { "card": "div.search-result-box", "link": "a.detail-btn" },
+          "discover": {
+            "url": "https://www.hatomarksite.com/search/zentaku/buy/house/area/{pref}",
+            "inputs": "input[name=\"m_adr[]\"]"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rehouse",
+      "name": "Mitsui no Rehouse",
+      "name_ja": "三井のリハウス",
+      "kind": "broker",
+      "coverage": "Tokyo, Kanagawa, Saitama and Chiba on the main site; Kansai, Chubu, Sapporo, Tohoku and Chugoku have regional sites that are not searched here",
+      "areas": ["東京都", "神奈川県", "埼玉県", "千葉県"],
+      "home": "https://www.rehouse.co.jp/",
+      "verified": "2026-11-25",
+      "access": "ok",
+      "rank": 1,
+      "notes": "One URL names a first municipality in its path and the others in cityCode. minGrossFloorArea and minLandArea take any number; order=grossFloorAreaDesc sorts by building area, largest first; 30 per page. The 一戸建て search also returns whole blocks (一棟マンション, 店舗・事務所), told apart by the first line of each card. Cards have no labels. Structure is on the detail page (建物構造). robots.txt disallows /tokyoluxury/. Verified for Tokyo; the regional sites (/kansai/, /chubu/, /sapporo/, /tohoku/, /chugoku/) were not examined.",
+      "manual": "Open https://www.rehouse.co.jp/buy/kodate/prefecture/{pref code}/city/ and pick the municipalities, then add &minGrossFloorArea=250&minLandArea=1000&order=grossFloorAreaDesc to the result URL (minLandArea=190 for Tokyo's wards). Read cards with JPX.cards({ selector: '.property-index-card' }); keep those whose first line is 中古戸建.",
+      "photo_rule": "https://img2-direct.miraie-net.com/orgt/.../{n}_pcViewLargerHeight.jpg (1201x900) -> the same path ending _original.jpg (1920x1439).",
+      "searches": [
+        {
+          "listing_type": "used_house",
+          "scope": "prefecture",
+          "url": "https://www.rehouse.co.jp/buy/kodate/prefecture/{pref}/city/{city}/?cityCode={cities}&minGrossFloorArea={building_min}&minLandArea={land_min}&order=grossFloorAreaDesc&page={page}",
+          "pref_format": "code",
+          "prefectures": ["東京都", "神奈川県", "埼玉県", "千葉県"],
+          "cities_per_url": 100,
+          "building_min": "free",
+          "land_min": "free",
+          "sorted_by": "building_desc",
+          "per_page": 30,
+          "max_pages": 12,
+          "hints": { "card": ".property-index-card", "hits": ".property-count", "next": "a.pagination-next" },
+          "discover": {
+            "url": "https://www.rehouse.co.jp/buy/kodate/prefecture/{pref}/city/",
+            "link": "/buy/kodate/prefecture/\\d+/city/(\\d{5})/"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sumai1",
+      "name": "Mitsubishi UFJ Real Estate Services (Sumai1)",
+      "name_ja": "三菱UFJ不動産販売「住まい１」",
+      "kind": "broker",
+      "coverage": "Greater Tokyo, Nagoya and Kansai, with some listings elsewhere",
+      "areas": [],
+      "home": "https://www.sumai1.com/",
+      "verified": "2026-11-25",
+      "access": "ok",
+      "rank": 2,
+      "notes": "One URL lists a prefecture, new and used houses together, 100 per page. sort=9 is building area, largest first. The building filter stops at 80 m² and ignores larger values, so it is left out and paging stops below the threshold instead. tochi_from (land) takes only its listed values. Every card states 構造, so wooden houses are ruled out without opening them. The stock includes other brokers' listings. A prefecture without listings returns an empty page.",
+      "manual": "Open https://www.sumai1.com/buyers/kodate/tod_{pref code}?sort=9&disp=100&tochi_from=300 and read cards with JPX.cards(); stop when 建物面積 falls below the profile's minimum.",
+      "photo_rule": "/assets/img/web/article-image/{dir}/{n}_{seq}_3.webp is the largest (600x600); _1 is 125 px and _2 is 340 px.",
+      "searches": [
+        {
+          "listing_type": "used_house",
+          "scope": "prefecture",
+          "url": "https://www.sumai1.com/buyers/kodate/tod_{pref}/page/{page}?sort=9&disp=100&tochi_from={land_min}",
+          "pref_format": "code",
+          "land_min": [60, 70, 80, 90, 100, 150, 200, 300],
+          "sorted_by": "building_desc",
+          "per_page": 100,
+          "max_pages": 10,
+          "hints": { "card": "article.mod-estate-expansion" }
+        }
+      ]
+    },
+    {
+      "id": "tokyu-resort",
+      "name": "Tokyu Resort",
+      "name_ja": "東急リゾート",
+      "kind": "resort",
+      "coverage": "resort areas nationwide: Karuizawa, Tateshina and Yatsugatake, Nasu, Hakone, Izu, Atami, Fuji lakes, Kamakura and Hayama, Hakuba, Niseko, Okinawa and more",
+      "areas": [],
+      "home": "https://www.tokyu-resort.co.jp/",
+      "verified": "2026-11-25",
+      "access": "ok",
+      "rank": 1,
+      "notes": "One URL lists 一戸建て別荘 in every resort area. Its size filters are checkbox ranges, not minimums: only the top building range (SRC_BLDG[200], 200 m² and over) can stand for a minimum, so the search runs only for profiles that want nothing under 200 m², and land is not filtered. order=6 is building area, largest first; 30 per page whatever limit says. The result table states its labels once in a header table, which JPX matches to each row. Structure is on the detail page (構造), with 管理費 and 温泉 terms. robots.txt has no rules for general visitors. 保養所 and other buildings are a separate type (SHUBETSU_ID[4]) that this search leaves out.",
+      "manual": "Open https://www.tokyu-resort.co.jp/search/result/?limit=30&order=6&SHUBETSU_ID%5B2%5D=1&SRC_BLDG%5B200%5D=1 (add &SHUBETSU_ID%5B4%5D=1 to include 保養所 and other buildings; &page=2 for the next page). Read cards with JPX.cards({ selector: 'div.tb-list' }).",
+      "photo_rule": "https://map.tokyu-resort.co.jp/img/bukken/{small|medium|large}/{photo}.jpg: large is 1024x768. The image host is slow.",
+      "searches": [
+        {
+          "listing_type": "used_house",
+          "scope": "nationwide",
+          "url": "https://www.tokyu-resort.co.jp/search/result/?limit=30&order=6&SHUBETSU_ID%5B2%5D=1&SRC_BLDG%5B200%5D=1&page={page}",
+          "fixed_building_min": 200,
+          "sorted_by": "building_desc",
+          "per_page": 30,
+          "max_pages": 10,
+          "hints": { "card": "div.tb-list", "hits": "p.art-num" }
         }
       ]
     }

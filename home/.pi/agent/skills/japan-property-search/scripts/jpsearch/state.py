@@ -63,15 +63,29 @@ def _resolve_id(state: Dict[str, Any], url_index: Dict[str, str], prop: Dict[str
 
 
 def apply_run(
-    state: Dict[str, Any], run: str, run_date: str, properties: List[Dict[str, Any]], searched_sources: List[str]
+    state: Dict[str, Any],
+    run: str,
+    run_date: str,
+    properties: List[Dict[str, Any]],
+    searched_sources: List[str],
+    ruled_out: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Record this run's candidate properties and return them annotated with history.
 
     `properties` are the non-rejected properties, each with `status` set.
     `searched_sources` are the sources whose search completed; a tracked
     property is marked gone only when every source that listed it was
-    searched and none of them shows it now.
+    searched and none of them shows it now. `ruled_out` maps the URL of
+    each listing this run read and rejected to the reason: a tracked
+    property that is still listed but no longer qualifies is recorded as
+    dropped with that reason, which is a different thing from gone.
+
+    A run is built more than once (after a retry, after adding notes), so
+    what changed is measured against the state before the run first touched
+    a property, which each entry keeps in `before`. Building twice gives the
+    same answer as building once.
     """
+    ruled_out = ruled_out or {}
     tracked = state["properties"]
     url_index = {url: pid for pid, entry in tracked.items() for url in entry["urls"]}
     seen_now = set()
@@ -79,25 +93,36 @@ def apply_run(
     for prop in properties:
         pid = _resolve_id(state, url_index, prop)
         entry = tracked.get(pid)
-        change = "seen"
         if entry is None:
             entry = tracked[pid] = {
                 "first_seen": run_date, "last_seen": run_date, "urls": [], "sources": [], "prices": [],
                 "statuses": [], "mark": None, "note": "", "gone_since": None, "snapshot": {},
+                "before": {"run": run, "known": False, "price": None, "gone": False},
             }
-            change = "new"
-        elif entry.get("gone_since"):
-            change = "relisted"
+        elif (entry.get("before") or {}).get("run") != run:
+            entry["before"] = {
+                "run": run,
+                "known": True,
+                "price": entry["prices"][-1][1] if entry["prices"] else None,
+                "gone": bool(entry.get("gone_since")),
+            }
+        before = entry["before"]
         price = prop.get("price_jpy")
-        last_price = entry["prices"][-1][1] if entry["prices"] else None
-        if price is not None and price != last_price:
+        if not before["known"]:
+            change = "new"
+        elif before["gone"]:
+            change = "relisted"
+        elif price is not None and before["price"] is not None and price != before["price"]:
+            change = "price_down" if price < before["price"] else "price_up"
+        else:
+            change = "seen"
+        if price is not None and (not entry["prices"] or entry["prices"][-1][1] != price):
             entry["prices"].append([run_date, price])
-            if last_price is not None and change == "seen":
-                change = "price_down" if price < last_price else "price_up"
         if not entry["statuses"] or entry["statuses"][-1][1] != prop["status"]:
             entry["statuses"].append([run_date, prop["status"]])
         entry["last_seen"] = run_date
         entry["gone_since"] = None
+        entry["dropped"] = None
         entry["urls"] = sorted(set(entry["urls"]) | set(prop["urls"]))
         entry["sources"] = sorted(set(entry.get("sources") or []) | set(prop["sources"]))
         entry["snapshot"] = {f: prop.get(f) for f in _SNAPSHOT_FIELDS}
@@ -110,17 +135,28 @@ def apply_run(
                 id=pid,
                 change=change,
                 first_seen=entry["first_seen"],
-                previous_price_jpy=last_price if change in ("price_down", "price_up") else None,
+                previous_price_jpy=before["price"] if change in ("price_down", "price_up") else None,
                 prices=entry["prices"],
                 mark=entry.get("mark"),
                 note=entry.get("note") or "",
             )
         )
     searched = set(searched_sources)
-    for pid, entry in tracked.items():
-        if pid in seen_now or entry.get("gone_since"):
+    for pid, entry in list(tracked.items()):
+        if pid in seen_now:
             continue
-        if entry.get("sources") and set(entry["sources"]) <= searched:
+        before = entry.get("before") or {}
+        reason = next((ruled_out[url] for url in entry["urls"] if url in ruled_out), None)
+        if before.get("run") == run and not before.get("known"):
+            # An earlier build of this same run recorded it, and the finished run no longer holds it
+            # (its detail page ruled it out): it was never a candidate, so it is not "gone" either.
+            del tracked[pid]
+        elif reason is not None:
+            # Still listed, and this run's reading rules it out. Reported once, in the run that found it.
+            if not entry.get("dropped") or entry["dropped"]["run"] == run:
+                entry["dropped"] = {"run": run, "reason": reason}
+            entry["gone_since"] = None
+        elif not entry.get("gone_since") and entry.get("sources") and set(entry["sources"]) <= searched:
             entry["gone_since"] = run_date
     state["runs"] = [r for r in state["runs"] if r["run"] != run] + [
         {"run": run, "date": run_date, "candidates": len(out), "searched_sources": sorted(searched)}
@@ -128,13 +164,22 @@ def apply_run(
     return out
 
 
+def _history_row(pid: str, entry: Dict[str, Any]) -> Dict[str, Any]:
+    return dict(entry["snapshot"], id=pid, urls=entry["urls"], prices=entry["prices"], first_seen=entry["first_seen"])
+
+
 def gone(state: Dict[str, Any], run_date: str) -> List[Dict[str, Any]]:
     """Tracked properties that this run found delisted."""
-    rows = []
-    for pid, entry in sorted(state["properties"].items()):
-        if entry.get("gone_since") == run_date:
-            rows.append(dict(entry["snapshot"], id=pid, urls=entry["urls"], prices=entry["prices"], first_seen=entry["first_seen"]))
-    return rows
+    return [_history_row(pid, entry) for pid, entry in sorted(state["properties"].items()) if entry.get("gone_since") == run_date]
+
+
+def dropped(state: Dict[str, Any], run: str) -> List[Dict[str, Any]]:
+    """Tracked properties that are still listed and that this run ruled out, each with the reason."""
+    return [
+        dict(_history_row(pid, entry), reason=entry["dropped"]["reason"])
+        for pid, entry in sorted(state["properties"].items())
+        if (entry.get("dropped") or {}).get("run") == run
+    ]
 
 
 def set_mark(state: Dict[str, Any], property_id: str, mark: Optional[str], note: Optional[str]) -> Tuple[str, Dict[str, Any]]:

@@ -36,11 +36,20 @@ def _num(token: str) -> float:
 # ---------------------------------------------------------------- price
 
 _NUM = r"\d[\d,]*(?:\.\d+)?"
-_OKU_MAN = re.compile(
-    rf"(?:(?P<oku>{_NUM})\s*億)?\s*(?:(?P<sen>{_NUM})\s*千\s*万|(?P<man>{_NUM})\s*万)?\s*(?P<yen>{_NUM})?\s*円?"
+# Amounts in 億 and 万. Every alternative needs a unit, so a bare number can
+# never start a match and swallow the digits of the amount that follows it.
+_KANJI_YEN = re.compile(
+    rf"(?P<oku>{_NUM})\s*億(?:\s*(?P<sen>{_NUM})\s*千\s*万|\s*(?P<man>{_NUM})\s*万)?(?P<rest>\d[\d,]*(?=\s*円))?"
+    rf"|(?:(?P<sen2>{_NUM})\s*千\s*万|(?P<man2>{_NUM})\s*万)(?P<rest2>\d[\d,]*(?=\s*円))?"
 )
-_PLAIN_YEN = re.compile(rf"(?:[¥￥]|JPY\s*)(?P<a>{_NUM})|(?P<b>\d[\d,]{{6,}})\s*円")
-_MILLION = re.compile(rf"(?P<n>{_NUM})\s*(?P<unit>billion|million|mil\b|M\b)\s*(?:yen|JPY)?", re.I)
+_PLAIN_YEN = re.compile(rf"(?:[¥￥]|JPY\s*)(?P<a>\d[\d,]{{5,}})(?!\s*(?:[MBmb]\b|million|billion))|(?P<b>\d[\d,]{{6,}})\s*円")
+# "¥680M", "JPY 1.2 billion", "488 million yen": a currency mark is required,
+# or "300m" (metres) would read as 300 million.
+_WESTERN_YEN = re.compile(
+    rf"(?:[¥￥]|JPY\s*)(?P<n>{_NUM})\s*(?P<unit>billion|million|bn|mil|[MB])\b"
+    rf"|(?P<n2>{_NUM})\s*(?P<unit2>billion|million)\s*(?:yen|JPY)",
+    re.I,
+)
 _UNDISCLOSED = re.compile(r"応談|応相談|相談|未定|お問い?合わ?せ|非公開|ASK|upon request|negotiable|TBD", re.I)
 
 
@@ -53,33 +62,44 @@ class Price:
     undisclosed: bool = False
 
 
-def yen_amounts(text: object) -> List[int]:
-    """All yen amounts in the text, in order of appearance."""
-    s = nfkc(text)
-    found: List[Tuple[int, int]] = []
-    for m in _OKU_MAN.finditer(s):
-        if not (m.group("oku") or m.group("sen") or m.group("man")):
-            continue
+def _kanji_amounts(s: str) -> List[Tuple[int, int, int]]:
+    """(start, end, yen) of each 億/万 amount in already-folded text."""
+    out = []
+    for m in _KANJI_YEN.finditer(s):
         total = 0.0
         if m.group("oku"):
             total += _num(m.group("oku")) * 1e8
-        if m.group("sen"):
-            total += _num(m.group("sen")) * 1e7
-        if m.group("man"):
-            total += _num(m.group("man")) * 1e4
-        if m.group("yen") and (m.group("man") or m.group("sen")):
-            total += _num(m.group("yen"))
-        found.append((m.start(), int(round(total))))
-    spans = [(m.start(), m.end()) for m in _OKU_MAN.finditer(s) if m.group("oku") or m.group("sen") or m.group("man")]
+        for group, scale in (("sen", 1e7), ("sen2", 1e7), ("man", 1e4), ("man2", 1e4), ("rest", 1.0), ("rest2", 1.0)):
+            if m.group(group):
+                total += _num(m.group(group)) * scale
+        out.append((m.start(), m.end(), int(round(total))))
+    return out
+
+
+def yen_amounts(text: object) -> List[int]:
+    """All yen amounts in the text, in order of appearance."""
+    s = nfkc(text)
+    kanji = _kanji_amounts(s)
+    found: List[Tuple[int, int]] = [(start, value) for start, _end, value in kanji]
     for m in _PLAIN_YEN.finditer(s):
-        if any(a <= m.start() < b for a, b in spans):
+        if any(start <= m.start() < end for start, end, _value in kanji):
             continue
         found.append((m.start(), int(round(_num(m.group("a") or m.group("b"))))))
-    for m in _MILLION.finditer(s):
-        scale = 1e9 if m.group("unit").lower() == "billion" else 1e6
-        found.append((m.start(), int(round(_num(m.group("n")) * scale))))
+    for m in _WESTERN_YEN.finditer(s):
+        unit = (m.group("unit") or m.group("unit2")).lower()
+        scale = 1e9 if unit in ("billion", "bn", "b") else 1e6
+        found.append((m.start(), int(round(_num(m.group("n") or m.group("n2")) * scale))))
     found.sort()
     return [v for _pos, v in found if v > 0]
+
+
+def asking_price_in(text: object) -> Optional[int]:
+    """The asking price in free text such as an unlabelled result card.
+
+    A card also quotes fees and monthly payments. The price is the first
+    amount of at least one million yen, which rules those out.
+    """
+    return next((v for v in yen_amounts(text) if v >= 1_000_000), None)
 
 
 def parse_price(text: object) -> Optional[Price]:
@@ -159,7 +179,8 @@ class Built:
 
 
 def parse_built(text: object, today: Optional[datetime.date] = None) -> Optional[Built]:
-    s = nfkc(text)
+    # 1987[S62]年08月: the era year in brackets repeats the western year before it.
+    s = re.sub(r"(?<=\d)\s*[\[(][MTSHR]\d{1,2}[\])]", "", nfkc(text))
     today = today or datetime.date.today()
     m = re.search(r"(?<!\d)(1[89]\d\d|20\d\d)\s*(?:年|/|\.|-)\s*(\d{1,2})?\s*月?", s)
     if m and (m.group(0).rstrip().endswith(("年", "月")) or m.group(2)):
@@ -200,7 +221,12 @@ _STRUCT_PATTERNS = [
     )),
     (BLOCK, re.compile(r"コンクリートブロック|ブロック造|(?<![A-Za-z])CB造", re.I)),
     (STEEL, re.compile(r"軽量鉄骨|重量鉄骨|鉄骨|(?<![A-Za-z])(?:LGS|S造|ALC)(?![A-Za-z])|スチール|\bsteel\b", re.I)),
-    (WOOD, re.compile(r"木造|木質|在来工法|ツーバイ|2\s*[x×]\s*[46]|ログハウス|ログ造|丸太|(?<![A-Za-z])W造|\bwood(?:en)?\b|\btimber\b", re.I)),
+    (WOOD, re.compile(
+        r"木造|木質|在来工法|ツーバイ|2\s*[x×]\s*[46]|ログハウス|ログ造|丸太|(?<![A-Za-z])W造|\bwood(?:en)?\b|\btimber\b"
+        # A bare 木 in a list of materials: 木・鉄筋コンクリート3階建, 鉄骨・木2階建.
+        r"|(?<![一-龥ぁ-んァ-ヶ])木(?=\s*[・/、,+]|\s*\d+\s*階)|(?<=[・/、,+])\s*木(?![一-龥ぁ-んァ-ヶ])",
+        re.I,
+    )),
 ]
 
 
@@ -219,8 +245,13 @@ class Structure:
 
 
 def parse_structure(text: object) -> Optional[Structure]:
-    """Structure from the value of a 構造 field (or any text that names one)."""
-    s = nfkc(text)
+    """Structure of the main building, from the value of a 構造 field (or any text that names one).
+
+    Resort listings go on to describe outbuildings ("●別棟:木造平家建"). An
+    annex in another material does not make the house a mixed structure, so
+    the text is read only up to the first annex.
+    """
+    s = re.split(r"[●・\s]*(?:別棟|附属建物|付属建物|附属家|付属家)", nfkc(text))[0] or nfkc(text)
     rest = s
     parts: List[str] = []
     for kind, pattern in _STRUCT_PATTERNS:
@@ -229,6 +260,8 @@ def parse_structure(text: object) -> Optional[Structure]:
             rest = pattern.sub(" ", rest)
     floors, basement = parse_floors(s)
     if not parts:
+        if re.search(r"その他|\bother\b", s, re.I):
+            return Structure(OTHER, (OTHER,), floors, basement)
         if floors is None and basement is None:
             return None
         return Structure(None, (), floors, basement)
@@ -252,7 +285,8 @@ def parse_floors(text: object) -> Tuple[Optional[int], Optional[int]]:
     if m:
         above = int(m.group(1))
     else:
-        without_basement = re.sub(r"地下\s*\d{1,2}\s*階(?:付|建)?", " ", s)
+        # 2階地下1階建 states the storeys before the basement: drop only the basement phrase.
+        without_basement = re.sub(r"地下\s*\d{1,2}\s*階(?:付)?", "", s)
         m = re.search(r"(\d{1,2})\s*階\s*建|(\d{1,2})\s*(?:-|\s)?(?:stor(?:e)?ys?|stories|floors)\b", without_basement, re.I)
         if m:
             above = int(m.group(1) or m.group(2))

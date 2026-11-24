@@ -71,6 +71,12 @@ def same_property(a: Listing, b: Listing) -> Optional[str]:
         return "same land area, build date and price"
     if building and built and price and land is not False:
         return "same building area, build date and price"
+    same_town = bool(a.get("town")) and a.get("town") == b.get("town") and bool(key_a) and key_a == key_b
+    if same_town and land and price:
+        # Agents copy the lot and the price faithfully and are careless with the rest: one house
+        # was listed with two floor areas and two build years. In one chome, the same lot at the
+        # same price is the same house.
+        return "same town, land area and price"
     return None
 
 
@@ -141,12 +147,26 @@ def property_id(prop: Dict[str, Any]) -> str:
     return "p" + hashlib.sha1(basis.encode("utf-8")).hexdigest()[:7]
 
 
+def _structure_statements(ranked: List[Listing]) -> List[Listing]:
+    """One listing for each distinct structure the group states, most complete listing first.
+
+    その他 ("other") says nothing once another listing names the material.
+    """
+    stated: Dict[Tuple[str, Tuple[str, ...]], Listing] = {}
+    for listing in ranked:
+        if listing.get("structure"):
+            stated.setdefault((listing["structure"], tuple(listing.get("structure_parts") or [])), listing)
+    named = [l for l in stated.values() if l["structure"] != text.OTHER]
+    return named or list(stated.values())
+
+
 def merge(group: List[Listing]) -> Dict[str, Any]:
     """One property record from the listings that advertise it.
 
     Measurements take the value most listings agree on. Descriptive fields
     come from the most complete listing, preferring ones whose detail page
-    was read.
+    was read. Where listings state different structures, all of them are
+    kept in `structure_variants` for the criteria to weigh.
     """
     ranked = sorted(
         group,
@@ -157,13 +177,24 @@ def merge(group: List[Listing]) -> Dict[str, Any]:
     for field in ("land_m2", "building_m2", "built_year", "built_month", "prefecture", "municipality", "layout", "listing_type"):
         prop[field] = _mode([l.get(field) for l in ranked])
     for field in (
-        "title", "address", "town", "access", "structure", "structure_text", "floors", "basement", "land_right", "zoning",
+        "title", "address", "town", "access", "land_right", "zoning",
         "coverage_far", "far", "road", "land_category", "city_planning", "status", "handover", "restrictions",
-        "remarks", "parking", "renovation", "villa_estate", "water", "sewer", "gas", "hot_spring", "management_fee",
+        "remarks", "renovation", "villa_estate", "water", "sewer", "gas", "hot_spring", "management_fee",
         "altitude", "image", "coords", "land_basis", "building_basis", "kind",
     ):
         prop[field] = _first([l.get(field) for l in ranked])
-    prop["structure_parts"] = _first([l.get("structure_parts") for l in ranked]) or []
+    statements = _structure_statements(ranked)
+    lead = statements[0] if statements else {}
+    prop["structure"] = lead.get("structure")
+    prop["structure_parts"] = list(lead.get("structure_parts") or [])
+    prop["structure_text"] = lead.get("structure_text")
+    prop["structure_variants"] = (
+        [{"kind": l["structure"], "parts": list(l.get("structure_parts") or []), "text": l.get("structure_text") or l["structure"]} for l in statements]
+        if len(statements) > 1
+        else []
+    )
+    for field in ("floors", "basement"):
+        prop[field] = _first([lead.get(field)] + [l.get(field) for l in ranked])
     prop["built_approximate"] = all(l.get("built_approximate") for l in group if l.get("built_year")) and any(
         l.get("built_year") for l in group
     )
@@ -174,9 +205,10 @@ def merge(group: List[Listing]) -> Dict[str, Any]:
     prop["flags"] = sorted({f for l in group for f in l.get("flags") or []})
     prop["has_detail"] = any(l.get("has_detail") for l in group)
     prop["image_count"] = max((l.get("image_count") or 0 for l in group), default=0)
-    areas = sorted({l["building_m2"] for l in group if l.get("building_m2")})
-    if len(areas) > 1:
-        prop["building_m2_variants"] = areas
+    for field in ("building_m2", "land_m2"):
+        stated = sorted({l[field] for l in group if l.get(field)})
+        if len(stated) > 1:
+            prop[field + "_variants"] = stated
     prop["listings"] = [
         {
             "source": l.get("source"),

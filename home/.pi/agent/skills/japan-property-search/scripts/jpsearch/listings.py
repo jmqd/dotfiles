@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
+import criteria
 import text
 
 # Canonical field -> labels that carry it, Japanese first, then English for the
@@ -27,14 +28,14 @@ LABELS: Dict[str, tuple] = {
     ),
     "layout": ("間取り", "間取", "layout", "floorplan", "bedrooms"),
     "built": (
-        "築年月", "築年数", "建築年月", "完成時期", "築年", "竣工", "建築年",
+        "築年月", "築年数", "建築年月", "完成時期", "築年", "竣工", "建築年", "建築",
         "yearbuilt", "built", "completion", "constructionyear", "completed", "constructiondate",
     ),
     "structure": (
         "構造", "建物構造", "構造・工法", "構造・階建", "構造・規模", "構造/階建", "構造・階数", "建物の構造",
         "structure", "construction", "buildingstructure",
     ),
-    "floors": ("階建", "階数", "建物階数", "階建て", "floors", "stories", "storeys"),
+    "floors": ("階建", "階数", "建物階数", "建物階", "階建て", "floors", "stories", "storeys"),
     "land_right": (
         "土地権利", "権利", "権利形態", "土地の権利形態", "土地の権利",
         "landrights", "landtenure", "tenure", "landownership",
@@ -50,7 +51,6 @@ LABELS: Dict[str, tuple] = {
     "transaction": ("取引態様", "取引形態"),
     "restrictions": ("法令制限", "その他制限事項", "法令上の制限", "その他法令上の制限", "制限"),
     "remarks": ("備考", "その他概要・特記事項", "特記事項", "その他", "remarks", "notes"),
-    "parking": ("駐車場", "駐車スペース", "parking"),
     "renovation": ("リフォーム", "リフォーム履歴", "改装"),
     "agent": (
         "会社名", "商号", "取扱会社", "お問い合せ先", "お問い合わせ先", "問い合わせ先", "取扱店舗", "掲載会社",
@@ -61,10 +61,12 @@ LABELS: Dict[str, tuple] = {
     "kind": ("物件種目", "物件種別", "種別", "種目", "propertytype", "type"),
     "villa_estate": ("別荘地名", "別荘地"),
     "water": ("水道", "上水道", "飲用水"),
-    "sewer": ("下水", "排水", "汚水"),
+    "sewer": ("下水", "排水", "汚水", "排水・汚水"),
     "gas": ("ガス",),
     "hot_spring": ("温泉",),
     "management_fee": ("管理費", "管理費等"),
+    "fees": ("諸費用", "その他費用", "維持費等"),
+    "equipment": ("設備", "設備・サービス", "設備・条件"),
     "altitude": ("標高",),
 }
 
@@ -95,10 +97,12 @@ _PLAUSIBLE = {
     "land": re.compile(r"\d"),
     "building": re.compile(r"\d"),
     "built": re.compile(r"\d|新築"),
-    "structure": re.compile(r"造|RC|鉄|木|コンクリ|ブロック|階|平屋|concrete|steel|wood|timber|stor", re.I),
+    "structure": re.compile(r"造|RC|鉄|木|コンクリ|ブロック|階|平屋|その他|concrete|steel|wood|timber|stor|other", re.I),
     "road": re.compile(r"\d|公道|私道|接道|国道|県道|市道|町道|村道|road", re.I),
     "land_right": re.compile(r"所有|借地|地上権|賃借|freehold|lease|owner", re.I),
-    "zoning": re.compile(r"地域|住居|商業|工業|低層|中高層|指定|無|zone|residential|commercial|industrial", re.I),
+    "zoning": re.compile(r"地域|区域|住居|商業|工業|低層|中高|指定|無|調整|zone|residential|commercial|industrial", re.I),
+    # リフォーム is also a menu entry on portals; a history names a year, a job or says there is none.
+    "renovation": re.compile(r"\d|年|済|実施|交換|張替|塗装|改修|有|無|なし|renovat", re.I),
 }
 
 
@@ -121,7 +125,11 @@ def clean_value(value: object) -> str:
 
 
 def _field_for(key: str) -> Optional[str]:
-    return _LABEL_TO_FIELD.get(key) or _LABEL_TO_FIELD.get(re.sub(r"\(.*$", "", key))
+    """The field a folded label names: as written, without its parentheticals (建物(専有)面積), or up to the first one."""
+    for candidate in (key, re.sub(r"\([^)]*\)", "", key), re.sub(r"\(.*$", "", key)):
+        if candidate in _LABEL_TO_FIELD:
+            return _LABEL_TO_FIELD[candidate]
+    return None
 
 
 def _split_combined(key: str, value: str) -> List[tuple]:
@@ -137,11 +145,14 @@ def fields_from_pairs(pairs: Iterable[Dict[str, Any]]) -> Dict[str, str]:
     """Canonical field -> raw value. The first strong label wins; weak labels only fill gaps."""
     strong: Dict[str, str] = {}
     weak: Dict[str, str] = {}
+    bare_area = None
     for pair in pairs:
         key = label_key(pair.get("label"))
         value = clean_value(pair.get("value"))
         if not value:
             continue
+        if key == "面積" and bare_area is None and _PLAUSIBLE["land"].search(value):
+            bare_area = value
         entries = [(key, value)] if _field_for(key) else _split_combined(key, value)
         for part_key, part_value in entries:
             field = _field_for(part_key)
@@ -152,6 +163,9 @@ def fields_from_pairs(pairs: Iterable[Dict[str, Any]]) -> Dict[str, str]:
             target.setdefault(field, part_value)
     for field, value in weak.items():
         strong.setdefault(field, value)
+    # A bare 面積 beside a separately labelled floor area (延床面積) is the lot; alone it could be either.
+    if bare_area and "building" in strong:
+        strong.setdefault("land", bare_area)
     return strong
 
 
@@ -177,10 +191,11 @@ def fields_from_text(card_text: object) -> Dict[str, str]:
     if m:
         out["price"] = m.group(1)
     else:
-        amounts = text.yen_amounts(s)
-        if amounts:
-            out["price"] = "%d円" % max(amounts)
-    m = re.search(r"((?:北海道|東京都|京都府|大阪府|\S{2,3}県)\S{2,40})", s)
+        price = text.asking_price_in(s)
+        if price is not None:
+            out["price"] = "%d円" % price
+    # 東京都大江戸線 is a railway run by the prefecture, not an address.
+    m = re.search(r"((?:北海道|東京都|京都府|大阪府|\S{2,3}県)(?!\S{0,14}線(?:[\s「『/]|$))\S{2,40})", s)
     if m:
         out["address"] = m.group(1)
     m = re.search(r"((?:1[89]|20)\d\d年\s*\d{1,2}月|(?:昭和|平成|令和)\s*(?:元|\d{1,2})年(?:\s*\d{1,2}月)?|築\s*\d{1,3}年)", s)
@@ -210,6 +225,19 @@ _FLAG_PATTERNS = [
     ("natural_park", r"国立公園|国定公園|自然公園"),
     ("non_conforming", r"既存不適格|違反建築"),
 ]
+assert all(name in criteria.FLAGS for name, _pattern in _FLAG_PATTERNS), "every flag needs its wording in criteria.FLAGS"
+
+# A use, named as what the property is, that is not a house to live in. The word must end
+# its phrase: 保養所 does in 熊坂中古保養所, and does not in 保養所などにおすすめ, 事務所利用にも,
+# 倉庫付住宅 or ビルトインガレージ, where a house is being described. A room added to a layout
+# (8LDK+事務所) is not the property's use either.
+_NOT_A_DWELLING = re.compile(
+    r"(?<![+])(?:倉庫|工場|作業所|事務所|保養所|社員寮|研修所|旅館|ホテル|ペンション|民宿|診療所|医院|クリニック|ビル|アパート)"
+    r"(?:用)?(?=$|[\s、。,」』)!♪・])|一棟",
+    re.M,
+)
+# File names of the pictures a site shows when a listing has no photo.
+_PLACEHOLDER_IMAGE = re.compile(r"no_?photo|no_?image|dummy|spacer|blank\.", re.I)
 
 
 def _flags(listing: Dict[str, Any], haystack: str) -> List[str]:
@@ -222,7 +250,38 @@ def _flags(listing: Dict[str, Any], haystack: str) -> List[str]:
     if year is not None and (year < 1981 or (year == 1981 and (month or 12) <= 5)):
         # Building permits before June 1981 followed the old seismic code (旧耐震).
         flags.append("pre_1981_seismic_code")
+    named_use = _NOT_A_DWELLING.search("%s\n%s" % (listing.get("title") or "", listing.get("kind") or ""))
+    # A single room of house size is a hall or a store, whatever the listing is filed under.
+    one_big_room = re.fullmatch(r"ワンルーム|1R", listing.get("layout") or "") and (listing.get("building_m2") or 0) >= 150
+    if named_use or one_big_room:
+        flags.append("not_a_dwelling")
     return flags
+
+
+_UTILITIES = (
+    ("water", r"公営水道|上水道|市営水道|町営水道|村営水道|私営水道|私設水道|簡易水道|専用水道|井戸水?|井水"),
+    ("sewer", r"本下水|公共下水道?|下水道|集中浄化槽|個別浄化槽|合併浄化槽|浄化槽|汲取り?|汲み取り|農業集落排水"),
+    ("gas", r"都市ガス|プロパンガス|個別プロパン|集中プロパン|プロパン|LPガス|LPG|オール電化"),
+    ("hot_spring", r"温泉[^、。\n]{0,40}"),
+    ("management_fee", r"管理費[^、。\n]{0,40}"),
+)
+
+
+def _utilities(raw: Dict[str, str]) -> Dict[str, str]:
+    """Services a portal states inside a general field rather than under their own label.
+
+    SUUMO writes them as 設備：公営水道、集中浄化槽 inside its remarks field.
+    Only that clause of the remarks is read: the rest is free text, where
+    温泉 may be the name of a nearby town.
+    """
+    clause = re.search(r"設備\s*:([^\n]*)", raw.get("remarks") or "")
+    source = "\n".join([raw.get("equipment") or "", raw.get("fees") or "", clause.group(1) if clause else ""])
+    found = {}
+    for field, pattern in _UTILITIES:
+        m = re.search(pattern, source)
+        if m and field not in raw:
+            found[field] = m.group(0)
+    return found
 
 
 def _agent_name(raw: Optional[str]) -> Optional[str]:
@@ -242,9 +301,50 @@ def _agent_name(raw: Optional[str]) -> Optional[str]:
 
 _PASSTHROUGH = (
     "land_right", "zoning", "coverage_far", "far", "road", "land_category", "city_planning", "status", "handover",
-    "transaction", "restrictions", "remarks", "parking", "renovation", "updated", "listing_no", "kind",
+    "transaction", "restrictions", "remarks", "renovation", "updated", "listing_no", "kind",
     "villa_estate", "water", "sewer", "gas", "hot_spring", "management_fee", "altitude",
 )
+
+
+# Listing kinds that are not a house, as a site's own type label states them.
+_NOT_A_HOUSE = re.compile(r"一棟|ビル|アパート|マンション|店舗|事務所|倉庫|工場")
+_A_HOUSE = re.compile(r"戸建|住宅|別荘|house|villa", re.I)
+# Words that hold 市 区 町 村 without naming a municipality.
+_NOT_A_PLACE = re.compile(r"区域|地域|市街|区画|市場|区分|線|駅|徒歩|バス|分$")
+# Link captions that a card offers where a property name would be.
+_NO_TITLE = re.compile(r"^(?:MAP|地図|周辺地図|詳細|詳細を見る|物件詳細|おすすめ|PR|NEW|more|details?)$", re.I)
+# What sites put around a property name: a type label before it, a map link after it.
+_TITLE_WRAPPING = re.compile(r"^【(?:中古|新築)?(?:一戸建て?|戸建て?|住宅|マンション|土地|別荘)】\s*|\s*(?:周辺地図|地図を見る)$")
+_ADDRESS_WRAPPING = re.compile(r"^(?:自治体情報|所在地|住所)\s*:?\s*|\s*(?:MAP|Google\s*Maps?|地図を見る|周辺地図|地図)\s*$", re.I)
+
+
+def _stated_kind(kind_field: Optional[str], card_text: object) -> Optional[str]:
+    """The site's own type label for the listing: the 種別 field, or a short first line of the card."""
+    if kind_field:
+        return kind_field
+    first = next((line.strip() for line in text.nfkc(card_text).split("\n") if line.strip()), "")
+    return first if 0 < len(first) <= 12 else None
+
+
+def _locality(prefecture: Optional[str], title: str, card_text: object) -> text.Address:
+    """The municipality a card names when it has no labelled address.
+
+    Cards from a prefecture-wide search often give only "世田谷区中町４丁目".
+    The search's prefecture completes it. Without a prefecture nothing is
+    guessed, because a bare town name is ambiguous across the country.
+    """
+    if prefecture is None:
+        return text.Address(None, None, "")
+    lines = [title] + text.nfkc(card_text).split("\n")[:8]
+    for line in lines:
+        cleaned = re.sub(r"[【\[(][^】\])]*[】\])]", " ", text.nfkc(line))
+        for token in re.split(r"[\s/|、,]+", cleaned):
+            if not 2 <= len(token) <= 30 or _NOT_A_PLACE.search(token):
+                continue
+            guess = text.parse_address(token if token.startswith(prefecture) else prefecture + token)
+            if guess.municipality:
+                return guess
+    return text.Address(prefecture, None, "")
 
 
 def normalise(
@@ -256,17 +356,20 @@ def normalise(
     card_text: object,
     image: Optional[str],
     seen: str,
+    prefecture_hint: Optional[str] = None,
 ) -> Dict[str, Any]:
     """One listing record.
 
     `card_text` is the text of a result card, used when the card has no
     label markup. Pass None for a detail page: a whole page's text holds
-    other listings' prices and addresses.
+    other listings' prices and addresses. `prefecture_hint` is the
+    prefecture the search was scoped to, for cards that omit it.
     """
     raw = fields_from_pairs(pairs)
     if card_text is not None:
         for field, value in fields_from_text(card_text).items():
             raw.setdefault(field, value)
+    raw.update(_utilities(raw))
 
     price = text.parse_price(raw.get("price"))
     land = text.parse_area(raw.get("land"))
@@ -274,10 +377,36 @@ def normalise(
     built = text.parse_built(raw.get("built"))
     structure_text = raw.get("structure")
     structure = text.parse_structure(structure_text) if structure_text else None
+    if (structure is None or structure.kind is None) and raw.get("floors"):
+        # Some sites state the structure in their storeys field (建物階: 木造瓦葺2階建て) and leave 構造 blank.
+        in_floors = text.parse_structure(raw["floors"])
+        if in_floors is not None and in_floors.kind is not None:
+            structure_text, structure = raw["floors"], in_floors
     floors, basement = text.parse_floors(raw.get("floors")) if raw.get("floors") else (None, None)
-    address = text.parse_address(raw.get("address")) if raw.get("address") else text.Address(None, None, "")
+    # The first line that names the property: cards put badges (賃貸中, a ranking) on further lines.
+    title_lines = [text.squash(line) for line in text.nfkc(title).split("\n")]
+    title_text = next((line for line in title_lines if line and not _NO_TITLE.match(line)), "")
+    title_text = _TITLE_WRAPPING.sub("", title_text).strip()
+    # Link captions cling to the address cell on some sites: a map link after it, a label before it.
+    address_text = _ADDRESS_WRAPPING.sub("", text.squash(raw.get("address"))).strip()
+    address = text.parse_address(address_text) if address_text else text.Address(None, None, "")
+    address_guessed = False
+    if address.municipality is None:
+        # No usable labelled address: take the place the card names, completed with the search's prefecture.
+        guessed = _locality(address.prefecture or prefecture_hint, title_text, card_text)
+        if guessed.municipality:
+            address, address_guessed = guessed, True
+        elif address.prefecture is None and prefecture_hint:
+            address = text.Address(prefecture_hint, None, address.rest)
+    elif address.prefecture is None and prefecture_hint:
+        address = text.Address(prefecture_hint, address.municipality, address.rest)
+    if address.prefecture and address.municipality and not re.search(r"[A-Za-z]", address.rest):
+        # One spelling for display, whatever spacing and captions the site put around it.
+        address_text = address.prefecture + address.municipality + address.rest
+    kind = _stated_kind(raw.get("kind"), card_text)
+    if kind and _NOT_A_HOUSE.search(kind) and not _A_HOUSE.search(kind):
+        listing_type = "building"
 
-    title_text = text.squash(title)
     prose = [title_text, text.nfkc(card_text)] + [raw.get(f) or "" for f in _PROSE_FIELDS]
     haystack = "\n".join(prose)
 
@@ -290,7 +419,7 @@ def normalise(
         "price_max_jpy": price.high if price and price.high != price.low else None,
         "price_undisclosed": bool(price and price.undisclosed),
         "price_text": raw.get("price"),
-        "address": text.squash(raw.get("address")) or None,
+        "address": address_text or None,
         "prefecture": address.prefecture,
         "municipality": address.municipality,
         "town": text.town_key(address.rest) if address.municipality else None,
@@ -313,8 +442,9 @@ def normalise(
         "concrete_hint": text.concrete_hint(haystack),
         "access": text.squash(raw.get("access"))[:300] or None,
         "agent": _agent_name(raw.get("agent")),
-        "image": image,
+        "image": image if image and not _PLACEHOLDER_IMAGE.search(image) else None,
         "has_detail": False,
+        "address_guessed": address_guessed,
         "seen": seen,
     }
     for field in _PASSTHROUGH:
@@ -342,9 +472,17 @@ def merge_detail(listing: Dict[str, Any], detail: Dict[str, Any]) -> Dict[str, A
     for field in _DETAIL_WINS:
         if detail.get(field) not in (None, "", []):
             merged[field] = detail[field]
+    if listing.get("address_guessed") and detail.get("municipality") and not detail.get("address_guessed"):
+        # The card only named a place in passing; the page's labelled address is the address.
+        for field in ("address", "prefecture", "municipality", "town"):
+            merged[field] = detail.get(field)
+        merged["address_guessed"] = False
     for field in _DETAIL_FILLS:
         if merged.get(field) in (None, "", []) and detail.get(field) not in (None, "", []):
             merged[field] = detail[field]
+    if detail.get("listing_type") == "building":
+        # The page names the whole block (一棟売りマンション) that the result card filed under houses.
+        merged["listing_type"] = "building"
     merged["concrete_hint"] = bool(listing.get("concrete_hint") or detail.get("concrete_hint"))
     merged["flags"] = sorted(set(listing.get("flags") or []) | set(detail.get("flags") or []))
     merged["has_detail"] = True

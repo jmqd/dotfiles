@@ -27,6 +27,32 @@ STRUCTURE_NAMES = {
     text.OTHER: "other",
 }
 
+# Every flag a listing can carry, with the wording the report shows. A
+# profile may send any of them to review or rejection by name.
+FLAGS = {
+    "leasehold": "Leasehold land",
+    "no_rebuild": "Cannot be rebuilt",
+    "urbanisation_control": "Urbanisation control area",
+    "setback": "Setback required",
+    "notice": "Disclosure item (告知事項)",
+    "tenant_occupied": "Tenant in place",
+    "not_a_dwelling": "May not be a dwelling",
+    "under_negotiation": "Under negotiation",
+    "unregistered_part": "Part unregistered",
+    "slope_or_retaining_wall": "Slope or retaining wall",
+    "hazard_zone": "Hazard zone mentioned",
+    "farmland": "Farmland involved",
+    "natural_park": "Natural park zone",
+    "non_conforming": "Non-conforming building",
+    "pre_1981_seismic_code": "Pre-1981 seismic code",
+}
+
+# What the buyer has to confirm when a flag sends a property to review.
+_REVIEW_ADVICE = {
+    "tenant_occupied": "a tenant is in place: confirm it can be bought vacant",
+    "not_a_dwelling": "the listing describes a non-residential building: confirm it can be lived in",
+}
+
 
 class ProfileError(ValueError):
     """The profile file is missing a field or holds a value of the wrong kind."""
@@ -75,7 +101,8 @@ class Profile:
     zones: tuple
     price_jpy_max: Optional[int]
     built_year_min: Optional[int]
-    freehold_only: bool
+    review_flags: tuple
+    reject_flags: tuple
     areas: tuple
     sources: tuple
     exclude_sources: tuple
@@ -121,6 +148,13 @@ def _require(data: Dict[str, Any], key: str, kinds: tuple) -> Any:
     if not isinstance(value, kinds) or isinstance(value, bool) and bool not in kinds:
         raise ProfileError("profile field '%s' has the wrong type: %r" % (key, value))
     return value
+
+
+def _flag_list(data: Dict[str, Any], key: str, default: tuple) -> tuple:
+    value = data.get(key, list(default))
+    if not isinstance(value, list) or any(f not in FLAGS for f in value):
+        raise ProfileError("'%s' must be a list of flags from: %s" % (key, ", ".join(FLAGS)))
+    return tuple(value)
 
 
 def _areas(value: Any) -> tuple:
@@ -179,7 +213,8 @@ def parse_profile(data: Dict[str, Any]) -> Profile:
         zones=tuple(zones),
         price_jpy_max=data.get("price_jpy_max"),
         built_year_min=data.get("built_year_min"),
-        freehold_only=bool(data.get("freehold_only", False)),
+        review_flags=_flag_list(data, "review_flags", ("tenant_occupied", "not_a_dwelling")),
+        reject_flags=_flag_list(data, "reject_flags", ()),
         areas=_areas(data.get("areas")),
         sources=tuple(data.get("sources") or ()) if data.get("sources") not in (None, "all") else (),
         exclude_sources=tuple(data.get("exclude_sources") or ()),
@@ -227,13 +262,17 @@ def _minimum(criterion: str, value: Optional[float], minimum: float, near_factor
     return Check(criterion, FAIL, "%s %.2f %s < %g" % (criterion, value, unit, minimum))
 
 
-def _structure(profile: Profile, kind: Optional[str], parts: List[str], hinted: bool) -> Check:
+def _one_structure(profile: Profile, kind: Optional[str], parts: List[str], hinted: bool) -> Check:
     if kind is None:
         hint = "; the listing text mentions concrete" if hinted else ""
         return Check("structure", UNKNOWN, "structure not stated" + hint)
+    if kind == text.OTHER:
+        return Check("structure", UNKNOWN, "structure stated only as 'other'")
     if kind == text.MIXED:
         wanted = [p for p in parts if p in profile.structures]
         names = " + ".join(STRUCTURE_NAMES.get(p, p) for p in parts)
+        if len(wanted) == len(parts):
+            return Check("structure", PASS, "structure is %s" % names)
         if not wanted or profile.mixed_structure == "reject":
             return Check("structure", FAIL, "mixed structure (%s)" % names)
         if profile.mixed_structure == "accept":
@@ -245,6 +284,27 @@ def _structure(profile: Profile, kind: Optional[str], parts: List[str], hinted: 
     return Check("structure", FAIL, "structure is %s" % name)
 
 
+def _structure(profile: Profile, prop: Dict[str, Any]) -> Check:
+    """The structure check, over every structure the property's listings state.
+
+    Agents listing one house sometimes state different structures. When
+    they do, the property passes or fails only if every statement agrees on
+    that; otherwise it goes to review with the statements side by side.
+    """
+    hinted = bool(prop.get("concrete_hint"))
+    variants = prop.get("structure_variants") or []
+    if len(variants) < 2:
+        return _one_structure(profile, prop.get("structure"), list(prop.get("structure_parts") or []), hinted)
+    checks = [_one_structure(profile, v["kind"], list(v["parts"]), hinted) for v in variants]
+    results = {c.result for c in checks}
+    stated = " / ".join(v["text"] for v in variants)
+    if results == {PASS}:
+        return Check("structure", PASS, "structure is acceptable in every listing (%s)" % stated)
+    if results == {FAIL}:
+        return Check("structure", FAIL, "no listing states an accepted structure (%s)" % stated)
+    return Check("structure", NEAR, "listings disagree on the structure (%s): confirm it" % stated)
+
+
 def judge(profile: Profile, prop: Dict[str, Any]) -> Verdict:
     """Judge one property record (see listings.normalise for its fields)."""
     checks: List[Check] = []
@@ -252,6 +312,13 @@ def judge(profile: Profile, prop: Dict[str, Any]) -> Verdict:
 
     if prop.get("listing_type") not in profile.listing_types:
         checks.append(Check("type", FAIL, "listing type %s is not searched" % prop.get("listing_type")))
+
+    # A site searched nationwide returns houses everywhere; the profile's areas still bound the result.
+    prefecture = prop.get("prefecture")
+    if prefecture is not None and prefecture not in profile.areas:
+        checks.append(Check("area", FAIL, "%s is outside the profile's areas" % prefecture))
+    elif prefecture is None and len(profile.areas) < len(text.PREFECTURES):
+        checks.append(Check("area", UNKNOWN, "the listing does not say which prefecture it is in"))
 
     checks.append(_minimum("building area", prop.get("building_m2"), profile.building_m2_min, profile.near_factor, "m2"))
 
@@ -265,7 +332,7 @@ def judge(profile: Profile, prop: Dict[str, Any]) -> Verdict:
     else:
         checks.append(_minimum("land area", prop.get("land_m2"), zone.land_m2_min, profile.near_factor, "m2"))
 
-    checks.append(_structure(profile, prop.get("structure"), list(prop.get("structure_parts") or []), bool(prop.get("concrete_hint"))))
+    checks.append(_structure(profile, prop))
 
     if profile.price_jpy_max is not None:
         price = prop.get("price_jpy")
@@ -285,8 +352,13 @@ def judge(profile: Profile, prop: Dict[str, Any]) -> Verdict:
         else:
             checks.append(Check("built", PASS, "built %d" % year))
 
-    if profile.freehold_only and "leasehold" in (prop.get("flags") or []):
-        checks.append(Check("tenure", FAIL, "land is leasehold"))
+    flags = prop.get("flags") or []
+    for flag in profile.reject_flags:
+        if flag in flags:
+            checks.append(Check(flag, FAIL, "%s, which the profile rejects" % FLAGS[flag].lower()))
+    for flag in profile.review_flags:
+        if flag in flags and flag not in profile.reject_flags:
+            checks.append(Check(flag, NEAR, _REVIEW_ADVICE.get(flag, "%s: review before treating it as a match" % FLAGS[flag].lower())))
 
     results = {c.result for c in checks}
     if FAIL in results:

@@ -22,17 +22,23 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 import criteria
-import dedupe
 import pipeline
 import robots
+import text
 from criteria import Profile
-from registry import Search, Source
+from registry import Discover, Search, Source
 from workspace import Workspace, read_json, write_json
 
 TODO, DONE, FAILED, DISALLOWED, WAITING, DEFERRED = "todo", "done", "failed", "disallowed", "waiting", "deferred"
+# The site answered, and said the listing is no longer there.
+GONE = "gone"
+# A search the registry holds but this profile cannot use.
+SKIPPED = "skipped"
 
 DISCOVER_CACHE_DAYS = 30
 MAX_DETAIL_TRIES_PER_PROPERTY = 3
+# A page that failed to load (a timeout, a dropped connection) is fetched once more in the same run.
+MAX_ATTEMPTS = 2
 
 
 @dataclass(frozen=True)
@@ -73,32 +79,89 @@ def _fresh(date_text: str, today: str, max_days: int) -> bool:
     return age.days <= max_days
 
 
-def parse_cities(envelope: Dict[str, Any], link: "re.Pattern[str]") -> List[Dict[str, Any]]:
-    """Cities from a captured index page: [{slug, name, count}], count None when not shown."""
+def parse_cities(envelope: Dict[str, Any], discover: Discover) -> List[Dict[str, Any]]:
+    """Municipalities from a captured index page: [{slug, name, count}], count None when not shown.
+
+    Links yield the slug their URL carries; form controls yield their value,
+    which is the municipality's code.
+    """
+    result = envelope.get("result") or {}
     cities: Dict[str, Dict[str, Any]] = {}
-    for item in (envelope.get("result") or {}).get("links") or []:
-        m = link.search(item.get("href") or "")
-        if not m:
-            continue
-        label = re.sub(r"\s+", " ", item.get("text") or "").strip()
-        count_match = re.search(r"[((]\s*([\d,]+)\s*[))]|([\d,]+)\s*件", label)
-        count = int((count_match.group(1) or count_match.group(2)).replace(",", "")) if count_match else None
-        name = re.sub(r"[((].*$|[\d,]+\s*件.*$", "", label).strip()
-        slug = m.group(1)
+    if discover.link is not None:
+        found = []
+        for item in result.get("links") or []:
+            m = discover.link.search(item.get("href") or "")
+            if m:
+                found.append((m.group(1), item.get("text") or ""))
+    else:
+        # Group boxes ("all 23 wards") carry values such as "on", not a code.
+        found = [(i.get("value") or "", i.get("text") or "") for i in result.get("inputs") or [] if re.fullmatch(r"\d{4,6}", i.get("value") or "")]
+    for slug, raw_label in found:
+        # Folded first, so full-width digits and brackets read like ASCII ones.
+        label = re.sub(r"\s+", " ", text.nfkc(raw_label)).strip()
+        # The listing count beside a name comes as (12), 12件 or a bare 12.
+        count_match = re.search(r"\(\s*([\d,]+)\s*\)|([\d,]+)\s*件|\s([\d,]+)$", label)
+        count = int(next(g for g in count_match.groups() if g).replace(",", "")) if count_match else None
+        name = re.sub(r"\(.*$|[\d,]+\s*件.*$|\s[\d,]+$", "", label).strip()
         if slug not in cities or (not cities[slug]["name"] and name):
             cities[slug] = {"slug": slug, "name": name, "count": count}
     return [c for c in cities.values() if c["count"] != 0]
 
 
+def sorted_backbone(values: List[float]) -> List[float]:
+    """The longest run of `values`, in page order, that never rises.
+
+    A results page sorted largest-first also carries promoted cards that
+    ignore the sort. They break the descending order, so they fall outside
+    this run and cannot be mistaken for the point where the list has passed
+    a threshold.
+    """
+    if not values:
+        return []
+    best_len = [1] * len(values)
+    previous = [-1] * len(values)
+    for i in range(len(values)):
+        for j in range(i):
+            if values[j] >= values[i] and best_len[j] + 1 > best_len[i]:
+                best_len[i], previous[i] = best_len[j] + 1, j
+    end = max(range(len(values)), key=lambda i: (best_len[i], i))
+    run = []
+    while end != -1:
+        run.append(values[end])
+        end = previous[end]
+    return run[::-1]
+
+
+def passed_floor(values: List[float], floor: float) -> bool:
+    """True when a largest-first page has run below `floor`: its last two in-order values are under it."""
+    tail = sorted_backbone(values)[-2:]
+    return bool(tail) and all(v < floor for v in tail)
+
+
 class Planner:
-    def __init__(self, ws: Workspace, profile: Profile, sources: List[Source], state: Dict[str, Any]) -> None:
+    def __init__(
+        self, ws: Workspace, profile: Profile, sources: List[Source], state: Dict[str, Any], retry_failed: bool = False
+    ) -> None:
+        """`retry_failed` queues every page whose load failed again, however often it was tried."""
         self.ws = ws
         self.profile = profile
         self.sources = sources
         self.state = state
+        self.retry_failed = retry_failed
         self.tasks: List[Dict[str, Any]] = []
         self.cards: Dict[str, Dict[str, Any]] = {}
         self._robots: Dict[str, RobotsVerdict] = {}
+
+    def _next_attempt(self, envelope: Optional[Dict[str, Any]]) -> Optional[int]:
+        """The number of the next try when a capture failed to load and may be fetched again, else None.
+
+        Only load errors qualify. A page that loaded and showed a block page
+        or unreadable markup would show the same again.
+        """
+        if not envelope or not envelope.get("error"):
+            return None
+        tried = int(envelope.get("attempt") or 1)
+        return tried + 1 if self.retry_failed or tried < MAX_ATTEMPTS else None
 
     # ------------------------------------------------------------ robots
 
@@ -108,7 +171,11 @@ class Planner:
         if host not in self._robots:
             path = self.ws.robots_path(host)
             envelope = read_json(path)
-            verdict = robots_verdict(envelope)
+            attempt = self._next_attempt(envelope)
+            if attempt is not None:
+                verdict = RobotsVerdict("pending", None, "retrying robots.txt after: %s" % str(envelope["error"])[:120])
+            else:
+                verdict = robots_verdict(envelope)
             self._robots[host] = verdict
             self.tasks.append(
                 {
@@ -118,24 +185,36 @@ class Planner:
                     "host": host,
                     "url": "%s://%s/robots.txt" % (parts.scheme or "https", parts.netloc),
                     "out": self.ws.relative(path),
-                    "status": TODO if envelope is None else DONE,
+                    "status": TODO if verdict.state == "pending" else DONE,
                     "why": verdict.note,
+                    "attempt": attempt or 1,
                     "extract": {"fn": "robots"},
                 }
             )
         return self._robots[host]
 
-    def _status(self, url: str, out: Path) -> Tuple[str, str]:
+    def _status(self, url: str, out: Path) -> Tuple[str, str, int]:
+        """(status, why, attempt) for fetching `url` into `out`; `attempt` numbers the try a `todo` stands for."""
         verdict = self._verdict(url)
+        attempt, why = 1, ""
         if out.exists():
-            return DONE, ""
+            envelope = read_json(out) or {}
+            if (envelope.get("task") or {}).get("url") not in (None, url):
+                # The file answers another question: the profile or the registry was edited and the
+                # search's URL changed. Read as it stands, it would pass for this search's results.
+                why = "the search changed since this page was read"
+            else:
+                retry = self._next_attempt(envelope)
+                if retry is None:
+                    return DONE, "", int(envelope.get("attempt") or 1)
+                attempt, why = retry, "retrying after: %s" % str(envelope["error"])[:120]
         if verdict.state == "pending":
-            return WAITING, "waiting for robots.txt"
+            return WAITING, "waiting for robots.txt", attempt
         if verdict.state == "closed":
-            return DISALLOWED, verdict.note
+            return DISALLOWED, verdict.note, attempt
         if verdict.state == "rules" and not robots.allowed(verdict.rules, url):
-            return DISALLOWED, "robots.txt disallows this URL"
-        return TODO, ""
+            return DISALLOWED, "robots.txt disallows this URL", attempt
+        return TODO, why, attempt
 
     def _delay(self, host: str) -> float:
         verdict = self._robots.get(host)
@@ -150,26 +229,31 @@ class Planner:
         return source.id not in self.profile.exclude_sources
 
     def _cities(self, source: Source, search: Search, prefecture: str) -> Optional[List[Dict[str, Any]]]:
-        assert search.discover is not None, "registry guarantees discover for city scope"
+        assert search.discover is not None, "the registry guarantees discover wherever municipalities are needed"
+        discover = search.discover
         pref_slug = search.pref_slug(prefecture)
         cache_path = self.ws.discover_cache_path(source.id, search.listing_type, pref_slug)
         cached = read_json(cache_path)
         if cached and _fresh(cached["fetched"], self.ws.run_date, DISCOVER_CACHE_DAYS):
             return cached["cities"]
-        url = search.discover.url.format(pref=pref_slug)
+        url = discover.url.format(pref=pref_slug)
         out = self.ws.discover_run_path(source.id, "%s-%s" % (search.listing_type, pref_slug))
-        status, why = self._status(url, out)
+        status, why, attempt = self._status(url, out)
         cities = None
         if status == DONE:
             envelope = read_json(out) or {}
             if envelope.get("error"):
                 status, why = FAILED, str(envelope["error"])[:200]
             else:
-                cities = parse_cities(envelope, search.discover.link)
+                cities = parse_cities(envelope, discover)
                 if cities:
                     write_json(cache_path, {"fetched": self.ws.run_date, "url": url, "cities": cities})
                 else:
-                    status, why, cities = FAILED, "no city links matched %s" % search.discover.link.pattern, None
+                    status, why, cities = FAILED, "no municipalities found on the index page: site markup changed", None
+        if discover.link is not None:
+            extract = {"fn": "links", "pattern": discover.link.pattern}
+        else:
+            extract = {"fn": "inputs", "selector": discover.inputs}
         self.tasks.append(
             {
                 "id": "discover:%s:%s:%s" % (source.id, search.listing_type, pref_slug),
@@ -180,48 +264,45 @@ class Planner:
                 "out": self.ws.relative(out),
                 "status": status,
                 "why": why,
-                "extract": {"fn": "links", "pattern": search.discover.link.pattern},
+                "attempt": attempt,
+                "extract": extract,
             }
         )
         return cities
 
-    def _next_url(
-        self,
-        search: Search,
-        page: pipeline.Page,
-        records: List[Dict[str, Any]],
-        prefecture: Optional[str],
-        city: Optional[str],
-        land_floor: float,
-        number: int,
-    ) -> Optional[str]:
-        if search.sorted_by == "building_desc":
-            areas = [r["building_m2"] for r in records if r.get("building_m2")]
-            if areas and min(areas) < self.profile.building_floor:
-                return None
-        if search.sorted_by == "land_desc":
-            areas = [r["land_m2"] for r in records if r.get("land_m2")]
-            if areas and min(areas) < land_floor:
-                return None
+    def _wants_next(self, search: Search, page: pipeline.Page, records: List[Dict[str, Any]], land_floor: float, number: int) -> bool:
+        if search.sorted_by == "building_desc" and passed_floor(
+            [r["building_m2"] for r in records if r.get("building_m2")], self.profile.building_floor
+        ):
+            return False
+        if search.sorted_by == "land_desc" and passed_floor([r["land_m2"] for r in records if r.get("land_m2")], land_floor):
+            return False
         # A selector the registry vouches for makes the hit count reliable enough to stop on.
         if search.hits and page.hits is not None:
             fetched = (number - search.page_first) * search.per_page + len(page.cards)
             if fetched >= page.hits:
-                return None
-        if not page.next_url and len(page.cards) < 0.8 * search.per_page:
-            return None
-        if search.paginates_by_url:
-            return search.page_url(prefecture, city, self.profile.building_floor, land_floor, number + 1)
-        return page.next_url if page.next_url and page.next_url.startswith("http") else None
+                return False
+        return bool(page.next_url) or len(page.cards) >= 0.8 * search.per_page
 
     def _pages(
-        self, source: Source, search: Search, key: str, prefecture: Optional[str], city: Optional[str], land_floor: float
+        self,
+        source: Source,
+        search: Search,
+        key: str,
+        prefecture: Optional[str],
+        city: Optional[str],
+        land_floor: float,
+        cities: Tuple[str, ...] = (),
     ) -> None:
+        def address(page_number: int) -> str:
+            return search.page_url(prefecture, city, self.profile.building_floor, land_floor, page_number, cities)
+
         number = search.page_first
-        url = search.page_url(prefecture, city, self.profile.building_floor, land_floor, number)
+        url = address(number)
+        seen_here: set = set()
         for step in range(search.max_pages):
             out = self.ws.list_path(source.id, "%s-%s" % (search.listing_type, key), number)
-            status, why = self._status(url, out)
+            status, why, attempt = self._status(url, out)
             task = {
                 "id": "list:%s:%s:%s:p%d" % (source.id, search.listing_type, key, number),
                 "kind": "list",
@@ -231,9 +312,11 @@ class Planner:
                 "url": url,
                 "key": key,
                 "page": number,
+                "prefecture": prefecture,
                 "out": self.ws.relative(out),
                 "status": status,
                 "why": why,
+                "attempt": attempt,
                 "extract": {"fn": "list", "card": search.card, "link": search.link, "hits": search.hits, "next": search.next},
             }
             self.tasks.append(task)
@@ -256,13 +339,22 @@ class Planner:
                 # The registry vouches for this site's hit count, so a short page is a cut-off page.
                 expected = max(0, min(search.per_page, page.hits - (number - search.page_first) * search.per_page))
                 if len(page.cards) < 0.9 * expected:
-                    task["status"] = FAILED
                     task["why"] = "page is incomplete: %d of %d cards arrived" % (len(page.cards), expected)
+                    # A page cut short while loading is a failed load like any other: fetch it once more.
+                    again = self.retry_failed or attempt < MAX_ATTEMPTS
+                    task["status"], task["attempt"] = (TODO, attempt + 1) if again else (FAILED, attempt)
                     return
+            if seen_here and not set(found) - seen_here:
+                # A site that clamps the page number serves its last page again; without this the search would run to the page limit.
+                task["why"] = "page repeats earlier results: the list has ended"
+                return
+            seen_here.update(found)
             for card_url, record in found.items():
                 self.cards.setdefault(card_url, record)
-            following = self._next_url(search, page, records, prefecture, city, land_floor, number)
-            if following is None:
+            if not self._wants_next(search, page, records, land_floor, number):
+                return
+            following = address(number + 1) if search.paginates_by_url else page.next_url
+            if not following or not following.startswith("http"):
                 return
             if step == search.max_pages - 1:
                 task["truncated"] = True
@@ -272,6 +364,23 @@ class Planner:
 
     def _search(self, source: Source, search: Search) -> None:
         profile = self.profile
+        if search.fixed_building_min > profile.building_floor:
+            # The site's URL can only ask for buildings above a fixed size; using it would hide smaller ones the profile wants.
+            self.tasks.append(
+                {
+                    "id": "list:%s:%s:skipped" % (source.id, search.listing_type),
+                    "kind": "list",
+                    "source": source.id,
+                    "listing_type": search.listing_type,
+                    "host": source.host,
+                    "url": source.home,
+                    "out": "",
+                    "status": SKIPPED,
+                    "why": "its search only returns buildings of %d m² or more, which is above this profile's minimum; browse it by hand"
+                    % search.fixed_building_min,
+                }
+            )
+            return
         prefectures = [p for p in profile.areas if not search.prefectures or p in search.prefectures]
         if search.scope == "nationwide":
             loosest = min(z.land_m2_min for z in profile.zones) * profile.near_factor
@@ -279,26 +388,40 @@ class Planner:
             return
         for prefecture in prefectures:
             pref_slug = search.pref_slug(prefecture)
-            if search.scope == "prefecture":
+            if search.scope == "prefecture" and not search.names_cities:
                 self._pages(source, search, pref_slug, prefecture, None, profile.land_floor(prefecture))
                 continue
-            for city in self._cities(source, search, prefecture) or []:
-                floor = profile.land_floor(prefecture, city["name"] or None)
-                self._pages(source, search, "%s-%s" % (pref_slug, city["slug"]), prefecture, city["slug"], floor)
+            found = self._cities(source, search, prefecture) or []
+            if search.scope == "city":
+                for city in found:
+                    floor = profile.land_floor(prefecture, city["name"] or None)
+                    self._pages(source, search, "%s-%s" % (pref_slug, city["slug"]), prefecture, city["slug"], floor)
+                continue
+            # One URL covers the prefecture by naming its municipalities; long lists are split.
+            codes = [c["slug"] for c in found]
+            for start in range(0, len(codes), search.cities_per_url):
+                chunk = tuple(codes[start : start + search.cities_per_url])
+                key = "%s-%d" % (pref_slug, start // search.cities_per_url + 1)
+                self._pages(source, search, key, prefecture, None, profile.land_floor(prefecture), chunk)
 
     # ------------------------------------------------------------ details
 
     def _details(self) -> None:
+        """Queue the detail page of every property that the cards alone neither confirm nor rule out.
+
+        Listings are grouped into properties first, so what one agent's
+        card or page states (a wooden structure, say) settles the question
+        for every other listing of the same house.
+        """
         profile = self.profile
         records, captures = pipeline.usable_details(self.ws, self.state, profile.detail_cache_days)
         merged = pipeline.merged_listings(self.cards, records, captures)
-        live = [l for l in merged if criteria.judge(profile, l).status != criteria.REJECTED]
         wanted: List[Tuple[Tuple[int, float, str], Dict[str, Any]]] = []
-        for group in dedupe.cluster(live):
-            prop = dedupe.merge(group)
-            if criteria.judge(profile, prop).status == criteria.REJECTED:
+        for judged in pipeline.judged_properties(profile, merged):
+            prop, group = judged.prop, judged.listings
+            if judged.verdict.status == criteria.REJECTED:
                 continue
-            if any(l.get("has_detail") and l.get("structure") for l in group):
+            if prop["has_detail"] and prop.get("structure"):
                 continue
             if sum(1 for l in group if l["url"] in captures) >= MAX_DETAIL_TRIES_PER_PROPERTY:
                 continue
@@ -320,8 +443,10 @@ class Planner:
         self, url: str, listing: Dict[str, Any], capture: Optional[pipeline.DetailCapture], deferred: bool = False
     ) -> None:
         out = self.ws.detail_path(url)
-        status, why = self._status(url, out)
-        if capture is not None and capture.status != pipeline.OK:
+        status, why, attempt = self._status(url, out)
+        if status == DONE and capture is not None and capture.status == pipeline.GONE:
+            status, why = GONE, capture.note
+        elif status == DONE and capture is not None and capture.status != pipeline.OK:
             status, why = FAILED, capture.note
         elif status == TODO and deferred:
             status = DEFERRED
@@ -337,15 +462,21 @@ class Planner:
                 "out": self.ws.relative(out),
                 "status": status,
                 "why": why,
+                "attempt": attempt,
                 "extract": {"fn": "detail"},
             }
         )
 
     def _hand_captures(self) -> None:
-        """Result pages saved with `jpsearch add list`, which no planned search accounts for."""
+        """Result pages saved with `jpsearch add list`, which no planned search accounts for.
+
+        A planned page that the plan no longer asks for (the profile or the
+        registry changed during the run) is left out: it answers a search
+        nobody is running.
+        """
         planned = {self.ws.home / t["out"] for t in self.tasks if t["kind"] == "list"}
         for page in pipeline.list_pages(self.ws):
-            if page.path in planned:
+            if page.path in planned or not page.task.get("by_hand"):
                 continue
             found = pipeline.card_listings(self.ws, [page]) if page.status == pipeline.OK else {}
             for url, record in found.items():
@@ -400,12 +531,24 @@ def _outcome(source: Optional[Source], tasks: List[Dict[str, Any]], skipped: boo
     if skipped:
         return "skipped by profile"
     if not planned:
-        return "not searched"
+        return "no search for these areas"
+    if all(t["status"] == SKIPPED for t in planned):
+        return "not applicable"
     if any(t["status"] in (TODO, WAITING) for t in tasks):
         return "incomplete"
     if all(t["status"] in (FAILED, DISALLOWED) for t in planned):
         return "failed"
     return "partial" if troubled else "searched"
+
+
+def _problems(tasks: List[Dict[str, Any]]) -> List[str]:
+    """What went wrong on a source, each distinct reason once with how many pages it hit."""
+    counts: Dict[str, int] = {}
+    for task in tasks:
+        if task["status"] in (FAILED, DISALLOWED, SKIPPED) and task["why"]:
+            counts[task["why"]] = counts.get(task["why"], 0) + 1
+    ordered = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    return ["%s (%d page%s)" % (why, n, "" if n == 1 else "s") if n > 1 else why for why, n in ordered]
 
 
 def coverage(document: Dict[str, Any], sources: List[Source], profile: Profile) -> List[Dict[str, Any]]:
@@ -425,8 +568,9 @@ def coverage(document: Dict[str, Any], sources: List[Source], profile: Profile) 
         tasks = by_source.get(source_id, [])
         lists = [t for t in tasks if t["kind"] == "list"]
         details = [t for t in tasks if t["kind"] == "detail"]
-        problems = sorted({t["why"] for t in tasks if t["status"] in (FAILED, DISALLOWED, DEFERRED) and t["why"]})
+        problems = _problems(tasks)
         truncated = [t["id"] for t in lists if t.get("truncated")]
+        deferred = sum(1 for t in details if t["status"] == DEFERRED)
         skipped = bool(profile.sources and source_id not in profile.sources) or source_id in profile.exclude_sources
         rows.append(
             {
@@ -434,15 +578,21 @@ def coverage(document: Dict[str, Any], sources: List[Source], profile: Profile) 
                 "name": source.name if source else source_id,
                 "kind": source.kind if source else "ad hoc",
                 "home": source.home if source else next((t["url"] for t in tasks if t.get("url")), ""),
-                "outcome": _outcome(source, tasks, skipped and source is not None, bool(problems or truncated)),
+                "access": source.access if source else "",
+                "rank": source.rank if source else 3,
+                "covers_profile": source.covers(profile.areas) if source else True,
+                "outcome": _outcome(source, tasks, skipped and source is not None, bool(problems or truncated or deferred)),
                 "pages": sum(1 for t in lists if t["status"] == DONE),
                 "pages_failed": sum(1 for t in lists if t["status"] == FAILED),
                 "pages_disallowed": sum(1 for t in lists if t["status"] == DISALLOWED),
                 "cards": sum(t.get("cards", 0) for t in lists),
                 "details": sum(1 for t in details if t["status"] == DONE),
+                "details_failed": sum(1 for t in details if t["status"] == FAILED),
+                "details_gone": sum(1 for t in details if t["status"] == GONE),
+                "details_deferred": deferred,
+                "details_unread": sum(1 for t in details if t["status"] in (TODO, WAITING)),
                 "truncated": truncated,
                 "problems": problems,
-                "manual": source.manual if source else "",
             }
         )
     return rows

@@ -17,10 +17,18 @@ from urllib.parse import quote, urlsplit
 
 import text
 
-REGISTRY_PATH = Path(__file__).resolve().parent.parent.parent / "references" / "sources.json"
+_REFERENCES = Path(__file__).resolve().parent.parent.parent / "references"
+# The shipped registry: sites this tool can search, and sites a person browses.
+REGISTRY_PATHS = (_REFERENCES / "sources.json", _REFERENCES / "sources-manual.json")
+PREF_FORMATS = ("romaji", "code", "ja", "slugs")
 
 SCOPES = ("nationwide", "prefecture", "city")
 SORTS = ("building_desc", "land_desc", None)
+KINDS = ("portal", "aggregator", "broker", "luxury", "english", "design", "resort", "rural", "auction")
+# ok: an automated browser can read it. partial: some pages or filters only.
+# blocked: it challenges automated browsers. disallowed: robots.txt keeps this
+# toolkit out. unverified: never loaded.
+ACCESS = ("ok", "partial", "blocked", "disallowed", "unverified")
 _URL_FIELDS = {"pref", "city", "cities", "building_min", "land_min", "page", "offset"}
 
 
@@ -78,6 +86,7 @@ class Search:
     prefectures: Tuple[str, ...]
     building_min: Minimum
     land_min: Minimum
+    fixed_building_min: int
     sorted_by: Optional[str]
     per_page: int
     page_first: int
@@ -108,10 +117,18 @@ class Search:
         page: int,
         cities: Tuple[str, ...] = (),
     ) -> str:
+        lead, listed = city or "", cities
+        if cities and "city" in _template_fields(self.url):
+            # The URL names one municipality in its path and the others in a parameter.
+            lead, listed = cities[0], cities[1:]
+        if self.cities_param:
+            joined = "&".join("%s=%s" % (self.cities_param, code) for code in listed)
+        else:
+            joined = ",".join(listed)
         values = {
             "pref": self.pref_slug(prefecture) if prefecture else "",
-            "city": city or "",
-            "cities": "&".join("%s=%s" % (self.cities_param, code) for code in cities),
+            "city": lead,
+            "cities": joined,
             "building_min": self.building_min.for_floor(building_floor),
             "land_min": self.land_min.for_floor(land_floor),
             "page": page,
@@ -131,21 +148,30 @@ class Search:
 
 @dataclass(frozen=True)
 class Source:
+    """One site. `searches` is empty for a site that is browsed by hand, as `manual` describes."""
+
     id: str
     name: str
     name_ja: str
     kind: str
     coverage: str
+    areas: Tuple[str, ...]
     home: str
     verified: str
     access: str
+    rank: int
     notes: str
     manual: str
+    photo_rule: str
     searches: Tuple[Search, ...]
 
     @property
     def host(self) -> str:
         return urlsplit(self.home).hostname or ""
+
+    def covers(self, prefectures: Tuple[str, ...]) -> bool:
+        """True when the site lists property in any of `prefectures`. No stated areas means nationwide."""
+        return not self.areas or any(p in self.areas for p in prefectures)
 
 
 def _minimum(raw: Any, where: str) -> Minimum:
@@ -202,8 +228,8 @@ def _search(source_id: str, index: int, raw: Dict[str, Any]) -> Search:
         raise RegistryError("%s.url needs {city} for city scope" % where)
     if scope == "prefecture" and "pref" not in fields:
         raise RegistryError("%s.url needs {pref} for prefecture scope" % where)
-    if "cities" in fields and (scope != "prefecture" or not isinstance(raw.get("cities_param"), str)):
-        raise RegistryError("%s: {cities} needs prefecture scope and 'cities_param'" % where)
+    if "cities" in fields and scope != "prefecture":
+        raise RegistryError("%s: {cities} needs prefecture scope" % where)
     sorted_by = raw.get("sorted_by")
     if sorted_by not in SORTS:
         raise RegistryError("%s.sorted_by must be building_desc, land_desc or null" % where)
@@ -214,15 +240,25 @@ def _search(source_id: str, index: int, raw: Dict[str, Any]) -> Search:
     pref_slugs = {}
     for name, slug in (raw.get("pref_slugs") or {}).items():
         pref_slugs[_prefectures([name], where + ".pref_slugs")[0]] = slug
+    pref_format = raw.get("pref_format", "romaji")
+    if pref_format not in PREF_FORMATS:
+        raise RegistryError("%s.pref_format must be one of %s" % (where, ", ".join(PREF_FORMATS)))
+    prefectures = tuple(_prefectures(raw.get("prefectures"), where + ".prefectures"))
+    if pref_format == "slugs" and "pref" in fields:
+        # The site's own codes cannot be derived, so every prefecture the search may be asked for needs one.
+        missing = [p for p in prefectures or text.PREFECTURES if p not in pref_slugs]
+        if missing:
+            raise RegistryError("%s.pref_slugs lacks %s" % (where, ", ".join(missing)))
     return Search(
         listing_type=raw["listing_type"],
         scope=scope,
         url=raw["url"],
-        pref_format=raw.get("pref_format", "romaji"),
+        pref_format=pref_format,
         pref_slugs=pref_slugs,
-        prefectures=tuple(_prefectures(raw.get("prefectures"), where + ".prefectures")),
+        prefectures=prefectures,
         building_min=_minimum(raw.get("building_min"), where + ".building_min"),
         land_min=_minimum(raw.get("land_min"), where + ".land_min"),
+        fixed_building_min=int(raw.get("fixed_building_min", 0)),
         sorted_by=sorted_by,
         per_page=int(raw.get("per_page", 20)),
         page_first=int(raw.get("page_first", 1)),
@@ -246,9 +282,18 @@ def parse_registry(data: Any) -> List[Source]:
         for key in ("id", "name", "kind", "home"):
             if not isinstance(raw.get(key), str) or not raw[key]:
                 raise RegistryError("source %r is missing '%s'" % (raw.get("id"), key))
+        where = "source %s" % raw["id"]
         if raw["id"] in seen:
             raise RegistryError("duplicate source id %s" % raw["id"])
         seen.add(raw["id"])
+        if raw["kind"] not in KINDS:
+            raise RegistryError("%s: kind must be one of %s" % (where, ", ".join(KINDS)))
+        access = raw.get("access") or "unverified"
+        if access not in ACCESS:
+            raise RegistryError("%s: access must be one of %s" % (where, ", ".join(ACCESS)))
+        rank = raw.get("rank", 3)
+        if not isinstance(rank, int) or isinstance(rank, bool) or not 1 <= rank <= 5:
+            raise RegistryError("%s: rank must be 1 (most productive) to 5" % where)
         searches = tuple(_search(raw["id"], i, s) for i, s in enumerate(raw.get("searches") or []))
         sources.append(
             Source(
@@ -257,20 +302,50 @@ def parse_registry(data: Any) -> List[Source]:
                 name_ja=raw.get("name_ja") or raw["name"],
                 kind=raw["kind"],
                 coverage=raw.get("coverage") or "",
+                areas=tuple(_prefectures(raw.get("areas"), where + ".areas")),
                 home=raw["home"],
                 verified=raw.get("verified") or "",
-                access=raw.get("access") or "unverified",
+                access=access,
+                rank=rank,
                 notes=raw.get("notes") or "",
                 manual=raw.get("manual") or "",
+                photo_rule=raw.get("photo_rule") or "",
                 searches=searches,
             )
         )
     return sources
 
 
-def load_registry(path: Path = REGISTRY_PATH) -> List[Source]:
+def _read(path: Path) -> Dict[str, Any]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise RegistryError("%s is not valid JSON: %s" % (path, exc)) from exc
-    return parse_registry(data)
+    if not isinstance(data, dict) or not isinstance(data.get("sources"), list):
+        raise RegistryError("%s must be an object with a 'sources' list" % path)
+    if not all(isinstance(raw, dict) for raw in data["sources"]):
+        raise RegistryError("%s: every source must be an object" % path)
+    ids = [raw.get("id") for raw in data["sources"]]
+    twice = next((i for i in ids if ids.count(i) > 1), None)
+    if twice is not None:
+        raise RegistryError("%s lists source %r twice" % (path, twice))
+    return data
+
+
+def load_registry(paths: Tuple[Path, ...] = REGISTRY_PATHS, overlay: Optional[Path] = None) -> List[Source]:
+    """The shipped registry files, with the workspace's own entries laid over them.
+
+    `overlay` is a file of the same form kept in the workspace. An entry
+    there replaces the shipped entry with the same id, and a new id is added,
+    so a site can be fixed or added without touching the skill.
+    """
+    entries: Dict[Any, Dict[str, Any]] = {}
+    for path in paths:
+        for raw in _read(path)["sources"]:
+            if raw.get("id") in entries:
+                raise RegistryError("%s lists source %r, which another registry file already holds" % (path, raw.get("id")))
+            entries[raw.get("id")] = raw
+    if overlay is not None and overlay.exists():
+        for raw in _read(overlay)["sources"]:
+            entries[raw.get("id")] = raw
+    return parse_registry({"sources": list(entries.values())})
