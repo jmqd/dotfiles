@@ -9,6 +9,12 @@ find ~ -name ".*" -maxdepth 1
 User-facing documentation for the shipped `flow search` feature lives in
 [`docs/flow-search.md`](docs/flow-search.md).
 
+## agent-box
+
+`nix run .#agent-box -- run <github-url>` opens a shell in a colima VM for an
+untrusted repo, with GitHub write access limited to that repo, branch, or PR.
+See [`docs/agent-box.md`](docs/agent-box.md).
+
 ## OMP phone
 
 [`projects/omp-phone`](projects/omp-phone) contains a shareable OMP extension,

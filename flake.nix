@@ -42,6 +42,7 @@
 
   outputs =
     {
+      self,
       nixpkgs,
       nixpkgs-pre-gcc16,
       flake-utils,
@@ -338,6 +339,11 @@
           codexDesktopPkg = mkCodexDesktopPkg system;
           wisprFlowPkg = mkWisprFlowPkg system;
           flowPkg = mkFlowPkg system;
+          # Darwin only: the VM it starts uses Apple's Virtualization framework.
+          agentBoxPkg = pkgs.callPackage ./pkgs/agent-box {
+            rustPlatform = rustPlatformFor system;
+            flakeSource = self;
+          };
           voxtypePkg = mkVoxtypePkg system;
 
           shellScriptFiles = [
@@ -367,6 +373,7 @@
             "tests/git-clean-stale.sh"
             "tests/hm-switch-failure.sh"
             "tests/pre-push-secrets.sh"
+            "pkgs/agent-box/src/box-init.sh"
           ];
 
           checkSource =
@@ -671,6 +678,7 @@
             voxtype = voxtypePkg;
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+            agent-box = agentBoxPkg;
             codex-desktop = codexDesktopPkg;
             gemini = mkPinnedAppPkg "gemini" system;
             spotify = mkPinnedAppPkg "spotify" system;
@@ -704,6 +712,7 @@
             voxtype = voxtypePkg;
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+            agent-box = agentBoxPkg.unwrapped;
             codex-desktop = codexDesktopPkg;
             wispr-flow = wisprFlowPkg;
           };
@@ -758,6 +767,11 @@
             };
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+            agent-box = {
+              type = "app";
+              program = "${agentBoxPkg}/bin/agent-box";
+              meta.description = "Run agents on an untrusted GitHub repo in a scoped VM";
+            };
             codex-desktop = {
               type = "app";
               program = "${codexDesktopPkg}/Applications/Codex.app/Contents/MacOS/ChatGPT";

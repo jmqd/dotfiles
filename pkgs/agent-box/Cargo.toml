@@ -1,0 +1,35 @@
+[package]
+name = "agent-box"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Run coding agents on untrusted GitHub repos in a scoped VM"
+
+[dependencies]
+anyhow = "1.0.105"
+base64 = "0.23.1"
+bytes = "1.12.2"
+clap = { version = "4.6.9", features = ["derive", "env"] }
+getrandom = "0.4.3"
+graphql-parser = "0.4.1"
+http-body-util = "0.1.5"
+hyper = { version = "1.13.0", features = ["server", "client", "http1"] }
+hyper-rustls = { version = "0.27.10", default-features = false, features = ["ring", "webpki-roots", "http1", "tls12", "logging"] }
+hyper-util = { version = "0.1.21", features = ["client-legacy", "http1", "server", "server-auto", "tokio"] }
+percent-encoding = "2.3.2"
+rcgen = { version = "0.14.10", default-features = false, features = ["ring", "pem", "crypto"] }
+ring = "0.17.14"
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "net", "io-util", "process", "sync", "time"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
+
+[lints.clippy]
+let_underscore_must_use = "warn"
+unused_result_ok = "warn"
+unwrap_used = "warn"
+undocumented_unsafe_blocks = "warn"
+
+[dev-dependencies]
+tempfile = "3.27.0"
