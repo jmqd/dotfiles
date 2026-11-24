@@ -83,7 +83,7 @@ property's card. A flag changes the status only when the profile names it in
 | `setback` | セットバック, 要後退 |
 | `notice` | 告知事項, 心理的瑕疵 |
 | `tenant_occupied` | 賃貸中, オーナーチェンジ: sold with a tenant in place |
-| `not_a_dwelling` | The title or type names a warehouse, office, retreat, inn, clinic, shop with dwelling or whole block; or the layout is one room of house size |
+| `not_a_dwelling` | The title or type names the property as a warehouse, factory, office, company retreat, dormitory, inn, hotel, clinic, office building, apartment block or whole block (一棟); or every listing of it that gives a layout gives one room, for 150 m² or more |
 | `under_negotiation` | 商談中, 申込あり |
 | `unregistered_part` | 未登記 |
 | `slope_or_retaining_wall` | がけ, 擁壁, 急傾斜 |
