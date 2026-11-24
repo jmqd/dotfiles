@@ -63,14 +63,20 @@ in
     options = "--delete-older-than 90d";
   };
 
+  nix.optimise = {
+    automatic = true;
+    dates = [ "weekly" ];
+  };
+
+  nix.channel.enable = false;
+
   # Something required for i3.
   environment.pathsToLink = [ "/libexec" ];
 
   nix.settings = {
-    auto-optimise-store = true;
+    auto-optimise-store = false;
     allowed-users = [ "@wheel" ];
     trusted-users = [
-      "root"
       "@wheel"
     ];
     experimental-features = [
@@ -79,7 +85,14 @@ in
     ];
     builders-use-substitutes = true;
     connect-timeout = 5;
+    download-buffer-size = 536870912;
     fallback = true;
+    http-connections = 50;
+    keep-derivations = true;
+    keep-outputs = true;
+    max-free = 30 * 1024 * 1024 * 1024;
+    max-substitution-jobs = 32;
+    min-free = 10 * 1024 * 1024 * 1024;
   };
   nixpkgs.config = {
     allowUnfree = true;
@@ -262,8 +275,6 @@ in
       gdb
       poetry
       clang
-      black
-      pipenv
       trunk
       vultr-cli
 
