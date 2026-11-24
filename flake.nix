@@ -71,10 +71,10 @@
       );
       pkgsPreGcc16For = system: pkgsPreGcc16BySystem.${system};
 
-      # One package set per system and config. Nix does not memoize
-      # `import nixpkgs { … }`, so an import in each builder below evaluated
-      # nixpkgs a dozen times per system.
-      pkgsBySystem = nixpkgs.lib.genAttrs systems (system: import nixpkgs { inherit system; });
+      # One package set per system and config. Reuse nixpkgs.legacyPackages for
+      # the plain set so flake.nix shares the same instance as home-manager and
+      # voxtype instead of evaluating another copy of nixpkgs per system.
+      pkgsBySystem = nixpkgs.lib.genAttrs systems (system: nixpkgs.legacyPackages.${system});
       unfreePkgsBySystem = nixpkgs.lib.genAttrs systems (
         system:
         import nixpkgs {
@@ -83,14 +83,33 @@
         }
       );
 
+      macosAllowUnfree = [
+        "antigravity-cli"
+        "berkley-mono"
+        "claude-code"
+        "codex-desktop"
+        "gemini"
+        "orbstack"
+        "raycast"
+        "spotify"
+        "whatsapp-for-mac"
+        "wispr-flow"
+      ];
+      macosPkgsBySystem = nixpkgs.lib.genAttrs [ "aarch64-darwin" ] (
+        system:
+        import nixpkgs {
+          inherit system;
+          config.allowUnfreePredicate = pkg: builtins.elem (nixpkgs.lib.getName pkg) macosAllowUnfree;
+        }
+      );
+
       # Local crates build with the newest stable Rust in the locked rust-overlay
       # rather than whichever rustc the Nixpkgs revision happens to ship.
-      # mkRustBin reuses the plain package set; applying the overlay would
+      # mkRustBin reuses the caller's package set; applying the overlay would
       # evaluate another copy of nixpkgs per system.
-      rustPlatformFor =
-        system:
+      mkRustPlatform =
+        pkgs:
         let
-          pkgs = pkgsBySystem.${system};
           toolchain = (rust-overlay.lib.mkRustBin { } pkgs).stable.latest.minimal;
         in
         pkgs.makeRustPlatform {
@@ -98,183 +117,158 @@
           rustc = toolchain;
         };
 
-      mkNotionCliPkg =
-        system:
-        let
-          pkgs = pkgsBySystem.${system};
-        in
-        pkgs.buildGoModule rec {
-          pname = "notion-cli";
-          version = "0.6.0-unstable-2026-11-01";
-          src = notion-cli;
-          vendorHash = "sha256-nvdNSQ2wr3adSEon7EAYpDwOx2vyybq+t9qaZIDV2g4=";
+      rustPlatformBySystem = nixpkgs.lib.genAttrs systems (system: mkRustPlatform pkgsBySystem.${system});
 
-          ldflags = [
-            "-X main.version=v${version}"
-          ];
-
-          meta = with pkgs.lib; {
-            description = "Notion CLI";
-            homepage = "https://github.com/lox/notion-cli";
-            license = licenses.mit;
-            mainProgram = "notion-cli";
-            platforms = platforms.unix;
-          };
-        };
-
-      mkTrueflowPkg =
+      trueflowBySystem = nixpkgs.lib.genAttrs systems (
         system:
         let
           packages = trueflow.packages.${system};
         in
-        if packages ? native then packages.native else packages.default;
+        if packages ? native then packages.native else packages.default
+      );
 
-      mkPiPkg =
-        system:
+      mkLocalPackages =
+        {
+          pkgs,
+          unfreePkgs ? pkgs,
+          rustPlatform ? mkRustPlatform pkgs,
+        }:
         let
-          pkgs = pkgsBySystem.${system};
+          system = pkgs.stdenv.hostPlatform.system;
+          mkPinnedApp = name: unfreePkgs.callPackage (./pkgs + "/${name}") { };
         in
-        pkgs.callPackage ./pkgs/omp { };
+        {
+          notion-cli = pkgs.buildGoModule rec {
+            pname = "notion-cli";
+            version = "0.6.0-unstable-2026-11-01";
+            src = notion-cli;
+            vendorHash = "sha256-nvdNSQ2wr3adSEon7EAYpDwOx2vyybq+t9qaZIDV2g4=";
 
-      mkOraclePkg =
-        system:
-        let
-          pkgs = pkgsBySystem.${system};
-        in
-        pkgs.callPackage ./pkgs/oracle { };
-
-      # Manually pinned Antigravity CLI (nixpkgs lags behind upstream releases).
-      mkAntigravityCliPkg =
-        system:
-        let
-          pkgs = unfreePkgsBySystem.${system};
-        in
-        pkgs.callPackage ./pkgs/antigravity-cli { };
-
-      # Manually pinned claude-code (nixpkgs lags behind upstream releases).
-      mkClaudeCodePkg =
-        system:
-        let
-          pkgs = unfreePkgsBySystem.${system};
-        in
-        pkgs.callPackage ./pkgs/claude-code { };
-
-      # Manually pinned Gemini CLI (nixpkgs lags behind upstream releases).
-      mkGeminiCliPkg =
-        system:
-        let
-          pkgs = pkgsBySystem.${system};
-        in
-        pkgs.callPackage ./pkgs/gemini-cli { };
-
-      mkCodexDesktopPkg =
-        system:
-        let
-          pkgs = unfreePkgsBySystem.${system};
-        in
-        pkgs.callPackage ./pkgs/codex-desktop { };
-
-      mkWisprFlowPkg =
-        system:
-        let
-          pkgs = unfreePkgsBySystem.${system};
-        in
-        pkgs.callPackage ./pkgs/wispr-flow { };
-
-      # Darwin apps whose pins in pins/ override nixpkgs; packaged so
-      # `flow pin bump` can build them.
-      mkPinnedAppPkg =
-        name: system:
-        let
-          pkgs = unfreePkgsBySystem.${system};
-        in
-        pkgs.callPackage (./pkgs + "/${name}") { };
-
-      mkFlowPkg =
-        system:
-        let
-          pkgs = pkgsBySystem.${system};
-        in
-        pkgs.callPackage ./pkgs/flow {
-          rustPlatform = rustPlatformFor system;
-          zoekt = pkgs.callPackage ./pkgs/zoekt { };
-        };
-
-      mkOmpPhonePkg =
-        system:
-        let
-          pkgs = pkgsBySystem.${system};
-        in
-        pkgs.callPackage ./projects/omp-phone { rustPlatform = rustPlatformFor system; };
-
-      mkVoxtypePkg =
-        system:
-        let
-          pkgs = pkgsBySystem.${system};
-          upstream = voxtype.packages.${system};
-          # Upstream's lock keeps releases with open advisories (most
-          # recently quinn-udp, RUSTSEC-2026-0538). pkgs/voxtype/Cargo.lock
-          # is upstream's lock after
-          #   cargo update -p rustls-webpki -p webpki-roots@<old> -p rustls \
-          #     -p quinn-proto -p quinn-udp -p bytes -p crossbeam-epoch
-          # Regenerate it on each voxtype bump; drop it once upstream catches up.
-          lockFile = ./pkgs/voxtype/Cargo.lock;
-          unwrapped = upstream.voxtype-vulkan-unwrapped.overrideAttrs (old: {
-            cargoDeps = pkgs.rustPlatform.importCargoLock {
-              inherit lockFile;
-              outputHashes = {
-                "openvino-finder-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
-                "openvino-genai-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
-                "openvino-genai-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
-                "openvino-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
-              };
-            };
-            # nixpkgs' cargoSetupHook sets LIBSQLITE3_SYS_USE_PKG_CONFIG=1,
-            # which overrides rusqlite's `bundled` feature and links the
-            # system sqlite that upstream's flake does not provide.
-            buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.sqlite ];
-            # Racy upstream tests. The meeting_title one asserts the daemon
-            # has not yet rewritten the transcript after a live retitle, and
-            # a fast builder loses that race. The oauth ones re-bind local
-            # ports that parallel tests' forked children can still hold, so
-            # they fail with PortsBusy now and then (see free_port upstream).
-            checkFlags = (old.checkFlags or [ ]) ++ [
-              "--skip=a_running_meeting_is_retitled_through_the_daemon"
-              "--skip=meeting::actions::oauth::tests::"
+            ldflags = [
+              "-X main.version=v${version}"
             ];
-            postPatch = (old.postPatch or "") + ''
-              cp ${lockFile} Cargo.lock
-            '';
-          });
-        in
-        # Vulkan gives the NVIDIA Linux desktop GPU acceleration without
-        # introducing the CUDA/ONNX closure into every Home Manager switch.
-        upstream.vulkan.overrideAttrs { paths = [ unwrapped ]; }
-        // {
-          inherit (unwrapped) version;
+
+            meta = with pkgs.lib; {
+              description = "Notion CLI";
+              homepage = "https://github.com/lox/notion-cli";
+              license = licenses.mit;
+              mainProgram = "notion-cli";
+              platforms = platforms.unix;
+            };
+          };
+
+          trueflow = trueflowBySystem.${system};
+
+          omp = pkgs.callPackage ./pkgs/omp { };
+
+          oracle = pkgs.callPackage ./pkgs/oracle { };
+
+          # Manually pinned Antigravity CLI (nixpkgs lags behind upstream releases).
+          antigravity-cli = unfreePkgs.callPackage ./pkgs/antigravity-cli { };
+
+          # Manually pinned claude-code (nixpkgs lags behind upstream releases).
+          claude-code = unfreePkgs.callPackage ./pkgs/claude-code { };
+
+          # Manually pinned Gemini CLI (nixpkgs lags behind upstream releases).
+          gemini-cli = pkgs.callPackage ./pkgs/gemini-cli { };
+
+          codex-desktop = unfreePkgs.callPackage ./pkgs/codex-desktop { };
+
+          wispr-flow = unfreePkgs.callPackage ./pkgs/wispr-flow { };
+
+          # Darwin apps whose pins in pins/ override nixpkgs; packaged so
+          # `flow pin bump` can build them. xcodes is MIT-licensed and uses the
+          # free package set.
+          gemini = mkPinnedApp "gemini";
+          spotify = mkPinnedApp "spotify";
+          whatsapp = mkPinnedApp "whatsapp";
+          xcodes = pkgs.callPackage ./pkgs/xcodes { };
+
+          flow = pkgs.callPackage ./pkgs/flow {
+            inherit rustPlatform;
+            zoekt = pkgs.callPackage ./pkgs/zoekt { };
+          };
+
+          omp-phone = pkgs.callPackage ./projects/omp-phone { inherit rustPlatform; };
+
+          spotify-export = pkgs.callPackage ./projects/spotify-export { inherit rustPlatform; };
+
+          voxtype =
+            let
+              upstream = voxtype.packages.${system};
+              # Upstream's lock keeps releases with open advisories (most
+              # recently quinn-udp, RUSTSEC-2026-0538). pkgs/voxtype/Cargo.lock
+              # is upstream's lock after
+              #   cargo update -p rustls-webpki -p webpki-roots@<old> -p rustls \
+              #     -p quinn-proto -p quinn-udp -p bytes -p crossbeam-epoch
+              # Regenerate it on each voxtype bump; drop it once upstream catches up.
+              lockFile = ./pkgs/voxtype/Cargo.lock;
+              unwrapped = upstream.voxtype-vulkan-unwrapped.overrideAttrs (old: {
+                cargoDeps = pkgs.rustPlatform.importCargoLock {
+                  inherit lockFile;
+                  outputHashes = {
+                    "openvino-finder-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+                    "openvino-genai-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+                    "openvino-genai-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+                    "openvino-sys-0.11.0" = "sha256-nQWeHNdLlRk+owh3B6VpArAG2dr66HeBI2RHfDhyvvU=";
+                  };
+                };
+                # nixpkgs' cargoSetupHook sets LIBSQLITE3_SYS_USE_PKG_CONFIG=1,
+                # which overrides rusqlite's `bundled` feature and links the
+                # system sqlite that upstream's flake does not provide.
+                buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.sqlite ];
+                # Racy upstream tests. The meeting_title one asserts the daemon
+                # has not yet rewritten the transcript after a live retitle, and
+                # a fast builder loses that race. The oauth ones re-bind local
+                # ports that parallel tests' forked children can still hold, so
+                # they fail with PortsBusy now and then (see free_port upstream).
+                checkFlags = (old.checkFlags or [ ]) ++ [
+                  "--skip=a_running_meeting_is_retitled_through_the_daemon"
+                  "--skip=meeting::actions::oauth::tests::"
+                ];
+                postPatch = (old.postPatch or "") + ''
+                  cp ${lockFile} Cargo.lock
+                '';
+              });
+            in
+            # Vulkan gives the NVIDIA Linux desktop GPU acceleration without
+            # introducing the CUDA/ONNX closure into every Home Manager switch.
+            upstream.vulkan.overrideAttrs { paths = [ unwrapped ]; }
+            // {
+              inherit (unwrapped) version;
+            };
         };
+
+      localPkgsBySystem = nixpkgs.lib.genAttrs systems (
+        system:
+        mkLocalPackages {
+          pkgs = pkgsBySystem.${system};
+          unfreePkgs = unfreePkgsBySystem.${system};
+          rustPlatform = rustPlatformBySystem.${system};
+        }
+      );
+
+      macosLocalPkgsBySystem = nixpkgs.lib.genAttrs [ "aarch64-darwin" ] (
+        system: mkLocalPackages { pkgs = macosPkgsBySystem.${system}; }
+      );
+
+      unfreeLocalPkgsBySystem = nixpkgs.lib.genAttrs systems (
+        system: mkLocalPackages { pkgs = unfreePkgsBySystem.${system}; }
+      );
 
       mkHomePackagesModule =
-        system:
-        let
-          notionCliPkg = mkNotionCliPkg system;
-          trueflowPkg = mkTrueflowPkg system;
-          piPkg = mkPiPkg system;
-          oraclePkg = mkOraclePkg system;
-          antigravityCliPkg = mkAntigravityCliPkg system;
-          claudeCodePkg = mkClaudeCodePkg system;
-          geminiCliPkg = mkGeminiCliPkg system;
-          codexDesktopPkg = mkCodexDesktopPkg system;
-          flowPkg = mkFlowPkg system;
-          ompPhonePkg = mkOmpPhonePkg system;
-          voxtypePkg = mkVoxtypePkg system;
-        in
+        {
+          localPkgs ? null,
+        }:
         {
           config,
           lib,
           pkgs,
           ...
         }:
+        let
+          local = if localPkgs != null then localPkgs else mkLocalPackages { inherit pkgs; };
+        in
         {
           options.jmq.packageSets.customCli.enable = lib.mkOption {
             type = lib.types.bool;
@@ -288,23 +282,23 @@
 
           config = lib.mkMerge [
             # A prebuilt download, so lite homes that skip customCli keep it.
-            { home.packages = [ antigravityCliPkg ]; }
+            { home.packages = [ local.antigravity-cli ]; }
             (lib.mkIf config.jmq.packageSets.customCli.enable {
               home.packages = [
-                claudeCodePkg
-                flowPkg
-                geminiCliPkg
+                local.claude-code
+                local.flow
+                local.gemini-cli
                 pkgs.gws
-                notionCliPkg
-                oraclePkg
-                piPkg
-                trueflowPkg
+                local.notion-cli
+                local.oracle
+                local.omp
+                local.trueflow
               ]
-              ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ codexDesktopPkg ];
-              services.omp-phone.package = ompPhonePkg;
+              ++ lib.optionals pkgs.stdenv.hostPlatform.isDarwin [ local.codex-desktop ];
+              services.omp-phone.package = local.omp-phone;
               programs.voxtype = lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
                 enable = true;
-                package = voxtypePkg;
+                package = local.voxtype;
                 model.name = "base.en";
                 service.enable = true;
                 settings.hotkey.enabled = true;
@@ -316,7 +310,7 @@
                 enable = true;
                 config = {
                   ProgramArguments = [
-                    "${flowPkg}/bin/flow"
+                    "${local.flow}/bin/flow"
                     "--automated"
                     "thermal"
                     "sample"
@@ -335,21 +329,28 @@
           ];
         };
 
+      nixFiles = map (path: nixpkgs.lib.removePrefix "${toString ./.}/" (toString path)) (
+        builtins.filter (path: nixpkgs.lib.hasSuffix ".nix" (toString path)) (
+          nixpkgs.lib.filesystem.listFilesRecursive ./.
+        )
+      );
+
       perSystem = flake-utils.lib.eachSystem systems (
         system:
         let
           pkgs = pkgsBySystem.${system};
-          notionCliPkg = mkNotionCliPkg system;
-          trueflowPkg = mkTrueflowPkg system;
-          piPkg = mkPiPkg system;
-          oraclePkg = mkOraclePkg system;
-          antigravityCliPkg = mkAntigravityCliPkg system;
-          claudeCodePkg = mkClaudeCodePkg system;
-          geminiCliPkg = mkGeminiCliPkg system;
-          codexDesktopPkg = mkCodexDesktopPkg system;
-          wisprFlowPkg = mkWisprFlowPkg system;
-          flowPkg = mkFlowPkg system;
-          voxtypePkg = mkVoxtypePkg system;
+          local = localPkgsBySystem.${system};
+          notionCliPkg = local.notion-cli;
+          trueflowPkg = local.trueflow;
+          piPkg = local.omp;
+          oraclePkg = local.oracle;
+          antigravityCliPkg = local.antigravity-cli;
+          claudeCodePkg = local.claude-code;
+          geminiCliPkg = local.gemini-cli;
+          codexDesktopPkg = local.codex-desktop;
+          wisprFlowPkg = local.wispr-flow;
+          flowPkg = local.flow;
+          voxtypePkg = local.voxtype;
 
           shellScriptFiles = [
             ".githooks/pre-push"
@@ -388,12 +389,6 @@
             };
           shellCheckSource = checkSource shellScriptFiles;
 
-          nixFiles = map (path: pkgs.lib.removePrefix "${toString ./.}/" (toString path)) (
-            builtins.filter (path: pkgs.lib.hasSuffix ".nix" (toString path)) (
-              pkgs.lib.filesystem.listFilesRecursive ./.
-            )
-          );
-
           nixfmtCheck =
             pkgs.runCommand "nixfmt-check"
               {
@@ -407,13 +402,52 @@
 
           repoFormatter = pkgs.writeShellApplication {
             name = "dotfiles-fmt";
-            runtimeInputs = [ pkgs.nixfmt ];
+            runtimeInputs = [
+              pkgs.findutils
+              pkgs.git
+              pkgs.nixfmt
+            ];
             text = ''
-              if [ "$#" -eq 0 ]; then
-                set -- ${pkgs.lib.escapeShellArgs nixFiles}
+              has_path_arg=0
+              after_double_dash=0
+              for arg in "$@"; do
+                if [ "$after_double_dash" -eq 1 ]; then
+                  has_path_arg=1
+                  break
+                fi
+                case "$arg" in
+                --)
+                  after_double_dash=1
+                  ;;
+                -*) ;;
+                *)
+                  has_path_arg=1
+                  break
+                  ;;
+                esac
+              done
+
+              if [ "$has_path_arg" -eq 1 ]; then
+                exec nixfmt "$@"
               fi
 
-              exec nixfmt "$@"
+              if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+                mapfile -d "" -t files < <(git ls-files -z -- '*.nix')
+              else
+                mapfile -d "" -t files < <(
+                  find . -name '*.nix' \
+                    -not -path './.git/*' \
+                    -not -path './.direnv/*' \
+                    -not -path './result*' \
+                    -print0
+                )
+              fi
+
+              if [ "''${#files[@]}" -eq 0 ]; then
+                exit 0
+              fi
+
+              exec nixfmt "$@" "''${files[@]}"
             '';
           };
 
@@ -641,6 +675,7 @@
                   gws
                   just
                   jq
+                  nixfmt
                   python3
                   shellcheck
                   shfmt
@@ -673,22 +708,22 @@
             home-manager = home-manager.packages.${system}.home-manager;
             notion-cli = notionCliPkg;
             omp = piPkg;
-            omp-phone = mkOmpPhonePkg system;
+            omp-phone = local.omp-phone;
             oracle = oraclePkg;
             pi = piPkg;
             secrets-lint = secretsLint;
-            spotify-export = pkgs.callPackage ./projects/spotify-export { };
+            spotify-export = local.spotify-export;
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
             voxtype = voxtypePkg;
           }
           // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
             codex-desktop = codexDesktopPkg;
-            gemini = mkPinnedAppPkg "gemini" system;
-            spotify = mkPinnedAppPkg "spotify" system;
-            whatsapp = mkPinnedAppPkg "whatsapp" system;
+            gemini = local.gemini;
+            spotify = local.spotify;
+            whatsapp = local.whatsapp;
             wispr-flow = wisprFlowPkg;
-            xcodes = mkPinnedAppPkg "xcodes" system;
+            xcodes = local.xcodes;
           };
 
           checks = {
@@ -696,7 +731,6 @@
             bootstrap-rust-tests = bootstrapRustTests;
             claude-code = claudeCodePkg;
             clean-stale-tests = cleanStaleTests;
-            flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
             gemini-cli = geminiCliPkg;
             googleworkspace-cli = pkgs.gws;
@@ -786,6 +820,7 @@
           module,
           extraModules ? [ ],
           pkgs,
+          localPkgs ? null,
         }:
         home-manager.lib.homeManagerConfiguration {
           inherit pkgs;
@@ -795,7 +830,7 @@
           };
           modules = [
             module
-            (mkHomePackagesModule system)
+            (mkHomePackagesModule { inherit localPkgs; })
             voxtype.homeManagerModules.default
           ]
           ++ extraModules;
@@ -805,51 +840,42 @@
         {
           system,
           extraModules ? [ ],
+          impureUser ? false,
         }:
         let
-          bootstrapUser =
-            let
-              explicitUser = builtins.getEnv "HM_BOOTSTRAP_USER";
-              envUser = builtins.getEnv "USER";
-            in
-            if explicitUser != "" then
-              explicitUser
-            else if envUser != "" then
-              envUser
-            else
-              "jmq";
-          bootstrapHome =
-            let
-              envHome = builtins.getEnv "HOME";
-            in
-            if envHome != "" then envHome else "/Users/${bootstrapUser}";
+          bootstrapModules = nixpkgs.lib.optionals impureUser [
+            (
+              let
+                bootstrapUser =
+                  let
+                    explicitUser = builtins.getEnv "HM_BOOTSTRAP_USER";
+                    envUser = builtins.getEnv "USER";
+                  in
+                  if explicitUser != "" then
+                    explicitUser
+                  else if envUser != "" then
+                    envUser
+                  else
+                    "jmq";
+                bootstrapHome =
+                  let
+                    envHome = builtins.getEnv "HOME";
+                  in
+                  if envHome != "" then envHome else "/Users/${bootstrapUser}";
+              in
+              {
+                home.username = nixpkgs.lib.mkForce bootstrapUser;
+                home.homeDirectory = nixpkgs.lib.mkForce bootstrapHome;
+              }
+            )
+          ];
         in
         mkHome {
           inherit system;
           module = ./home/hosts/jmq-macos.nix;
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfreePredicate =
-              pkg:
-              builtins.elem (nixpkgs.lib.getName pkg) [
-                "berkley-mono"
-                "claude-code"
-                "codex-desktop"
-                "gemini"
-                "orbstack"
-                "raycast"
-                "spotify"
-                "whatsapp-for-mac"
-                "wispr-flow"
-              ];
-          };
-          extraModules = [
-            {
-              home.username = nixpkgs.lib.mkForce bootstrapUser;
-              home.homeDirectory = nixpkgs.lib.mkForce bootstrapHome;
-            }
-          ]
-          ++ extraModules;
+          pkgs = macosPkgsBySystem.${system};
+          localPkgs = macosLocalPkgsBySystem.${system};
+          extraModules = bootstrapModules ++ extraModules;
         };
 
       liteHomeModule =
@@ -869,31 +895,35 @@
         }:
         nixpkgs.lib.nixosSystem {
           inherit system;
-          specialArgs = {
-            flowPkg = mkFlowPkg system;
-          };
           modules = [
             hostModule
             home-manager.nixosModules.home-manager
-            {
-              home-manager.backupFileExtension = "hm-backup";
-              home-manager.useGlobalPkgs = true;
-              home-manager.extraSpecialArgs = {
-                inherit emacs-sops;
-                pkgsPreGcc16 = pkgsPreGcc16For system;
-              };
-              home-manager.users.jmq =
-                {
-                  ...
-                }:
-                {
-                  imports = [
-                    homeModule
-                    (mkHomePackagesModule system)
-                    voxtype.homeManagerModules.default
-                  ];
+            (
+              { pkgs, ... }:
+              let
+                localPkgs = mkLocalPackages { inherit pkgs; };
+              in
+              {
+                _module.args.flowPkg = localPkgs.flow;
+                home-manager.backupFileExtension = "hm-backup";
+                home-manager.useGlobalPkgs = true;
+                home-manager.extraSpecialArgs = {
+                  inherit emacs-sops;
+                  pkgsPreGcc16 = pkgsPreGcc16For system;
                 };
-            }
+                home-manager.users.jmq =
+                  {
+                    ...
+                  }:
+                  {
+                    imports = [
+                      homeModule
+                      (mkHomePackagesModule { inherit localPkgs; })
+                      voxtype.homeManagerModules.default
+                    ];
+                  };
+              }
+            )
           ];
         };
     in
@@ -905,27 +935,40 @@
           system = "aarch64-darwin";
           extraModules = [ ./home/hosts/work-macos.nix ];
         };
+        "macos-aarch64-bootstrap" = mkMacosHome {
+          system = "aarch64-darwin";
+          impureUser = true;
+        };
+        "work-macos-aarch64-bootstrap" = mkMacosHome {
+          system = "aarch64-darwin";
+          extraModules = [ ./home/hosts/work-macos.nix ];
+          impureUser = true;
+        };
         "linux-aarch64" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
           pkgs = unfreePkgsBySystem.aarch64-linux;
+          localPkgs = unfreeLocalPkgsBySystem.aarch64-linux;
         };
         "linux-aarch64-lite" = mkHome {
           system = "aarch64-linux";
           module = ./home/hosts/jmq-linux.nix;
           extraModules = [ liteHomeModule ];
           pkgs = unfreePkgsBySystem.aarch64-linux;
+          localPkgs = unfreeLocalPkgsBySystem.aarch64-linux;
         };
         "linux-x86_64" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
           pkgs = unfreePkgsBySystem.x86_64-linux;
+          localPkgs = unfreeLocalPkgsBySystem.x86_64-linux;
         };
         "linux-x86_64-lite" = mkHome {
           system = "x86_64-linux";
           module = ./home/hosts/jmq-linux.nix;
           extraModules = [ liteHomeModule ];
           pkgs = unfreePkgsBySystem.x86_64-linux;
+          localPkgs = unfreeLocalPkgsBySystem.x86_64-linux;
         };
       };
 
