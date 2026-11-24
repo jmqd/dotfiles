@@ -26,24 +26,28 @@ stdenvNoCC.mkDerivation {
   inherit (pin) version;
 
   src = fetchurl source;
-  # The zip has no single root; unpack it apart from stdenv's own files.
-  unpackPhase = ''
-    runHook preUnpack
-    unzip -q "$src" -d bundle
-    cd bundle
-    runHook postUnpack
-  '';
 
   nativeBuildInputs = [
     makeWrapper
     unzip
   ];
 
-  # Self-update would try to rewrite the read-only store bundle. Chunk names
-  # carry content hashes, so match by content and fail if the setting moved.
-  postPatch = ''
+  dontUnpack = true;
+  dontConfigure = true;
+  dontBuild = true;
+  dontStrip = true;
+  dontPatchShebangs = true;
+
+  installPhase = ''
+    runHook preInstall
+    bundleDir="$out/lib/gemini"
+    mkdir -p "$bundleDir"
+    unzip -q "$src" -d "$bundleDir"
+
+    # Self-update would try to rewrite the read-only store bundle. Chunk names
+    # carry content hashes, so match by content and fail if the setting moved.
     patched=0
-    for chunk in ./chunk-*.js; do
+    for chunk in "$bundleDir"/chunk-*.js; do
       if grep -q 'enableAutoUpdate: {' "$chunk"; then
         sed -i '/enableAutoUpdate: {/,/}/ s/default: true/default: false/' "$chunk"
         patched=1
@@ -53,15 +57,7 @@ stdenvNoCC.mkDerivation {
       echo "gemini-cli: enableAutoUpdate setting not found; update the patch" >&2
       exit 1
     fi
-  '';
 
-  dontBuild = true;
-
-  installPhase = ''
-    runHook preInstall
-    bundleDir="$out/lib/gemini"
-    mkdir -p "$bundleDir"
-    cp -aT . "$bundleDir"
     ln -s ${lib.getExe ripgrep} "$bundleDir/rg-${nodePlatform}-${nodeArch}"
     makeWrapper ${lib.getExe nodejs} "$out/bin/gemini" \
       --add-flags "--no-warnings=DEP0040" \

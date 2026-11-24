@@ -21,6 +21,7 @@ buildNpmPackage rec {
   npmDepsHash = "sha256-/Voz8K4V/Coy3060ZqmdFocJfnoJBhuWkrChIdusW10=";
   npmDepsFetcherVersion = 2;
   dontNpmBuild = true;
+  npmFlags = [ "--ignore-scripts" ];
 
   meta = with lib; {
     description = "CLI and MCP server for delegating prompts to ChatGPT";

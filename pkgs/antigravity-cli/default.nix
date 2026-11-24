@@ -26,16 +26,22 @@ stdenvNoCC.mkDerivation {
     inherit (source) url hash;
   };
 
-  sourceRoot = ".";
-
   nativeBuildInputs = lib.optionals stdenvNoCC.hostPlatform.isElf [ autoPatchelfHook ];
 
+  dontUnpack = true;
   dontConfigure = true;
   dontBuild = true;
+  dontStrip = true;
+  dontPatchShebangs = true;
+  dontFixup = stdenvNoCC.hostPlatform.isDarwin;
 
   installPhase = ''
     runHook preInstall
-    install -Dm755 antigravity $out/bin/agy
+    mkdir -p "$out/.unpack" "$out/bin"
+    tar -xzf "$src" -C "$out/.unpack"
+    mv "$out/.unpack/antigravity" "$out/bin/agy"
+    chmod 0755 "$out/bin/agy"
+    rm -rf "$out/.unpack"
     runHook postInstall
   '';
 

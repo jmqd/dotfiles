@@ -6,6 +6,7 @@
 {
   lib,
   stdenv,
+  stdenvNoCC,
   fetchurl,
   makeWrapper,
   autoPatchelfHook,
@@ -20,10 +21,10 @@ let
   # `claude` ships as a self-contained native executable in a per-platform
   # package.
   source =
-    pin.sources.${stdenv.hostPlatform.system}
-      or (throw "claude-code: unsupported platform ${stdenv.hostPlatform.system}");
+    pin.sources.${stdenvNoCC.hostPlatform.system}
+      or (throw "claude-code: unsupported platform ${stdenvNoCC.hostPlatform.system}");
 in
-stdenv.mkDerivation {
+stdenvNoCC.mkDerivation {
   pname = "claude-code";
   inherit version;
 
@@ -31,24 +32,28 @@ stdenv.mkDerivation {
     inherit (source) url hash;
   };
 
-  sourceRoot = "package";
-
   nativeBuildInputs = [
     makeWrapper
   ]
-  ++ lib.optionals stdenv.hostPlatform.isLinux [ autoPatchelfHook ];
+  ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [ autoPatchelfHook ];
 
-  buildInputs = lib.optionals stdenv.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
+  buildInputs = lib.optionals stdenvNoCC.hostPlatform.isLinux [ stdenv.cc.cc.lib ];
 
+  dontUnpack = true;
   dontConfigure = true;
   dontBuild = true;
 
   # Bun's compiled executable carries the Claude application in ELF sections;
   # stripping it makes the binary fall back to Bun's own CLI.
   dontStrip = true;
+  dontPatchShebangs = true;
   installPhase = ''
     runHook preInstall
-    install -Dm755 claude $out/bin/claude
+    mkdir -p "$out/.unpack" "$out/bin"
+    tar -xzf "$src" -C "$out/.unpack"
+    mv "$out/.unpack/package/claude" "$out/bin/claude"
+    chmod 0755 "$out/bin/claude"
+    rm -rf "$out/.unpack"
     runHook postInstall
   '';
 
@@ -61,7 +66,7 @@ stdenv.mkDerivation {
       --prefix PATH : ${
         lib.makeBinPath (
           [ procps ]
-          ++ lib.optionals stdenv.hostPlatform.isLinux [
+          ++ lib.optionals stdenvNoCC.hostPlatform.isLinux [
             bubblewrap
             socat
           ]

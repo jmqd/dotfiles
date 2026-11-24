@@ -19,15 +19,22 @@ stdenvNoCC.mkDerivation {
   src = fetchurl source;
 
   nativeBuildInputs = [ undmg ];
-  sourceRoot = "Gemini.app";
 
+  dontUnpack = true;
+  dontConfigure = true;
+  dontBuild = true;
   # Generic fixup invalidates the vendor's Apple signature.
   dontFixup = true;
 
   installPhase = ''
     runHook preInstall
-    mkdir -p "$out/Applications/Gemini.app"
-    cp -R . "$out/Applications/Gemini.app"
+    mkdir -p "$out/.unpack" "$out/Applications"
+    (
+      cd "$out/.unpack"
+      undmg "$src"
+    )
+    mv "$out/.unpack/Gemini.app" "$out/Applications/Gemini.app"
+    rm -rf "$out/.unpack"
     runHook postInstall
   '';
 

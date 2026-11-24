@@ -18,21 +18,25 @@ stdenvNoCC.mkDerivation {
   src = fetchurl source;
 
   nativeBuildInputs = [ unzip ];
-  sourceRoot = ".";
 
+  dontUnpack = true;
+  dontConfigure = true;
+  dontBuild = true;
   # Generic fixup rewrites bundled scripts and invalidates Apple's signature.
   dontFixup = true;
 
   installPhase = ''
     runHook preInstall
 
-    mkdir -p "$out/Applications"
-    app_bundle="$(find . -maxdepth 1 -name '*.app' -type d -print -quit)"
+    mkdir -p "$out/.unpack" "$out/Applications"
+    unzip -q "$src" -d "$out/.unpack"
+    app_bundle="$(find "$out/.unpack" -maxdepth 1 -name '*.app' -type d -print -quit)"
     if [ -z "$app_bundle" ]; then
       echo "no .app bundle found in Codex ZIP" >&2
       exit 1
     fi
-    cp -R "$app_bundle" "$out/Applications/Codex.app"
+    mv "$app_bundle" "$out/Applications/Codex.app"
+    rm -rf "$out/.unpack"
 
     runHook postInstall
   '';

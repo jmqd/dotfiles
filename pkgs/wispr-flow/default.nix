@@ -19,16 +19,23 @@ stdenvNoCC.mkDerivation {
   src = fetchurl source;
 
   nativeBuildInputs = [ undmg ];
-  sourceRoot = ".";
 
+  dontUnpack = true;
+  dontConfigure = true;
+  dontBuild = true;
   # Generic fixup rewrites bundled scripts and invalidates Apple's signature.
   dontFixup = true;
 
   installPhase = ''
     runHook preInstall
 
-    mkdir -p "$out/Applications"
-    cp -R "Wispr Flow.app" "$out/Applications/"
+    mkdir -p "$out/.unpack" "$out/Applications"
+    (
+      cd "$out/.unpack"
+      undmg "$src"
+    )
+    mv "$out/.unpack/Wispr Flow.app" "$out/Applications/"
+    rm -rf "$out/.unpack"
 
     runHook postInstall
   '';

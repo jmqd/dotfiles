@@ -10,6 +10,7 @@
 {
   lib,
   stdenv,
+  stdenvNoCC,
   fetchurl,
   patchelf,
   versionCheckHook,
@@ -20,10 +21,10 @@ let
   inherit (pin) version;
 
   source =
-    pin.sources.${stdenv.hostPlatform.system}
-      or (throw "omp: unsupported platform ${stdenv.hostPlatform.system}");
+    pin.sources.${stdenvNoCC.hostPlatform.system}
+      or (throw "omp: unsupported platform ${stdenvNoCC.hostPlatform.system}");
 in
-stdenv.mkDerivation (finalAttrs: {
+stdenvNoCC.mkDerivation (finalAttrs: {
   pname = "omp";
   inherit version;
 
@@ -35,24 +36,25 @@ stdenv.mkDerivation (finalAttrs: {
   dontConfigure = true;
   dontBuild = true;
   dontStrip = true;
+  dontPatchShebangs = true;
 
   nativeBuildInputs =
-    lib.optionals stdenv.hostPlatform.isLinux [ patchelf ]
-    ++ lib.optionals stdenv.hostPlatform.isDarwin [ darwin.autoSignDarwinBinariesHook ];
+    lib.optionals stdenvNoCC.hostPlatform.isLinux [ patchelf ]
+    ++ lib.optionals stdenvNoCC.hostPlatform.isDarwin [ darwin.autoSignDarwinBinariesHook ];
 
   installPhase = ''
     runHook preInstall
 
     install -Dm755 $src $out/bin/omp
-    ${lib.optionalString stdenv.hostPlatform.isLinux ''
-      patchelf --set-interpreter "$(< "$NIX_CC/nix-support/dynamic-linker")" "$out/bin/omp"
+    ${lib.optionalString stdenvNoCC.hostPlatform.isLinux ''
+      patchelf --set-interpreter "${stdenv.cc.bintools.dynamicLinker}" "$out/bin/omp"
     ''}
     ln -s omp $out/bin/pi
 
     runHook postInstall
   '';
 
-  doInstallCheck = stdenv.buildPlatform.canExecute stdenv.hostPlatform;
+  doInstallCheck = stdenvNoCC.buildPlatform.canExecute stdenvNoCC.hostPlatform;
   nativeInstallCheckInputs = [ versionCheckHook ];
   versionCheckProgramArg = "--version";
 
