@@ -1,0 +1,30 @@
+{
+  "sources": [
+    {
+      "id": "suumo",
+      "name": "SUUMO",
+      "name_ja": "SUUMO（スーモ）",
+      "kind": "portal",
+      "coverage": "nationwide",
+      "home": "https://suumo.jp/",
+      "verified": "2026-11-25",
+      "access": "ok",
+      "notes": "robots.txt disallows the search-form target /jj/bukken/ichiran/JJ012FC001/. The theme path /chukoikkodate/{pref}/nj_316/ is allowed and lists a whole prefecture once kb=1 lifts its price floor; it takes the same hb, tb, sort and paging parameters (verified: Nagano's total equals the sum of its city counts, and Tokyo's Suginami cards match the Suginami city search). hb and tb accept only their listed values, largest 150, so results are sorted by building area, largest first, and paging stops below the threshold. Structure is only on the detail page (構造・工法). One house is often listed by several agents. Fallback if nj_316 stops working: the city form /chukoikkodate/{pref}/sc_{city}/ with the same parameters; cities are linked from /chukoikkodate/{pref}/city/.",
+      "searches": [
+        {
+          "listing_type": "used_house",
+          "scope": "prefecture",
+          "url": "https://suumo.jp/chukoikkodate/{pref}/nj_316/?kb=1&hb={building_min}&tb={land_min}&po=10&pj=2&pc=100&page={page}",
+          "pref_slugs": { "北海道": "hokkaido_", "群馬県": "gumma" },
+          "building_min": [0, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150],
+          "land_min": [0, 60, 70, 80, 90, 100, 110, 120, 130, 140, 150],
+          "sorted_by": "building_desc",
+          "per_page": 100,
+          "page_first": 1,
+          "max_pages": 12,
+          "hints": { "card": ".property_unit", "hits": ".pagination_set-hit" }
+        }
+      ]
+    }
+  ]
+}

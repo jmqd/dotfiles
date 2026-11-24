@@ -1,0 +1,31 @@
+{
+  "name": "RC house on a large lot",
+  "listing_types": ["used_house"],
+  "building_m2_min": 250,
+  "structures": ["RC", "SRC"],
+  "mixed_structure": "review",
+  "near_miss_percent": 10,
+  "zones": [
+    {
+      "id": "tokyo-23",
+      "label": "Central Tokyo (23 wards)",
+      "prefecture": "東京都",
+      "municipality_suffix": "区",
+      "land_m2_min": 190
+    },
+    {
+      "id": "elsewhere",
+      "label": "Outside central Tokyo",
+      "land_m2_min": 1000
+    }
+  ],
+  "price_jpy_max": null,
+  "built_year_min": null,
+  "freehold_only": false,
+  "areas": "all",
+  "sources": "all",
+  "exclude_sources": [],
+  "request_delay_seconds": 3,
+  "detail_cache_days": 30,
+  "max_detail_pages": 400
+}

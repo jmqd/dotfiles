@@ -1,0 +1,414 @@
+"""Write a run's results: report.html, report.md, candidates.json/.csv, rejected.csv."""
+
+from __future__ import annotations
+
+import csv
+import html
+from typing import Any, Dict, Iterable, List, Optional
+
+import criteria
+import text
+from criteria import Profile
+from workspace import Workspace, write_json
+
+FLAG_LABELS = {
+    "leasehold": "Leasehold land",
+    "no_rebuild": "Cannot be rebuilt",
+    "urbanisation_control": "Urbanisation control area",
+    "setback": "Setback required",
+    "notice": "Disclosure item (告知事項)",
+    "tenant_occupied": "Tenant in place",
+    "under_negotiation": "Under negotiation",
+    "unregistered_part": "Part unregistered",
+    "slope_or_retaining_wall": "Slope or retaining wall",
+    "hazard_zone": "Hazard zone mentioned",
+    "farmland": "Farmland involved",
+    "natural_park": "Natural park zone",
+    "non_conforming": "Non-conforming building",
+    "pre_1981_seismic_code": "Pre-1981 seismic code",
+}
+
+CHANGE_LABELS = {
+    "new": "New",
+    "relisted": "Relisted",
+    "price_down": "Price cut",
+    "price_up": "Price raised",
+    "seen": "",
+}
+
+SECTIONS = (
+    (criteria.MATCH, "Matches", "Every criterion is met and confirmed from the listing."),
+    (criteria.NEAR_MISS, "Near misses", "Just under a threshold, or a mixed structure to confirm."),
+    (criteria.UNVERIFIED, "Unverified", "Nothing rules these out, but the listing leaves a criterion unstated."),
+)
+
+
+def yen(value: Optional[int]) -> str:
+    return "¥{:,}".format(value) if value is not None else "price on request"
+
+
+def oku_man(value: Optional[int]) -> str:
+    """488000000 -> 4億8,800万円."""
+    if value is None:
+        return ""
+    oku, rest = divmod(value, 100_000_000)
+    man = rest // 10_000
+    parts = ("%d億" % oku if oku else "") + ("{:,}万".format(man) if man else "")
+    return (parts or "0") + "円"
+
+
+def area(m2: Optional[float]) -> str:
+    if m2 is None:
+        return "not stated"
+    return "{:,.2f} m² ({:,.1f} tsubo)".format(m2, text.to_tsubo(m2))
+
+
+def structure_label(prop: Dict[str, Any]) -> str:
+    kind = prop.get("structure")
+    if kind is None:
+        return "not stated" + (" (text mentions concrete)" if prop.get("concrete_hint") else "")
+    if kind == text.MIXED:
+        name = "mixed: " + " + ".join(criteria.STRUCTURE_NAMES.get(p, p) for p in prop.get("structure_parts") or [])
+    else:
+        name = criteria.STRUCTURE_NAMES.get(kind, kind)
+    floors = []
+    if prop.get("floors"):
+        floors.append("%d storey%s" % (prop["floors"], "" if prop["floors"] == 1 else "s"))
+    if prop.get("basement"):
+        floors.append("%d basement" % prop["basement"])
+    return name + (", " + " + ".join(floors) if floors else "")
+
+
+def built_label(prop: Dict[str, Any], run_year: int) -> str:
+    year = prop.get("built_year")
+    if year is None:
+        return "not stated"
+    month = "-%02d" % prop["built_month"] if prop.get("built_month") else ""
+    approx = "about " if prop.get("built_approximate") else ""
+    return "%s%d%s (%d years old)" % (approx, year, month, max(0, run_year - year))
+
+
+def location_label(prop: Dict[str, Any]) -> str:
+    romaji = text.PREF_ROMAJI.get(prop.get("prefecture") or "", "")
+    address = prop.get("address") or "address not stated"
+    return "%s (%s)" % (address, romaji) if romaji else address
+
+
+def _sort_key(prop: Dict[str, Any]) -> tuple:
+    return (
+        0 if prop.get("mark") == "shortlist" else 1,
+        0 if prop.get("change") in ("new", "relisted", "price_down") else 1,
+        -(prop.get("building_m2") or 0.0),
+        prop["id"],
+    )
+
+
+# ---------------------------------------------------------------- HTML
+
+_CSS = """
+:root { --ink:#1c1f1e; --muted:#5d6562; --line:#dfe3e1; --accent:#1f5f4a; --soft:#f4f6f5; --warn:#8a5a00; --bad:#9b2c2c; }
+* { box-sizing: border-box; }
+body { margin:0; font:15px/1.5 -apple-system,"Helvetica Neue","Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif; color:var(--ink); background:#fff; }
+main { max-width:1040px; margin:0 auto; padding:32px 24px 64px; }
+h1 { font-size:28px; margin:0 0 4px; letter-spacing:-.01em; }
+h2 { font-size:20px; margin:40px 0 4px; padding-top:16px; border-top:2px solid var(--accent); }
+.eyebrow { font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:600; }
+.lede, .sub { color:var(--muted); margin:0 0 16px; }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:6px; overflow:hidden; margin:20px 0; }
+.stats div { background:#fff; padding:12px 14px; }
+.stats b { display:block; font-size:22px; }
+.stats span { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; }
+.card { display:grid; grid-template-columns:240px 1fr; gap:18px; padding:18px 0; border-bottom:1px solid var(--line); break-inside:avoid; }
+.card img { width:240px; height:180px; object-fit:cover; border-radius:4px; background:var(--soft); }
+.card .noimg { width:240px; height:180px; border-radius:4px; background:var(--soft); display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:12px; }
+.card h3 { margin:0 0 2px; font-size:16px; }
+.card .price { font-size:20px; font-weight:650; }
+.card .price small { font-size:13px; font-weight:400; color:var(--muted); }
+.facts { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:2px 18px; margin:8px 0; font-size:14px; }
+.facts dt { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.06em; }
+.facts dd { margin:0 0 4px; }
+.chips { margin:6px 0; }
+.chip { display:inline-block; font-size:12px; padding:1px 8px; border-radius:10px; border:1px solid var(--line); margin:0 4px 4px 0; }
+.chip.change { background:var(--accent); color:#fff; border-color:var(--accent); }
+.chip.flag { color:var(--warn); border-color:#e6d3a8; background:#fdf8ec; }
+.chip.mark { color:var(--accent); border-color:var(--accent); }
+.why { font-size:13px; color:var(--warn); margin:4px 0; }
+.note { font-size:14px; background:var(--soft); padding:6px 10px; border-left:3px solid var(--accent); margin:6px 0; }
+.links { font-size:13px; }
+.links a { color:var(--accent); }
+.id { font:12px ui-monospace,Menlo,monospace; color:var(--muted); }
+table { border-collapse:collapse; width:100%; font-size:13px; margin:10px 0; }
+th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { font-size:11px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+.ok { color:var(--accent); } .partial { color:var(--warn); } .failed { color:var(--bad); }
+@media print { main { padding:0; } .card { grid-template-columns:180px 1fr; } .card img, .card .noimg { width:180px; height:135px; } }
+"""
+
+
+def _e(value: Any) -> str:
+    return html.escape("" if value is None else str(value))
+
+
+def _card(prop: Dict[str, Any], run_year: int) -> str:
+    chips = []
+    if prop.get("mark"):
+        chips.append('<span class="chip mark">%s</span>' % _e(prop["mark"].capitalize()))
+    change = CHANGE_LABELS.get(prop.get("change") or "", "")
+    if change:
+        extra = ""
+        if prop.get("previous_price_jpy"):
+            extra = " from " + yen(prop["previous_price_jpy"])
+        chips.append('<span class="chip change">%s%s</span>' % (_e(change), _e(extra)))
+    for flag in prop.get("flags") or []:
+        chips.append('<span class="chip flag">%s</span>' % _e(FLAG_LABELS.get(flag, flag)))
+    price = yen(prop.get("price_jpy"))
+    if prop.get("price_max_jpy"):
+        price += " to " + yen(prop["price_max_jpy"])
+    image = prop.get("image")
+    picture = (
+        '<img src="%s" alt="" loading="lazy" referrerpolicy="no-referrer">' % _e(image)
+        if image
+        else '<div class="noimg">no photo on the result card</div>'
+    )
+    facts = [
+        ("Land", area(prop.get("land_m2"))),
+        ("Building", area(prop.get("building_m2"))),
+        ("Structure", structure_label(prop)),
+        ("Built", built_label(prop, run_year)),
+        ("Layout", prop.get("layout") or "not stated"),
+        ("Tenure", prop.get("land_right") or "not stated"),
+        ("Location", location_label(prop)),
+        ("Access", prop.get("access") or "not stated"),
+    ]
+    if prop.get("zoning") or prop.get("coverage_far"):
+        facts.append(("Zoning", " · ".join(x for x in (prop.get("zoning"), prop.get("coverage_far")) if x)))
+    if prop.get("road"):
+        facts.append(("Road", prop["road"]))
+    fact_html = "".join("<div><dt>%s</dt><dd>%s</dd></div>" % (_e(k), _e(v)) for k, v in facts)
+    why = "; ".join(prop.get("open_points") or [])
+    links = " · ".join(
+        '<a href="%s">%s</a>%s'
+        % (_e(l["url"]), _e(l["source"]), " (%s)" % _e(l["agent"]) if l.get("agent") else "")
+        for l in prop.get("listings") or []
+    )
+    return (
+        '<article class="card" id="%s">%s<div>'
+        '<div class="price">%s <small>%s</small></div>'
+        "<h3>%s</h3>"
+        '<div class="chips">%s</div>%s%s'
+        '<dl class="facts">%s</dl>'
+        '<div class="links">%s</div>'
+        '<div class="id">%s · first seen %s · %d listing%s</div>'
+        "</div></article>"
+    ) % (
+        _e(prop["id"]),
+        picture,
+        _e(price),
+        _e(oku_man(prop.get("price_jpy"))),
+        _e(prop.get("title") or "(untitled listing)"),
+        "".join(chips),
+        '<div class="why">Open point: %s</div>' % _e(why) if why else "",
+        '<div class="note">%s</div>' % _e(prop["note"]) if prop.get("note") else "",
+        fact_html,
+        links,
+        _e(prop["id"]),
+        _e(prop.get("first_seen")),
+        len(prop.get("listings") or []),
+        "" if len(prop.get("listings") or []) == 1 else "s",
+    )
+
+
+def _criteria_summary(profile: Profile) -> str:
+    wanted = ", ".join(criteria.STRUCTURE_NAMES.get(s, s) for s in profile.structures)
+    zones = "; ".join("%s: lot ≥ %g m²" % (z.label, z.land_m2_min) for z in profile.zones)
+    parts = ["structure: %s" % wanted, "building ≥ %g m²" % profile.building_m2_min, zones]
+    if profile.price_jpy_max:
+        parts.append("price ≤ %s" % yen(profile.price_jpy_max))
+    if profile.built_year_min:
+        parts.append("built %d or later" % profile.built_year_min)
+    parts.append("near-miss band %g%%" % profile.near_miss_percent)
+    return " · ".join(parts)
+
+
+def _coverage_table(rows: Iterable[Dict[str, Any]]) -> str:
+    body = []
+    for row in rows:
+        css = {"searched": "ok", "partial": "partial", "failed": "failed", "incomplete": "failed"}.get(row["outcome"], "")
+        detail = "; ".join(row["problems"])
+        if row["truncated"]:
+            detail = (detail + "; " if detail else "") + "page limit reached on %d search(es)" % len(row["truncated"])
+        if row["outcome"] == "manual":
+            detail = row["manual"]
+        body.append(
+            "<tr><td><a href=\"%s\">%s</a></td><td>%s</td><td class=\"%s\">%s</td><td>%d</td><td>%d</td><td>%d</td><td>%s</td></tr>"
+            % (_e(row["home"]), _e(row["name"]), _e(row["kind"]), css, _e(row["outcome"]), row["pages"], row["cards"], row["details"], _e(detail))
+        )
+    return (
+        "<table><thead><tr><th>Source</th><th>Kind</th><th>Outcome</th><th>Pages</th><th>Cards</th>"
+        "<th>Detail pages</th><th>Notes</th></tr></thead><tbody>%s</tbody></table>" % "".join(body)
+    )
+
+
+def html_report(
+    ws: Workspace,
+    profile: Profile,
+    properties: List[Dict[str, Any]],
+    gone: List[Dict[str, Any]],
+    coverage: List[Dict[str, Any]],
+    rejected_count: int,
+    listing_count: int,
+) -> str:
+    run_year = int(ws.run_date[:4])
+    shown = [p for p in properties if p.get("mark") != "dismissed"]
+    dismissed = [p for p in properties if p.get("mark") == "dismissed"]
+    counts = {status: sum(1 for p in shown if p["status"] == status) for status, _t, _d in SECTIONS}
+    new = sum(1 for p in shown if p.get("change") == "new")
+    searched = sum(1 for r in coverage if r["outcome"] in ("searched", "partial"))
+    troubled = sum(1 for r in coverage if r["outcome"] in ("partial", "failed", "incomplete"))
+    out = [
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">",
+        "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
+        "<title>Japan property search, %s</title><style>%s</style></head><body><main>" % (_e(ws.run), _CSS),
+        '<div class="eyebrow">Japan property search · run %s</div>' % _e(ws.run),
+        "<h1>%d match%s, %d near, %d unverified</h1>"
+        % (counts[criteria.MATCH], "" if counts[criteria.MATCH] == 1 else "es", counts[criteria.NEAR_MISS], counts[criteria.UNVERIFIED]),
+        '<p class="lede">%s</p>' % _e(_criteria_summary(profile)),
+        '<div class="stats">',
+        "<div><b>%d</b><span>New this run</span></div>" % new,
+        "<div><b>%d</b><span>Listings read</span></div>" % listing_count,
+        "<div><b>%d</b><span>Rejected</span></div>" % rejected_count,
+        "<div><b>%d</b><span>Delisted</span></div>" % len(gone),
+        "<div><b>%d</b><span>Sources searched</span></div>" % searched,
+        "<div><b>%d</b><span>Sources with problems</span></div>" % troubled,
+        "</div>",
+    ]
+    for status, title, blurb in SECTIONS:
+        group = sorted((p for p in shown if p["status"] == status), key=_sort_key)
+        out.append("<h2>%s (%d)</h2><p class=\"sub\">%s</p>" % (_e(title), len(group), _e(blurb)))
+        if not group:
+            out.append('<p class="sub">None.</p>')
+        out.extend(_card(p, run_year) for p in group)
+    if gone:
+        out.append("<h2>Delisted since the last run (%d)</h2>" % len(gone))
+        out.append("<table><thead><tr><th>Id</th><th>Property</th><th>Last price</th><th>First seen</th></tr></thead><tbody>")
+        for row in gone:
+            last = row["prices"][-1][1] if row.get("prices") else None
+            out.append(
+                "<tr><td class=\"id\">%s</td><td>%s<br>%s</td><td>%s</td><td>%s</td></tr>"
+                % (_e(row["id"]), _e(row.get("title")), _e(row.get("address")), _e(yen(last)), _e(row.get("first_seen")))
+            )
+        out.append("</tbody></table>")
+    if dismissed:
+        out.append("<h2>Dismissed (%d)</h2><table><tbody>" % len(dismissed))
+        for p in sorted(dismissed, key=lambda p: p["id"]):
+            out.append(
+                "<tr><td class=\"id\">%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                % (_e(p["id"]), _e(p.get("title")), _e(yen(p.get("price_jpy"))), _e(p.get("note")))
+            )
+        out.append("</tbody></table>")
+    out.append("<h2>Coverage</h2><p class=\"sub\">A source marked manual has no search this tool can run; browse it by hand as its note says. "
+               "Rejected listings and the reason for each are in rejected.csv.</p>")
+    out.append(_coverage_table(coverage))
+    out.append("</main></body></html>")
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------- Markdown, CSV, JSON
+
+
+def markdown_report(ws: Workspace, profile: Profile, properties: List[Dict[str, Any]], gone: List[Dict[str, Any]], coverage: List[Dict[str, Any]]) -> str:
+    run_year = int(ws.run_date[:4])
+    shown = [p for p in properties if p.get("mark") != "dismissed"]
+    lines = ["# Japan property search, run %s" % ws.run, "", _criteria_summary(profile), ""]
+    for status, title, _blurb in SECTIONS:
+        group = sorted((p for p in shown if p["status"] == status), key=_sort_key)
+        lines += ["## %s (%d)" % (title, len(group)), ""]
+        if not group:
+            lines += ["None.", ""]
+            continue
+        lines += ["| Id | Price | Land m² | Building m² | Built | Structure | Location | Change | Open point | Link |", "|---|---|---|---|---|---|---|---|---|---|"]
+        for p in group:
+            lines.append(
+                "| %s | %s | %s | %s | %s | %s | %s | %s | %s | [%s](%s) |"
+                % (
+                    p["id"],
+                    oku_man(p.get("price_jpy")) or "on request",
+                    "%.0f" % p["land_m2"] if p.get("land_m2") else "?",
+                    "%.0f" % p["building_m2"] if p.get("building_m2") else "?",
+                    p.get("built_year") or "?",
+                    structure_label(p).replace("|", "/"),
+                    (p.get("address") or "?").replace("|", "/"),
+                    CHANGE_LABELS.get(p.get("change") or "", ""),
+                    "; ".join(p.get("open_points") or []).replace("|", "/"),
+                    (p.get("sources") or ["source"])[0] + (" +%d" % (len(p["listings"]) - 1) if len(p.get("listings") or []) > 1 else ""),
+                    (p.get("urls") or [""])[0],
+                )
+            )
+        lines.append("")
+    if gone:
+        lines += ["## Delisted since the last run (%d)" % len(gone), ""]
+        lines += ["- %s: %s, %s" % (g["id"], g.get("title") or "", g.get("address") or "") for g in gone]
+        lines.append("")
+    lines += ["## Coverage", "", "| Source | Outcome | Pages | Cards | Notes |", "|---|---|---|---|---|"]
+    for row in coverage:
+        note = row["manual"] if row["outcome"] == "manual" else "; ".join(row["problems"])
+        lines.append("| %s | %s | %d | %d | %s |" % (row["name"], row["outcome"], row["pages"], row["cards"], note.replace("|", "/")))
+    lines.append("")
+    _ = run_year
+    return "\n".join(lines)
+
+
+_CSV_FIELDS = (
+    "id", "status", "change", "mark", "zone", "price_jpy", "price_max_jpy", "land_m2", "building_m2", "built_year",
+    "built_month", "structure", "floors", "basement", "layout", "prefecture", "municipality", "address", "access",
+    "land_right", "zoning", "coverage_far", "road", "flags", "open_points", "first_seen", "sources", "listing_count",
+    "url", "all_urls", "title", "note",
+)
+
+
+def _csv_row(prop: Dict[str, Any]) -> Dict[str, Any]:
+    row = {f: prop.get(f) for f in _CSV_FIELDS}
+    row["flags"] = "; ".join(prop.get("flags") or [])
+    row["open_points"] = "; ".join(prop.get("open_points") or [])
+    row["sources"] = "; ".join(prop.get("sources") or [])
+    row["listing_count"] = len(prop.get("listings") or [])
+    row["url"] = (prop.get("urls") or [""])[0]
+    row["all_urls"] = " ".join(prop.get("urls") or [])
+    return row
+
+
+def write_all(
+    ws: Workspace,
+    profile: Profile,
+    properties: List[Dict[str, Any]],
+    rejected: List[Dict[str, Any]],
+    gone: List[Dict[str, Any]],
+    coverage: List[Dict[str, Any]],
+    listing_count: int,
+) -> Dict[str, str]:
+    """Write every output file for the run and return their paths by name."""
+    run = ws.run_dir
+    run.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "html": run / "report.html",
+        "markdown": run / "report.md",
+        "json": run / "candidates.json",
+        "csv": run / "candidates.csv",
+        "rejected": run / "rejected.csv",
+        "coverage": run / "coverage.json",
+    }
+    paths["html"].write_text(html_report(ws, profile, properties, gone, coverage, len(rejected), listing_count), encoding="utf-8")
+    paths["markdown"].write_text(markdown_report(ws, profile, properties, gone, coverage), encoding="utf-8")
+    write_json(paths["json"], {"run": ws.run, "profile": profile.name, "properties": properties, "delisted": gone})
+    write_json(paths["coverage"], coverage)
+    with paths["csv"].open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.DictWriter(handle, fieldnames=_CSV_FIELDS)
+        writer.writeheader()
+        for prop in sorted(properties, key=lambda p: (p["status"], _sort_key(p))):
+            writer.writerow(_csv_row(prop))
+    with paths["rejected"].open("w", newline="", encoding="utf-8-sig") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["source", "url", "reason", "price_jpy", "land_m2", "building_m2", "structure", "built_year", "address", "title"])
+        for item in rejected:
+            writer.writerow([item.get(k) for k in ("source", "url", "reason", "price_jpy", "land_m2", "building_m2", "structure", "built_year", "address", "title")])
+    return {name: str(path) for name, path in paths.items()}
