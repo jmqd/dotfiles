@@ -396,6 +396,18 @@ class DraftingFromTheListing(FolderCase):
         with self.assertRaisesRegex(BrochureError, "untranslated"):
             render.check(self.folder)
 
+    def test_links_a_site_prints_in_a_field_s_cell_are_left_out_of_the_draft(self) -> None:
+        pairs = [
+            {"label": "価格", "value": "4億8800万円\n[ □支払シミュレーション ]", "section": "", "page": 1},
+            {"label": "交通", "value": "ＪＲ中央線「荻窪」歩13分\n[ 乗り換え案内 ]\n京王井の頭線「富士見ヶ丘」歩25分\n[ 乗り換え案内 ]", "section": "", "page": 1},
+            {"label": "建物面積", "value": "[1階] 270.26m2\n[2階] 270.27m2", "section": "", "page": 1},
+        ]
+        write_json(self.folder.listing, {"url": LISTING_URL, "title": "t", "h1": "h", "pairs": pairs, "blocks": [], "photos": []})
+        drafted = draft.build(self.folder)
+        values = [row["value"] for row in drafted["sections"][0]["rows"]]
+        self.assertEqual(values, ["JA: 4億8800万円", "JA: ＪＲ中央線「荻窪」歩13分\n京王井の頭線「富士見ヶ丘」歩25分", "JA: [1階] 270.26m2\n[2階] 270.27m2"])
+        self.assertEqual(drafted["key_facts"][0]["value"], "JA: 4億8800万円")
+
 
 if __name__ == "__main__":
     unittest.main()

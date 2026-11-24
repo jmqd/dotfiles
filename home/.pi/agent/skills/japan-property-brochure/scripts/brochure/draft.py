@@ -45,8 +45,18 @@ _NEIGHBOURHOOD = re.compile(
 )
 
 
+# A link the site prints in a field's cell, on a line of its own: [ □支払シミュレーション ], [ 乗り換え案内 ].
+_LINK_CAPTION = re.compile(r"\[ [^\[\]]{1,24} \]")
+
+
 def _ja(value: object) -> str:
     return DRAFT_PREFIX + str(value or "").strip()
+
+
+def _field(value: object) -> str:
+    """A field's value marked for translation, without the links the site prints in its cell."""
+    lines = (line.strip() for line in str(value or "").split("\n"))
+    return _ja("\n".join(line for line in lines if line and not _LINK_CAPTION.fullmatch(line)))
 
 
 def site_name(url: str) -> str:
@@ -79,7 +89,7 @@ def build(folder: Folder, overwrite: bool = False) -> Dict[str, Any]:
     for english, labels in _FACTS:
         label = next((l for l in labels if l in first), None)
         if label:
-            facts.append({"label": english, "value": _ja(first[label]), "note": ""})
+            facts.append({"label": english, "value": _field(first[label]), "note": ""})
 
     groups: Dict[str, List[Dict[str, Any]]] = {"floor": [], "lot": [], "map": [], "near": [], "main": []}
     omitted = []
@@ -109,7 +119,7 @@ def build(folder: Folder, overwrite: bool = False) -> Dict[str, Any]:
             "type": "table",
             "title": "Property details",
             "rows": [
-                {"label": _ja(pair["label"]), "value": _ja(pair["value"]), "ja_label": pair["label"], "ja": ""}
+                {"label": _ja(pair["label"]), "value": _field(pair["value"]), "ja_label": pair["label"], "ja": ""}
                 for pair in listing["pairs"]
             ],
         }
