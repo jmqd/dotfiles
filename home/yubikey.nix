@@ -275,10 +275,22 @@ in
 
     home.activation.enforceYubikeyLongPressOnly = lib.mkIf cfg.otp.longPressOnly.enforceOnActivation (
       lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-        echo "Enforcing YubiKey OTP long-press-only configuration..."
-        if ! ${longPressOnlyTool}/bin/yubikey-long-press-only apply --yes; then
-          echo "warning: unable to enforce YubiKey OTP long-press-only configuration" >&2
-          ${lib.optionalString cfg.otp.longPressOnly.failActivationOnError "exit 1"}
+        yubikey_serial=${lib.escapeShellArg cfg.serial}
+        stamp_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/home-manager"
+        stamp_file="$stamp_dir/yubikey-long-press-only-$yubikey_serial.stamp"
+        if [[ -f "$stamp_file" ]]; then
+          echo "YubiKey $yubikey_serial OTP long-press-only already verified; run yubikey-long-press-only to re-check."
+        elif [[ -n "''${DRY_RUN:-}" ]]; then
+          echo "Would enforce YubiKey $yubikey_serial OTP long-press-only configuration."
+        else
+          echo "Enforcing YubiKey OTP long-press-only configuration..."
+          if ${longPressOnlyTool}/bin/yubikey-long-press-only apply --yes; then
+            mkdir -p "$stamp_dir"
+            printf 'enforced\n' > "$stamp_file"
+          else
+            echo "warning: unable to enforce YubiKey OTP long-press-only configuration" >&2
+            ${lib.optionalString cfg.otp.longPressOnly.failActivationOnError "exit 1"}
+          fi
         fi
       ''
     );

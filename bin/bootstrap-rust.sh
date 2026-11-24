@@ -45,13 +45,25 @@ missing_components() {
 }
 
 target_toolchain="$toolchain"
+already_default=0
+if [[ "$update" -eq 0 ]]; then
+	active_toolchain="$("$rustup_bin" show active-toolchain 2>/dev/null || true)"
+	case "$active_toolchain" in
+	"$target_toolchain (default)" | "$target_toolchain"-*" (default)")
+		already_default=1
+		;;
+	esac
+fi
+
 # `rustup run` never installs or updates a toolchain implicitly.
 # Keep ordinary activation local when the requested compiler is usable.
-if [[ "$update" -eq 1 ]] || ! "$rustup_bin" run "$target_toolchain" rustc --version >/dev/null 2>&1; then
-	echo "Installing or updating rustup toolchain: $target_toolchain (profile: $profile)"
-	"$rustup_bin" toolchain install "$target_toolchain" --profile "$profile"
+if [[ "$already_default" -eq 0 ]]; then
+	if [[ "$update" -eq 1 ]] || ! "$rustup_bin" run "$target_toolchain" rustc --version >/dev/null 2>&1; then
+		echo "Installing or updating rustup toolchain: $target_toolchain (profile: $profile)"
+		"$rustup_bin" toolchain install "$target_toolchain" --profile "$profile"
+	fi
+	"$rustup_bin" default "$target_toolchain"
 fi
-"$rustup_bin" default "$target_toolchain"
 
 if [[ ${#components[@]} -gt 0 ]]; then
 	installed="$("$rustup_bin" component list --toolchain "$target_toolchain" --installed)"
