@@ -166,6 +166,10 @@ class ReadingListingText(unittest.TestCase):
         keys = {text.town_key(t) for t in ("南荻窪１", "南荻窪1丁目", "南荻窪一丁目12-3")}
         self.assertEqual(keys, {"南荻窪1"})
 
+    def test_a_chome_written_in_kanji_reads_as_its_number(self) -> None:
+        written = {"一丁目": "1", "十丁目": "10", "十二丁目5": "12", "二十丁目": "20", "二十一丁目3-4": "21", "三田二丁目": "三田2"}
+        self.assertEqual({town: text.town_key(town) for town in written}, written)
+
     def test_label_with_tooltip_line_and_combined_labels_are_read(self) -> None:
         record = listings.normalise(
             "a", "used_house", "u", "",

@@ -414,14 +414,13 @@ def town_key(rest: object) -> str:
     s = re.sub(r"^(大字|字)", "", s)
 
     def kanji_chome(m: "re.Match[str]") -> str:
-        digits = m.group(1)
-        if digits == "十":
-            return "10-"
-        if digits.startswith("十"):
-            return "1" + str(_KANJI_DIGITS[digits[1]]) + "-"
-        return "".join(str(_KANJI_DIGITS[c]) for c in digits) + "-"
+        if m.group("ten"):
+            tens, units = m.group("tens"), m.group("units")
+            return "%d-" % ((_KANJI_DIGITS[tens] if tens else 1) * 10 + (_KANJI_DIGITS[units] if units else 0))
+        return "".join(str(_KANJI_DIGITS[c]) for c in m.group("plain")) + "-"
 
-    s = re.sub(r"([一二三四五六七八九十〇]{1,2})丁目", kanji_chome, s)
+    kanji = r"(?:(?P<tens>[一二三四五六七八九])?(?P<ten>十)(?P<units>[一二三四五六七八九])?|(?P<plain>[一二三四五六七八九〇]+))丁目"
+    s = re.sub(kanji, kanji_chome, s)
     s = re.sub(r"(\d+)丁目", r"\1-", s)
     m = re.match(r"(.*?)(\d+)", s)
     if m:
