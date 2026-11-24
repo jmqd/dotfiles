@@ -379,6 +379,7 @@
             "tests/git-clean-stale.sh"
             "tests/hm-switch-failure.sh"
             "tests/pre-push-secrets.sh"
+            "tests/run.sh"
           ];
 
           checkSource =
