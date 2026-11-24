@@ -278,7 +278,6 @@ class ReadingListingText(unittest.TestCase):
         for title in ("伊豆市熊坂中古保養所", "倉庫、物置用", "伊豆高原の「ペンション ノエル」です", "下北沢の社員寮"):
             with self.subTest(title):
                 self.assertIn("not_a_dwelling", listing(title=title)["flags"])
-        self.assertIn("not_a_dwelling", listing(間取り="ワンルーム", 建物面積="1398m2")["flags"])
         self.assertIn("not_a_dwelling", listing(物件種目="一棟売りマンション")["flags"])
 
     def test_a_house_whose_sales_copy_mentions_another_use_is_not_flagged(self) -> None:
@@ -494,6 +493,15 @@ class RecognisingOneHouseAcrossListings(unittest.TestCase):
         [(status, prop)] = self.judged([listing("https://x/1", **base), listing("https://x/2", **dict(base, 備考="１世帯賃貸中"))])
         self.assertEqual(status, criteria.NEAR_MISS)
         self.assertIn("tenant_occupied", prop["flags"])
+
+    def test_one_room_of_house_size_is_held_for_review_unless_another_agent_describes_rooms(self) -> None:
+        base = {"所在地": "東京都大田区北千束2", "土地面積": "234.08m2", "建物面積": "316.87m2", "築年月": "2009年3月", "販売価格": "4億5800万円", "構造": "RC造"}
+        one_room = listing("https://x/1", **dict(base, 間取り="ワンルーム"))
+        [(status, prop)] = self.judged([one_room])
+        self.assertEqual((status, prop["flags"]), (criteria.NEAR_MISS, ["not_a_dwelling"]))
+        # Another agent lists the rooms of the same house: the one room was a slip of the first, not a hall.
+        [(status, prop)] = self.judged([one_room, listing("https://x/2", **dict(base, 間取り="4LLDDKK+3S(納戸)"))])
+        self.assertEqual((status, prop["flags"]), (criteria.MATCH, []))
 
     def test_listings_that_disagree_on_the_structure_go_to_review_with_both_statements(self) -> None:
         base = {"所在地": "東京都世田谷区成城6", "土地面積": "330.00m2", "建物面積": "260.00m2", "築年月": "2006年6月", "販売価格": "3億円"}

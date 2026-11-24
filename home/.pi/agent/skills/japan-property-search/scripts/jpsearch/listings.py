@@ -250,10 +250,7 @@ def _flags(listing: Dict[str, Any], haystack: str) -> List[str]:
     if year is not None and (year < 1981 or (year == 1981 and (month or 12) <= 5)):
         # Building permits before June 1981 followed the old seismic code (旧耐震).
         flags.append("pre_1981_seismic_code")
-    named_use = _NOT_A_DWELLING.search("%s\n%s" % (listing.get("title") or "", listing.get("kind") or ""))
-    # A single room of house size is a hall or a store, whatever the listing is filed under.
-    one_big_room = re.fullmatch(r"ワンルーム|1R", listing.get("layout") or "") and (listing.get("building_m2") or 0) >= 150
-    if named_use or one_big_room:
+    if _NOT_A_DWELLING.search("%s\n%s" % (listing.get("title") or "", listing.get("kind") or "")):
         flags.append("not_a_dwelling")
     return flags
 

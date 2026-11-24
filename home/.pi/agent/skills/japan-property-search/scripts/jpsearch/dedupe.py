@@ -160,6 +160,21 @@ def _structure_statements(ranked: List[Listing]) -> List[Listing]:
     return named or list(stated.values())
 
 
+# Floor area from which a single room is a hall or a store, not somewhere to live.
+_ONE_ROOM_HOUSE_M2 = 150
+
+
+def _one_big_room(group: List[Listing], building_m2: Optional[float]) -> bool:
+    """Whether the property is one room of house size, whatever it is filed under.
+
+    Each agent types the layout in, and one of several entering ワンルーム
+    for a 4LDK house is a slip, so it counts only when no listing of the
+    property describes rooms.
+    """
+    layouts = [l["layout"] for l in group if l.get("layout")]
+    return bool(layouts) and all(re.fullmatch(r"ワンルーム|1R", layout) for layout in layouts) and (building_m2 or 0) >= _ONE_ROOM_HOUSE_M2
+
+
 def merge(group: List[Listing]) -> Dict[str, Any]:
     """One property record from the listings that advertise it.
 
@@ -202,7 +217,10 @@ def merge(group: List[Listing]) -> Dict[str, Any]:
     prop["price_jpy"] = prices[0] if prices else None
     prop["price_max_jpy"] = prices[-1] if prices and prices[-1] != prices[0] else None
     prop["price_undisclosed"] = not prices and any(l.get("price_undisclosed") for l in group)
-    prop["flags"] = sorted({f for l in group for f in l.get("flags") or []})
+    flags = {f for l in group for f in l.get("flags") or []}
+    if _one_big_room(group, prop["building_m2"]):
+        flags.add("not_a_dwelling")
+    prop["flags"] = sorted(flags)
     prop["has_detail"] = any(l.get("has_detail") for l in group)
     prop["image_count"] = max((l.get("image_count") or 0 for l in group), default=0)
     for field in ("building_m2", "land_m2"):
