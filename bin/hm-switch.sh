@@ -3,7 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 backup_ext="${HM_BACKUP_EXT:-hm-backup}"
-current_user="${HM_USER:-${USER:-$(id -un)}}"
+bootstrap_user_env="${HM_BOOTSTRAP_USER:-}"
+current_user="${HM_USER:-${bootstrap_user_env:-${USER:-$(id -un)}}}"
 refresh_home_manager="${HM_REFRESH:-0}"
 print_build_logs="${HM_PRINT_BUILD_LOGS:-0}"
 verbose_home_manager="${HM_VERBOSE:-0}"
@@ -11,7 +12,7 @@ accept_flake_config="${HM_ACCEPT_FLAKE_CONFIG:-1}"
 offline_mode="${HM_OFFLINE:-0}"
 home_profile="${HM_PROFILE:-full}"
 os_name="$(uname -s)"
-readonly repo_root backup_ext current_user refresh_home_manager print_build_logs verbose_home_manager accept_flake_config offline_mode home_profile os_name
+readonly repo_root backup_ext bootstrap_user_env current_user refresh_home_manager print_build_logs verbose_home_manager accept_flake_config offline_mode home_profile os_name
 
 refuse_on_nixos_standalone_home_manager() {
 	if [[ "$os_name" != "Linux" ]] || [[ ! -r /etc/os-release ]]; then
@@ -155,21 +156,67 @@ else
 	flake_ref="$(detect_flake_ref)"
 fi
 
-home_manager_cmd=(nix run)
-if [[ "$accept_flake_config" == "1" ]]; then
-	home_manager_cmd+=(--accept-flake-config)
+use_eval_cores=0
+if [[ "$(nix --version 2>/dev/null || true)" == *"Determinate Nix"* ]]; then
+	use_eval_cores=1
 fi
 
-if [[ "$offline_mode" == "1" ]]; then
-	home_manager_cmd+=(--offline)
+use_impure=0
+if [[ "$os_name" == "Darwin" ]]; then
+	needs_darwin_bootstrap=0
+	if [[ -n "$bootstrap_user_env" && "$bootstrap_user_env" != "jmq" ]] ||
+		[[ "$current_user" != "jmq" ]] ||
+		[[ -n "${HOME:-}" && "$HOME" != "/Users/jmq" ]]; then
+		needs_darwin_bootstrap=1
+	fi
+
+	case "$flake_ref" in
+	*"#macos-aarch64-bootstrap" | *"#work-macos-aarch64-bootstrap")
+		use_impure=1
+		;;
+	*"#macos-aarch64" | *"#work-macos-aarch64")
+		if [[ "$needs_darwin_bootstrap" == "1" ]]; then
+			flake_ref="${flake_ref}-bootstrap"
+			use_impure=1
+		fi
+		;;
+	*)
+		if [[ "$needs_darwin_bootstrap" == "1" ]]; then
+			use_impure=1
+		fi
+		;;
+	esac
 fi
 
-if [[ "$refresh_home_manager" == "1" ]]; then
-	home_manager_cmd+=(--refresh)
+if [[ "$refresh_home_manager" != "1" ]] && command -v home-manager >/dev/null 2>&1; then
+	home_manager_cmd=(home-manager)
+	if [[ "$accept_flake_config" == "1" ]]; then
+		home_manager_cmd+=(--option accept-flake-config true)
+	fi
+	if [[ "$offline_mode" == "1" ]]; then
+		home_manager_cmd+=(--option substitute false)
+	fi
+else
+	home_manager_cmd=(nix run)
+	if [[ "$use_eval_cores" == "1" ]]; then
+		home_manager_cmd+=(--option eval-cores 0)
+	fi
+	if [[ "$accept_flake_config" == "1" ]]; then
+		home_manager_cmd+=(--accept-flake-config)
+	fi
+	if [[ "$offline_mode" == "1" ]]; then
+		home_manager_cmd+=(--offline)
+	fi
+	if [[ "$refresh_home_manager" == "1" ]]; then
+		home_manager_cmd+=(--refresh)
+	fi
+	# Use this flake's locked Home Manager input instead of the moving GitHub ref.
+	home_manager_cmd+=("${repo_root}#home-manager" --)
 fi
 
-# Use this flake's locked Home Manager input instead of the moving GitHub ref.
-home_manager_cmd+=("${repo_root}#home-manager" --)
+if [[ "$use_eval_cores" == "1" ]]; then
+	home_manager_cmd+=(--option eval-cores 0)
+fi
 
 if [[ "$print_build_logs" == "1" ]]; then
 	home_manager_cmd+=(--print-build-logs)
@@ -181,13 +228,13 @@ fi
 
 home_manager_cmd+=(switch)
 
-if [[ "$os_name" == "Darwin" ]]; then
+if [[ "$use_impure" == "1" ]]; then
 	home_manager_cmd+=(--impure --flake "$flake_ref" -b "$backup_ext" "$@")
 else
 	home_manager_cmd+=(--flake "$flake_ref" -b "$backup_ext" "$@")
 fi
 
-if [[ "$os_name" == "Darwin" ]]; then
+if [[ "$use_impure" == "1" ]]; then
 	run_home_manager_switch env HM_BOOTSTRAP_USER="$current_user" "${home_manager_cmd[@]}"
 else
 	run_home_manager_switch "${home_manager_cmd[@]}"
