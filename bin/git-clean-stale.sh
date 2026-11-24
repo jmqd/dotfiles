@@ -187,7 +187,9 @@ trash() {
 
 sizes_dir=""
 cleanup() {
-	[[ -n $sizes_dir ]] && rm -rf "$sizes_dir"
+	if [[ -n $sizes_dir ]]; then
+		rm -rf "$sizes_dir"
+	fi
 }
 trap cleanup EXIT
 

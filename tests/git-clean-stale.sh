@@ -27,6 +27,11 @@ git init -q -b main "$root/repo"
 cd "$root/repo"
 GIT_COMMITTER_DATE="$old" git commit -q --allow-empty --date="$old" -m base
 
+# Repositories with no linked worktrees and --help must exit cleanly.
+bash "$script" --help >/dev/null || fail "--help failed"
+empty_dry="$(bash "$script")" || fail "0-worktree dry run failed"
+grep -q '^0 stale worktrees' <<<"$empty_dry" || fail "0-worktree dry run unexpected output: $empty_dry"
+
 # Age a worktree's checkout, index and reflog so only the threshold decides.
 age() {
 	local admin

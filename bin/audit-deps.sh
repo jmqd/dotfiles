@@ -17,7 +17,7 @@ cargo_audit_db_fetched=0
 
 cleanup() {
 	local path
-	for path in "${tmp_paths[@]}"; do
+	for path in ${tmp_paths[@]+"${tmp_paths[@]}"}; do
 		rm -rf "$path"
 	done
 }
@@ -365,12 +365,22 @@ run_cargo_audits() {
 		RUSTSEC-2026-0459
 }
 
-# Runs one audit group in an isolated scope so subshell cleanup and counters
-# stay independent of the parent shell.
+cleanup_group_tmp() {
+	if [ -n "${TMPDIR:-}" ]; then
+		rm -rf "$TMPDIR"
+	fi
+}
+
+# Runs one audit group in an isolated scope with its own TMPDIR so background
+# subshell temp files and counters stay independent of the parent shell.
 run_group_isolated() {
 	local idx="$1"
 	shift
 	local tmp_paths=() failures=0 updates=0 residuals=0
+	TMPDIR="$audit_dir/tmp-${idx}"
+	export TMPDIR
+	mkdir -p "$TMPDIR"
+	trap cleanup_group_tmp EXIT
 	"$@" >"$audit_dir/group-${idx}.out" 2>&1
 	printf '%d %d %d\n' "$failures" "$updates" "$residuals" >"$audit_dir/group-${idx}.counts"
 }
@@ -460,6 +470,9 @@ main() {
 	local idx rc g_fail g_upd g_res
 	for idx in 1 2 3 4 5; do
 		rc=0
+		g_fail=0
+		g_upd=0
+		g_res=0
 		wait "${group_pids[$idx]}" || rc=$?
 		if [ -f "$audit_dir/group-${idx}.out" ]; then
 			cat "$audit_dir/group-${idx}.out"
@@ -469,11 +482,11 @@ main() {
 			failures=$((failures + g_fail))
 			updates=$((updates + g_upd))
 			residuals=$((residuals + g_res))
+			if [ "$rc" -ne 0 ] && [ "$g_fail" -eq 0 ]; then
+				fail "audit group $idx exited with status $rc"
+			fi
 		else
 			fail "audit group $idx terminated unexpectedly (exit $rc)"
-		fi
-		if [ "$rc" -ne 0 ] && [ "${g_fail:-0}" -eq 0 ]; then
-			fail "audit group $idx exited with status $rc"
 		fi
 	done
 

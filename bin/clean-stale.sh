@@ -1279,8 +1279,9 @@ probe_worktrees() {
 # Plans removal of idle linked worktrees that hold nothing beyond what
 # their repository keeps and regenerable build output.
 plan_worktrees() {
-	local dir probe wt_dir wt_linked wt_merged wt_common wt_risk i
+	local dir probe wt_dir wt_linked wt_merged wt_common wt_risk i found
 	local wt_dirs=()
+	local wt_res_dirs=() wt_res_linked=() wt_res_merged=() wt_res_common=() wt_res_risk=()
 	worktree_candidates >"$work/worktree-candidates"
 	prefetch_plannable <"$work/worktree-candidates"
 	while IFS= read -r -d '' dir <&3; do
@@ -1295,45 +1296,34 @@ plan_worktrees() {
 $(declare -f probe_worktrees assess_checkout is_idle git_in config_runs_commands has_submodules default_branch_refs untracked_in_ref diff_merged ignored_regenerable)
 probe_worktrees \"\$@\""
 		while IFS="$tab" read -r wt_dir wt_linked wt_merged wt_common wt_risk; do
-			wt_common="${wt_common#x}"
-			wt_risk="${wt_risk#x}"
-			assessed+=("$wt_dir")
-			assessed_risk+=("$wt_risk")
-			assessed_linked+=("$wt_linked")
-			assessed_common+=("$wt_common")
-			assessed_merged+=("$wt_merged")
+			wt_res_dirs+=("$wt_dir")
+			wt_res_linked+=("$wt_linked")
+			wt_res_merged+=("$wt_merged")
+			wt_res_common+=("${wt_common#x}")
+			wt_res_risk+=("${wt_risk#x}")
 		done < <(printf '%s\0' "${wt_dirs[@]}" | parallel_runs 1 "$probe")
-		for dir in "${wt_dirs[@]}"; do
-			i=0
-			while [ "$i" -lt "${#assessed[@]}" ]; do
-				if [ "${assessed[$i]}" = "$dir" ]; then
-					checkout_risk="${assessed_risk[$i]}"
-					checkout_linked="${assessed_linked[$i]}"
-					checkout_common="${assessed_common[$i]}"
-					checkout_merged="${assessed_merged[$i]}"
-					break
-				fi
-				i=$((i + 1))
-			done
-			[ "$checkout_linked" -eq 1 ] || continue
-			if [ -n "$checkout_risk" ]; then
-				note "$dir" "$checkout_risk"
-				continue
-			fi
-			if [ "$checkout_merged" -eq 1 ]; then
-				add merged-worktree worktree "$dir" "$checkout_common"
-			else
-				add worktree worktree "$dir" "$checkout_common"
-			fi
-		done
-		return 0
 	fi
 	for dir in "${wt_dirs[@]}"; do
-		assess_cached "$dir"
-		[ "$checkout_linked" -eq 1 ] || continue
-		if [ -z "$checkout_risk" ] && ! ignored_regenerable "$dir"; then
-			checkout_risk="ignored $ignored_keeper may not be regenerable"
+		found=0
+		i=0
+		while [ "$i" -lt "${#wt_res_dirs[@]}" ]; do
+			if [ "${wt_res_dirs[$i]}" = "$dir" ]; then
+				checkout_linked="${wt_res_linked[$i]}"
+				checkout_merged="${wt_res_merged[$i]}"
+				checkout_common="${wt_res_common[$i]}"
+				checkout_risk="${wt_res_risk[$i]}"
+				found=1
+				break
+			fi
+			i=$((i + 1))
+		done
+		if [ "$found" -eq 0 ]; then
+			assess_cached "$dir"
+			if [ "$checkout_linked" -eq 1 ] && [ -z "$checkout_risk" ] && ! ignored_regenerable "$dir"; then
+				checkout_risk="ignored $ignored_keeper may not be regenerable"
+			fi
 		fi
+		[ "$checkout_linked" -eq 1 ] || continue
 		if [ -n "$checkout_risk" ]; then
 			note "$dir" "$checkout_risk"
 			continue
