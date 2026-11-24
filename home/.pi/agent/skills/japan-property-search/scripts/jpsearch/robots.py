@@ -14,6 +14,11 @@ from urllib.parse import unquote, urlsplit
 # The token this toolkit answers to in robots.txt, besides the `*` group.
 AGENT_TOKEN = "jpx"
 
+# Names under which sites address the assistant that drives this toolkit. A
+# site that shuts any of them out of a URL has shut this toolkit out of it,
+# whatever its `*` group says.
+ASSISTANT_TOKENS = ("claude-user", "claudebot", "claude-web", "claude-searchbot", "anthropic-ai")
+
 _RULE_KEYS = ("allow", "disallow", "crawl-delay")
 
 Rule = Tuple[str, str]
@@ -54,6 +59,21 @@ def _rules_for(robots_txt: str, agent: str) -> List[Rule]:
     return [rule for rules in chosen for rule in rules]
 
 
+def _permits(rules: List[Rule], target: str) -> bool:
+    """Longest matching rule wins; Allow wins a tie; no matching rule permits."""
+    best_len = -1
+    verdict = True
+    for kind, rule_path in rules:
+        if kind == "crawl-delay" or not rule_path:
+            continue
+        if _pattern(rule_path).match(target):
+            length = len(rule_path)
+            if length > best_len or (length == best_len and kind == "allow"):
+                best_len = length
+                verdict = kind == "allow"
+    return verdict
+
+
 def _pattern(rule_path: str) -> "re.Pattern[str]":
     """A rule path as a regular expression over the percent-decoded URL.
 
@@ -68,7 +88,7 @@ def _pattern(rule_path: str) -> "re.Pattern[str]":
 
 
 def allowed(robots_txt: Optional[str], url: str, agent: str = AGENT_TOKEN) -> bool:
-    """True when the robots.txt text permits `url`.
+    """True when the robots.txt text permits `url`, both to this toolkit and to the assistant driving it.
 
     `robots_txt` is the file's text; None means the site has no robots.txt
     (a 404), which permits everything. What an unreachable or blocked
@@ -78,17 +98,12 @@ def allowed(robots_txt: Optional[str], url: str, agent: str = AGENT_TOKEN) -> bo
         return True
     parts = urlsplit(url)
     target = unquote(parts.path or "/") + ("?" + unquote(parts.query) if parts.query else "")
-    best_len = -1
-    verdict = True
-    for kind, rule_path in _rules_for(robots_txt, agent):
-        if kind == "crawl-delay" or not rule_path:
-            continue
-        if _pattern(rule_path).match(target):
-            length = len(rule_path)
-            if length > best_len or (length == best_len and kind == "allow"):
-                best_len = length
-                verdict = kind == "allow"
-    return verdict
+    if not _permits(_rules_for(robots_txt, agent), target):
+        return False
+    for agents, rules in _groups(robots_txt):
+        if any(a in ASSISTANT_TOKENS for a in agents) and not _permits(rules, target):
+            return False
+    return True
 
 
 def crawl_delay(robots_txt: Optional[str], agent: str = AGENT_TOKEN) -> Optional[float]:
