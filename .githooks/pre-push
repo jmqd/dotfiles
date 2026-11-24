@@ -8,8 +8,17 @@ fi
 
 cd "$repo_root"
 
+work_dir="$(mktemp -d)"
+trap 'rm -rf "$work_dir"' EXIT
+
 has_strict_mode() {
-	local file="$1"
+	local file="$1" line i=0
+	while IFS= read -r line && [ "$i" -lt 15 ]; do
+		i=$((i + 1))
+		if [[ "$line" =~ ^[[:space:]]*set[[:space:]]+-[^#]*e[^#]*u[^#]*o[^#]*[[:space:]]+pipefail ]]; then
+			return 0
+		fi
+	done <"$file"
 
 	if grep -Eq '^[[:space:]]*set[[:space:]]+-[^#]*e[^#]*u[^#]*o[^#]*[[:space:]]+pipefail' "$file"; then
 		return 0
@@ -33,48 +42,30 @@ has_strict_mode() {
 }
 
 detect_shell() {
-	local file="$1"
+	local file="$1" first_line="$2"
 
 	case "$file" in
 	*.bash | .bashrc)
-		echo "bash"
+		detected_shell="bash"
 		return 0
 		;;
 	*.zsh | .zshrc)
-		echo "zsh"
+		detected_shell="zsh"
 		return 0
 		;;
 	esac
 
-	if head -n 1 "$file" | grep -q 'bash'; then
-		echo "bash"
-	elif head -n 1 "$file" | grep -q 'zsh'; then
-		echo "zsh"
-	else
-		echo "sh"
-	fi
+	case "$first_line" in
+	*bash*) detected_shell="bash" ;;
+	*zsh*) detected_shell="zsh" ;;
+	*) detected_shell="sh" ;;
+	esac
 }
 
 # Extensionless scripts under bin/ count when their shebang names a shell.
 has_shell_shebang() {
-	head -n 1 "$1" 2>/dev/null | grep -Eq '^#!.*[/ ](ba|z)?sh([[:space:]]|$)'
+	[[ "$1" =~ ^#!.*[/\ ](ba|z)?sh([[:space:]]|$) ]]
 }
-
-shell_files=()
-while IFS= read -r -d '' file; do
-	case "$file" in
-	*.sh | *.bash | *.zsh | .bashrc | .zshrc | .githooks/pre-push)
-		shell_files+=("$file")
-		;;
-	bin/*)
-		if has_shell_shebang "$file"; then
-			shell_files+=("$file")
-		fi
-		;;
-	esac
-done < <(git ls-files -z)
-
-failed=0
 
 # Runs shellcheck over the given files, one process per file in parallel.
 # Returns non-zero when a file fails or shellcheck cannot be run.
@@ -88,10 +79,15 @@ run_shellcheck() {
 	fi
 
 	if command -v nix >/dev/null 2>&1 && [ -f "$repo_root/flake.nix" ]; then
-		local tmp_cache_dir status=0
-		tmp_cache_dir="$(mktemp -d)"
-		XDG_CACHE_HOME="$tmp_cache_dir" nix develop --quiet --no-write-lock-file --command shellcheck -x -s "$shell_name" "$@" || status=$?
-		rm -rf "$tmp_cache_dir"
+		local cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}"
+		local tmp_cache_dir="" status=0
+		if { [ -d "$cache_dir" ] && [ -w "$cache_dir" ]; } || { [ ! -e "$cache_dir" ] && mkdir -p "$cache_dir" 2>/dev/null; }; then
+			nix shell --quiet --no-write-lock-file --inputs-from "$repo_root" nixpkgs#shellcheck -c shellcheck -x -s "$shell_name" "$@" || status=$?
+		else
+			tmp_cache_dir="$(mktemp -d)"
+			XDG_CACHE_HOME="$tmp_cache_dir" nix shell --quiet --no-write-lock-file --inputs-from "$repo_root" nixpkgs#shellcheck -c shellcheck -x -s "$shell_name" "$@" || status=$?
+			rm -rf "$tmp_cache_dir"
+		fi
 		return "$status"
 	fi
 
@@ -99,42 +95,91 @@ run_shellcheck() {
 	return 1
 }
 
+# Git passes the remote name as the first argument. Commits already on that
+# remote are published, so only the rest need a scan. Without a plainly
+# named, configured remote (a URL, or a manual run), scan every local ref.
+remote_name="${1:-}"
+if [[ "$remote_name" =~ ^[A-Za-z0-9._/-]+$ ]] && git remote | grep -Fxq -- "$remote_name"; then
+	history_msg="pre-push: scanning commits not yet on $remote_name"
+	history_scan=(bin/lint-secrets.sh --unpushed "$remote_name")
+else
+	history_msg="pre-push: scanning committed history across local refs"
+	history_scan=(bin/lint-secrets.sh --history)
+fi
+
+# Launch the independent secret scans immediately while shell checks run.
+bin/lint-secrets.sh >"$work_dir/secrets-worktree.out" 2>&1 &
+pid_secrets_wt=$!
+
+"${history_scan[@]}" >"$work_dir/secrets-history.out" 2>&1 &
+pid_secrets_hist=$!
+
+shell_files=()
+shell_first_lines=()
+while IFS= read -r -d '' file; do
+	case "$file" in
+	*.sh | *.bash | *.zsh | .bashrc | .zshrc | .githooks/pre-push)
+		first_line=""
+		if [ -f "$file" ]; then
+			IFS= read -r first_line <"$file" 2>/dev/null || true
+		fi
+		shell_files+=("$file")
+		shell_first_lines+=("$first_line")
+		;;
+	bin/*)
+		if [ -f "$file" ]; then
+			first_line=""
+			IFS= read -r first_line <"$file" 2>/dev/null || true
+			if has_shell_shebang "$first_line"; then
+				shell_files+=("$file")
+				shell_first_lines+=("$first_line")
+			fi
+		fi
+		;;
+	esac
+done < <(git ls-files -z)
+
 jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 bash_files=()
 sh_files=()
+failed=0
+shell_out="$work_dir/shell.out"
+: >"$shell_out"
 
 if [ "${#shell_files[@]}" -eq 0 ]; then
-	echo "pre-push: no shell files found; skipping shell checks"
+	echo "pre-push: no shell files found; skipping shell checks" >>"$shell_out"
 else
-	echo "pre-push: running shell checks"
+	echo "pre-push: running shell checks" >>"$shell_out"
 
-	for file in "${shell_files[@]}"; do
+	for i in "${!shell_files[@]}"; do
+		file="${shell_files[$i]}"
 		[ -f "$file" ] || continue
 
-		shell_name="$(detect_shell "$file")"
+		detect_shell "$file" "${shell_first_lines[$i]}"
+		shell_name="$detected_shell"
 
 		case "$shell_name" in
 		bash)
-			if ! bash -n "$file"; then
-				echo "pre-push: syntax check failed for $file (bash)" >&2
+			if ! bash -n "$file" >>"$shell_out" 2>&1; then
+				echo "pre-push: syntax check failed for $file (bash)" >>"$shell_out"
 				failed=1
 			fi
 			bash_files+=("$file")
 			;;
 		zsh)
 			if command -v zsh >/dev/null 2>&1; then
-				if ! zsh -n "$file"; then
-					echo "pre-push: syntax check failed for $file (zsh)" >&2
+				if ! zsh -n "$file" >>"$shell_out" 2>&1; then
+					echo "pre-push: syntax check failed for $file (zsh)" >>"$shell_out"
 					failed=1
 				fi
 			else
-				echo "pre-push: WARN zsh not found; skipped syntax check for $file"
+				echo "pre-push: WARN zsh not found; skipped syntax check for $file" >>"$shell_out"
 			fi
-			echo "pre-push: WARN ShellCheck does not support zsh; skipped for $file"
+			echo "pre-push: WARN ShellCheck does not support zsh; skipped for $file" >>"$shell_out"
 			;;
 		*)
-			if ! sh -n "$file"; then
-				echo "pre-push: syntax check failed for $file (sh)" >&2
+			if ! sh -n "$file" >>"$shell_out" 2>&1; then
+				echo "pre-push: syntax check failed for $file (sh)" >>"$shell_out"
 				failed=1
 			fi
 			sh_files+=("$file")
@@ -144,41 +189,62 @@ else
 		case "$file" in
 		bin/*.sh | .githooks/pre-push)
 			if ! has_strict_mode "$file"; then
-				echo "pre-push: $file missing strict mode (set -euo pipefail, or set -u ending in main \"\$@\" || exit 1)" >&2
+				echo "pre-push: $file missing strict mode (set -euo pipefail, or set -u ending in main \"\$@\" || exit 1)" >>"$shell_out"
 				failed=1
 			fi
 			;;
 		esac
 	done
 
-	if [ "${#bash_files[@]}" -gt 0 ] && ! run_shellcheck bash "${bash_files[@]}"; then
-		echo "pre-push: shellcheck failed for bash scripts" >&2
-		failed=1
+	pid_sc_bash=""
+	pid_sc_sh=""
+	if [ "${#bash_files[@]}" -gt 0 ]; then
+		run_shellcheck bash "${bash_files[@]}" >"$work_dir/sc-bash.out" 2>&1 &
+		pid_sc_bash=$!
 	fi
-	if [ "${#sh_files[@]}" -gt 0 ] && ! run_shellcheck sh "${sh_files[@]}"; then
-		echo "pre-push: shellcheck failed for sh scripts" >&2
-		failed=1
+	if [ "${#sh_files[@]}" -gt 0 ]; then
+		run_shellcheck sh "${sh_files[@]}" >"$work_dir/sc-sh.out" 2>&1 &
+		pid_sc_sh=$!
+	fi
+
+	if [ -n "$pid_sc_bash" ]; then
+		rc_sc_bash=0
+		wait "$pid_sc_bash" || rc_sc_bash=$?
+		[ ! -s "$work_dir/sc-bash.out" ] || cat "$work_dir/sc-bash.out" >>"$shell_out"
+		if [ "$rc_sc_bash" -ne 0 ]; then
+			echo "pre-push: shellcheck failed for bash scripts" >>"$shell_out"
+			failed=1
+		fi
+	fi
+	if [ -n "$pid_sc_sh" ]; then
+		rc_sc_sh=0
+		wait "$pid_sc_sh" || rc_sc_sh=$?
+		[ ! -s "$work_dir/sc-sh.out" ] || cat "$work_dir/sc-sh.out" >>"$shell_out"
+		if [ "$rc_sc_sh" -ne 0 ]; then
+			echo "pre-push: shellcheck failed for sh scripts" >>"$shell_out"
+			failed=1
+		fi
 	fi
 fi
 
+rc_secrets_wt=0
+wait "$pid_secrets_wt" || rc_secrets_wt=$?
+
+rc_secrets_hist=0
+wait "$pid_secrets_hist" || rc_secrets_hist=$?
+
+cat "$shell_out"
+
 echo "pre-push: running secret scan"
-if ! bin/lint-secrets.sh; then
+cat "$work_dir/secrets-worktree.out"
+if [ "$rc_secrets_wt" -ne 0 ]; then
 	echo "pre-push: secret scan failed" >&2
 	failed=1
 fi
 
-# Git passes the remote name as the first argument. Commits already on that
-# remote are published, so only the rest need a scan. Without a plainly
-# named, configured remote (a URL, or a manual run), scan every local ref.
-remote_name="${1:-}"
-if [[ "$remote_name" =~ ^[A-Za-z0-9._/-]+$ ]] && git remote | grep -Fxq -- "$remote_name"; then
-	echo "pre-push: scanning commits not yet on $remote_name"
-	history_scan=(bin/lint-secrets.sh --unpushed "$remote_name")
-else
-	echo "pre-push: scanning committed history across local refs"
-	history_scan=(bin/lint-secrets.sh --history)
-fi
-if ! "${history_scan[@]}"; then
+echo "$history_msg"
+cat "$work_dir/secrets-history.out"
+if [ "$rc_secrets_hist" -ne 0 ]; then
 	echo "pre-push: committed secret scan failed" >&2
 	failed=1
 fi
