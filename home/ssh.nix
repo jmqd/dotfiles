@@ -19,11 +19,20 @@
 
       "github.com" = {
         AddKeysToAgent = "yes";
+        ControlMaster = "auto";
+        ControlPath = "~/.ssh/cm-%C";
+        ControlPersist = "10m";
         IdentitiesOnly = "yes";
         IdentityFile = [ "~/.ssh/id_ed25519" ];
       }
       // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
         UseKeychain = "yes";
+      };
+
+      "jmws" = {
+        ControlMaster = "auto";
+        ControlPath = "~/.ssh/cm-%C";
+        ControlPersist = "10m";
       };
     };
   };
