@@ -237,6 +237,7 @@ def coverage_note(row: Dict[str, Any]) -> str:
     """What a reader must know about a source's run, in one line: what failed and how much was left unread."""
     notes = list(row["problems"])
     for count, wording in (
+        (row["pages_unread"], "%d search page%s not fetched yet"),
         (row["details_failed"], "%d detail page%s could not be read"),
         (row["details_gone"], "%d listing page%s no longer available"),
         (row["details_deferred"], "%d detail page%s left for a later run (raise max_detail_pages or run again)"),

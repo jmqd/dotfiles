@@ -611,6 +611,12 @@ class HonouringRobotsTxt(unittest.TestCase):
         self.assertFalse(robots.allowed(partly, "https://s.jp/search/?a=1"))
         self.assertTrue(robots.allowed(partly, "https://s.jp/house/1"))
 
+    def test_a_saved_robots_txt_that_cannot_be_read_is_an_error_not_a_verdict(self) -> None:
+        said = io.StringIO()
+        with contextlib.redirect_stderr(said), contextlib.redirect_stdout(said):
+            code = cli.main(["robots", "/nonexistent/robots.txt", "https://s.jp/house/1"])
+        self.assertEqual((code, said.getvalue().split(":")[0]), (2, "error"))
+
 
 REGISTRY = {
     "sources": [
@@ -717,6 +723,13 @@ class PlanningARun(PlanFixture):
         tasks = self.plan()["tasks"]
         self.assertEqual(self.todo(), [])
         self.assertIn("HTTP 403", [t for t in tasks if t["kind"] == "list"][0]["why"])
+
+    def test_result_cards_that_lost_their_links_are_a_failed_search_not_an_empty_one(self) -> None:
+        self.allow_everything()
+        self.results(self.todo()[0], [dict(card(n, 600), url=None) for n in range(1, 4)])
+        [task] = self.lists(self.plan()["tasks"])
+        self.assertEqual(task["status"], planning.FAILED)
+        self.assertIn("3 of 3 cards have no link", task["why"])
 
     def test_a_page_read_for_a_search_that_has_since_changed_is_read_again(self) -> None:
         self.allow_everything()
@@ -898,6 +911,19 @@ class PlanningSitesThatNameTheirMunicipalities(PlanFixture):
 
     def test_nothing_is_fetched_before_robots_txt(self) -> None:
         self.assertEqual({(t["kind"], t["status"]) for t in self.plan()["tasks"]}, {("robots", "todo"), ("discover", "waiting")})
+
+    def test_a_search_waiting_for_its_municipality_list_is_unfinished_not_inapplicable(self) -> None:
+        def outcomes() -> dict:
+            return {r["id"]: (r["outcome"], r["pages_unread"]) for r in planning.coverage(self.plan(), self.sources, self.profile)}
+
+        self.assertEqual(outcomes(), {"byform": ("incomplete", 1), "bypath": ("incomplete", 1)})
+        for task in self.todo():
+            self.capture(task, {"status": 404, "text": ""})
+        # The list of municipalities does not load, on the first try or the second.
+        for _attempt in range(planning.MAX_ATTEMPTS):
+            for task in self.todo():
+                self.capture(task, {}, error="navigation timed out")
+        self.assertEqual(outcomes(), {"byform": ("failed", 0), "bypath": ("failed", 0)})
 
     def test_municipality_codes_read_from_a_form_fill_the_search_url(self) -> None:
         for task in self.todo():

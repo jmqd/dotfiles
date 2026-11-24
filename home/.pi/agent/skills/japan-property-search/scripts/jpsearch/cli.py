@@ -260,7 +260,13 @@ def _cmd_sources(args: argparse.Namespace) -> int:
 
 
 def _cmd_robots(args: argparse.Namespace) -> int:
-    rules = None if args.robots == "none" else Path(args.robots).read_text(encoding="utf-8", errors="replace")
+    rules = None
+    if args.robots != "none":
+        try:
+            rules = Path(args.robots).read_text(encoding="utf-8", errors="replace")
+        except OSError as error:
+            print("error: cannot read %s: %s" % (args.robots, error), file=sys.stderr)
+            return 2
     denied = 0
     for url in args.urls:
         ok = robots.allowed(rules, url)

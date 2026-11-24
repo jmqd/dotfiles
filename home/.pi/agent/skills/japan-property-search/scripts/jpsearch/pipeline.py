@@ -54,7 +54,8 @@ def read_page(path: Path) -> Page:
     envelope = read_json(path) or {}
     task = envelope.get("task") or {}
     result = envelope.get("result") or {}
-    cards = [c for c in result.get("cards") or [] if c.get("url")]
+    found = result.get("cards") or []
+    cards = [c for c in found if c.get("url")]
     info = result.get("info") or {}
     hits = _hits(info.get("hits"))
     if envelope.get("error"):
@@ -63,6 +64,12 @@ def read_page(path: Path) -> Page:
         return Page(path, task, DRIFT, "the search URL returned HTTP %d: the site's URL form has changed" % envelope["http_status"], [], hits, None)
     if result.get("blocked") and not cards:
         return Page(path, task, BLOCKED, "block page: " + ", ".join(result["blocked"])[:160], [], hits, None)
+    unlinked = len(found) - len(cards)
+    if unlinked > len(cards):
+        # Cards were recognised but most carry no link to their listing. Read on, the page would pass
+        # for a short one, or for "no listings" where the site states no hit count.
+        note = "%d of %d cards have no link to a listing: the site's markup has changed" % (unlinked, len(found))
+        return Page(path, task, DRIFT, note, [], hits, None)
     if not cards:
         title = text.squash(info.get("title"))
         if _ERROR_PAGE.search(title):

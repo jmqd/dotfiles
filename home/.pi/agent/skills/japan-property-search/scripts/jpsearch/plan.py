@@ -530,11 +530,16 @@ def _outcome(source: Optional[Source], tasks: List[Dict[str, Any]], skipped: boo
         return "browsed by hand" if tasks else "manual"
     if skipped:
         return "skipped by profile"
+    pending = any(t["status"] in (TODO, WAITING) for t in tasks)
     if not planned:
-        return "no search for these areas"
+        # A site that names its municipalities has no result pages to plan until that list is read:
+        # a search not yet begun, or one that could not begin, is not a search that does not apply.
+        if pending:
+            return "incomplete"
+        return "failed" if any(t["status"] in (FAILED, DISALLOWED) for t in tasks) else "no search for these areas"
     if all(t["status"] == SKIPPED for t in planned):
         return "not applicable"
-    if any(t["status"] in (TODO, WAITING) for t in tasks):
+    if pending:
         return "incomplete"
     if all(t["status"] in (FAILED, DISALLOWED) for t in planned):
         return "failed"
@@ -583,6 +588,7 @@ def coverage(document: Dict[str, Any], sources: List[Source], profile: Profile) 
                 "covers_profile": source.covers(profile.areas) if source else True,
                 "outcome": _outcome(source, tasks, skipped and source is not None, bool(problems or truncated or deferred)),
                 "pages": sum(1 for t in lists if t["status"] == DONE),
+                "pages_unread": sum(1 for t in tasks if t["kind"] != "detail" and t["status"] in (TODO, WAITING)),
                 "pages_failed": sum(1 for t in lists if t["status"] == FAILED),
                 "pages_disallowed": sum(1 for t in lists if t["status"] == DISALLOWED),
                 "cards": sum(t.get("cards", 0) for t in lists),
