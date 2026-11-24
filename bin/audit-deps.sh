@@ -8,10 +8,15 @@ failures=0
 updates=0
 residuals=0
 tmp_paths=()
+flow_bin=""
+osv_scanner_bin=""
 cargo_audit_bin=""
+govulncheck_dir=""
+go_dir=""
 cargo_audit_db_fetched=0
 
 cleanup() {
+	local path
 	for path in "${tmp_paths[@]}"; do
 		rm -rf "$path"
 	done
@@ -40,38 +45,6 @@ require_tool() {
 		fail "missing required tool: $1"
 		return 1
 	fi
-}
-
-run_required() {
-	if "$@"; then
-		ok "$*"
-	else
-		fail "command failed: $*"
-	fi
-}
-
-# git+file reads the tracked tree in place; a plain path makes Nix copy the
-# whole working directory, ignored caches included, into the store.
-flake_expr() {
-	DOTFILES_AUDIT_ROOT="$repo_root" nix eval --impure --raw --expr "let flake = builtins.getFlake (\"git+file://\" + builtins.getEnv \"DOTFILES_AUDIT_ROOT\"); in $*"
-}
-
-# Resolve a nixpkgs tool once; `nix run` re-evaluates the flake on every call.
-tool_bin() {
-	local attr="$1" bin="$2" out
-	out="$(nix build --no-link --print-out-paths --inputs-from "$repo_root" "nixpkgs#${attr}" | head -n 1)"
-	[ -x "$out/bin/$bin" ] || return 1
-	printf '%s\n' "$out/bin/$bin"
-}
-
-package_version() {
-	local system="$1" attr="$2"
-	flake_expr "flake.packages.\"${system}\".\"${attr}\".version"
-}
-
-input_path() {
-	local input="$1"
-	flake_expr "flake.inputs.\"${input}\".outPath"
 }
 
 note_upgrade() {
@@ -123,7 +96,7 @@ check_github_release_latest() {
 check_pins() {
 	section "latest check: pins"
 	local report name status pinned upstream detail
-	report="$(nix run "$repo_root#flow" -- --output json pin check)" || true
+	report="$("$flow_bin" --output json pin check)" || true
 	if ! jq -e '.command == "check"' <<<"$report" >/dev/null 2>&1; then
 		fail "flow pin check produced no report"
 		return
@@ -158,7 +131,7 @@ osv_audit_lock() {
 	tmp_paths+=("$output_file" "$stderr_file" "$found_file" "$allowed_file" "$unexpected_file" "$stale_file")
 
 	set +e
-	nix run --inputs-from "$repo_root" nixpkgs#osv-scanner -- scan --format json --lockfile "$lock_file" >"$output_file" 2>"$stderr_file"
+	"$osv_scanner_bin" scan --format json --lockfile "$lock_file" >"$output_file" 2>"$stderr_file"
 	status=$?
 	set -e
 
@@ -321,10 +294,15 @@ govulncheck_notion_cli() {
 	work_dir="$(mktemp -d)"
 	output_file="$(mktemp)"
 	tmp_paths+=("$work_dir" "$output_file")
-	local go_mod_cache go_build_cache
-	go_mod_cache="$(mktemp -d)"
-	go_build_cache="$(mktemp -d)"
-	tmp_paths+=("$go_mod_cache" "$go_build_cache")
+
+	local default_cache_base="${XDG_CACHE_HOME:-$HOME/.cache}/dotfiles-audit-go"
+	local go_mod_cache="${GOMODCACHE:-$default_cache_base/mod}"
+	local go_build_cache="${GOCACHE:-$default_cache_base/build}"
+	if ! mkdir -p "$go_mod_cache" "$go_build_cache" 2>/dev/null; then
+		go_mod_cache="$(mktemp -d)"
+		go_build_cache="$(mktemp -d)"
+		tmp_paths+=("$go_mod_cache" "$go_build_cache")
+	fi
 
 	cp -R "$notion_src"/. "$work_dir"/
 	chmod -R u+w "$work_dir"
@@ -333,10 +311,11 @@ govulncheck_notion_cli() {
 	(
 		cd "$work_dir"
 		env \
-			GOMODCACHE="${GOMODCACHE:-$go_mod_cache}" \
-			GOCACHE="${GOCACHE:-$go_build_cache}" \
+			PATH="${govulncheck_dir}:${go_dir}:${PATH}" \
+			GOMODCACHE="$go_mod_cache" \
+			GOCACHE="$go_build_cache" \
 			GOFLAGS="${GOFLAGS:-} -modcacherw" \
-			nix shell --inputs-from "$repo_root" nixpkgs#govulncheck nixpkgs#go -c govulncheck -scan=module
+			govulncheck -scan=module
 	) >"$output_file" 2>&1
 	status=$?
 	set -e
@@ -353,40 +332,8 @@ govulncheck_notion_cli() {
 	fi
 }
 
-main() {
-	section "tooling"
-	require_tool curl
-	require_tool git
-	require_tool jq
-	require_tool nix
-
-	if [ "$failures" -gt 0 ]; then
-		exit 1
-	fi
-
-	local system
-	system="$(nix eval --impure --raw --expr builtins.currentSystem)"
-	ok "current system is $system"
-
-	local gws_version
-	gws_version="$(package_version "$system" googleworkspace-cli)"
-	check_github_release_latest "googleworkspace/cli" "v${gws_version}"
-
-	check_pins
-
-	osv_audit_lock "oracle" "pkgs/oracle/package-lock.json"
-
-	if ! cargo_audit_bin="$(tool_bin cargo-audit cargo-audit)"; then
-		fail "could not build cargo-audit"
-		exit 1
-	fi
-
-	local gws_src trueflow_src notion_src
-	# Build the source so the lockfile exists even when the store lacks it.
-	gws_src="$(nix build --no-link --print-out-paths "$repo_root#packages.${system}.googleworkspace-cli.src")"
-	trueflow_src="$(input_path trueflow)"
-	notion_src="$(input_path notion-cli)"
-
+run_cargo_audits() {
+	local gws_src="$1" trueflow_src="$2"
 	cargo_audit_lock "pkgs/flow" "pkgs/flow/Cargo.lock"
 	cargo_audit_lock "projects/omp-phone" "projects/omp-phone/Cargo.lock"
 	cargo_audit_lock "projects/spotify-export" "projects/spotify-export/Cargo.lock"
@@ -416,8 +363,119 @@ main() {
 		RUSTSEC-2026-0194 \
 		RUSTSEC-2026-0195 \
 		RUSTSEC-2026-0459
+}
 
-	govulncheck_notion_cli "$notion_src"
+# Runs one audit group in an isolated scope so subshell cleanup and counters
+# stay independent of the parent shell.
+run_group_isolated() {
+	local idx="$1"
+	shift
+	local tmp_paths=() failures=0 updates=0 residuals=0
+	"$@" >"$audit_dir/group-${idx}.out" 2>&1
+	printf '%d %d %d\n' "$failures" "$updates" "$residuals" >"$audit_dir/group-${idx}.counts"
+}
+
+spawn_group() {
+	local idx="$1"
+	shift
+	run_group_isolated "$idx" "$@" &
+	group_pids["$idx"]=$!
+}
+
+main() {
+	section "tooling"
+	require_tool curl
+	require_tool git
+	require_tool jq
+	require_tool nix
+
+	if [ "$failures" -gt 0 ]; then
+		exit 1
+	fi
+
+	# git+file reads the tracked tree in place; a plain path makes Nix copy the
+	# whole working directory, ignored caches included, into the store.
+	local meta_json system gws_version trueflow_src notion_src
+	meta_json="$(
+		DOTFILES_AUDIT_ROOT="$repo_root" nix eval --impure --json --expr '
+			let
+				flake = builtins.getFlake ("git+file://" + builtins.getEnv "DOTFILES_AUDIT_ROOT");
+				system = builtins.currentSystem;
+				pkgsFor = builtins.getAttr system flake.packages;
+			in
+			{
+				inherit system;
+				gwsVersion = pkgsFor.googleworkspace-cli.version;
+				trueflowSrc = flake.inputs.trueflow.outPath;
+				notionSrc = flake.inputs.notion-cli.outPath;
+			}
+		'
+	)"
+	IFS=$'\t' read -r system gws_version trueflow_src notion_src < <(
+		jq -r '[.system, .gwsVersion, .trueflowSrc, .notionSrc] | @tsv' <<<"$meta_json"
+	)
+	ok "current system is $system"
+
+	# Resolve every Nix-managed audit tool and source in one batched build.
+	local flake_ref="git+file://${repo_root}"
+	local build_json osv_out cargo_audit_out govulncheck_out go_out gws_src flow_out
+	build_json="$(
+		nix build --no-link --json --inputs-from "$flake_ref" \
+			"nixpkgs#osv-scanner" \
+			"nixpkgs#cargo-audit" \
+			"nixpkgs#govulncheck" \
+			"nixpkgs#go" \
+			"${flake_ref}#packages.${system}.googleworkspace-cli.src" \
+			"${flake_ref}#packages.${system}.flow"
+	)"
+	IFS=$'\t' read -r osv_out cargo_audit_out govulncheck_out go_out gws_src flow_out < <(
+		jq -r '[.[] | (.outputs.bin // .outputs.out)] | @tsv' <<<"$build_json"
+	)
+
+	osv_scanner_bin="$osv_out/bin/osv-scanner"
+	cargo_audit_bin="$cargo_audit_out/bin/cargo-audit"
+	govulncheck_dir="$govulncheck_out/bin"
+	go_dir="$go_out/bin"
+	flow_bin="$flow_out/bin/flow"
+
+	local bin
+	for bin in "$osv_scanner_bin" "$cargo_audit_bin" "$govulncheck_dir/govulncheck" "$go_dir/go" "$flow_bin"; do
+		if [ ! -x "$bin" ]; then
+			fail "could not resolve executable: $bin"
+			exit 1
+		fi
+	done
+
+	local audit_dir
+	audit_dir="$(mktemp -d)"
+	tmp_paths+=("$audit_dir")
+
+	local -a group_pids=()
+	spawn_group 1 check_github_release_latest "googleworkspace/cli" "v${gws_version}"
+	spawn_group 2 check_pins
+	spawn_group 3 osv_audit_lock "oracle" "pkgs/oracle/package-lock.json"
+	spawn_group 4 run_cargo_audits "$gws_src" "$trueflow_src"
+	spawn_group 5 govulncheck_notion_cli "$notion_src"
+
+	local idx rc g_fail g_upd g_res
+	for idx in 1 2 3 4 5; do
+		rc=0
+		wait "${group_pids[$idx]}" || rc=$?
+		if [ -f "$audit_dir/group-${idx}.out" ]; then
+			cat "$audit_dir/group-${idx}.out"
+		fi
+		if [ -f "$audit_dir/group-${idx}.counts" ]; then
+			read -r g_fail g_upd g_res <"$audit_dir/group-${idx}.counts"
+			failures=$((failures + g_fail))
+			updates=$((updates + g_upd))
+			residuals=$((residuals + g_res))
+		else
+			fail "audit group $idx terminated unexpectedly (exit $rc)"
+		fi
+		if [ "$rc" -ne 0 ] && [ "${g_fail:-0}" -eq 0 ]; then
+			fail "audit group $idx exited with status $rc"
+		fi
+	done
 
 	section "summary"
 	printf 'updates available: %s\n' "$updates"
