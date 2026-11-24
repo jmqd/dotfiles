@@ -9,7 +9,14 @@ export HOME="$root/home" XDG_DATA_HOME="$root/home/.local/share"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 mkdir -p "$HOME"
-old="$(date -d '40 days ago' '+%Y-%m-%d %H:%M:%S')"
+old_epoch=$(($(date +%s) - 40 * 86400))
+if date --version >/dev/null 2>&1; then
+	old="$(date -u -d "@$old_epoch" '+%Y-%m-%d %H:%M:%S +0000')"
+	old_touch="$(date -u -d "@$old_epoch" '+%Y-%m-%dT%H:%M:%SZ')"
+else
+	old="$(date -u -r "$old_epoch" '+%Y-%m-%d %H:%M:%S +0000')"
+	old_touch="$(date -u -r "$old_epoch" '+%Y-%m-%dT%H:%M:%SZ')"
+fi
 
 fail() {
 	printf 'FAIL: %s\n' "$1" >&2
@@ -24,7 +31,7 @@ GIT_COMMITTER_DATE="$old" git commit -q --allow-empty --date="$old" -m base
 age() {
 	local admin
 	admin="$(git -C "$1" rev-parse --absolute-git-dir)"
-	find "$admin" -exec touch -d "$old" {} +
+	find "$admin" -exec touch -d "$old_touch" {} +
 }
 
 git worktree add -q "$root/stale" -b stale main

@@ -63,6 +63,13 @@ fi
 # Our own `git status` must not refresh the index and so look like activity.
 export GIT_OPTIONAL_LOCKS=0
 
+os_name="$(uname -s)"
+if stat -c %Y / >/dev/null 2>&1; then
+	gnu_stat=1
+else
+	gnu_stat=0
+fi
+
 resolve_base() {
 	local name
 	if [[ -n $base ]]; then
@@ -93,9 +100,13 @@ resolve_base() {
 	exit 1
 }
 
-# Fails when neither GNU nor BSD stat can read the file.
+# Fails when stat cannot read the file.
 mtime() {
-	stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"
+	if [[ $gnu_stat -eq 1 ]]; then
+		stat -c %Y "$1"
+	else
+		stat -f %m "$1"
+	fi
 }
 
 # Newest of the HEAD commit time and the last time HEAD moved (checkout, commit,
@@ -105,8 +116,8 @@ mtime() {
 # errexit, so every step returns on failure.
 last_activity() {
 	local worktree="$1" admin newest stamp file
-	newest="$(git -C "$worktree" log -1 --format=%ct HEAD)" || return
-	admin="$(git -C "$worktree" rev-parse --absolute-git-dir)" || return
+	newest="$(git -C "$worktree" -c core.fsmonitor=false log -1 --format=%ct HEAD)" || return
+	admin="$(git -C "$worktree" -c core.fsmonitor=false rev-parse --absolute-git-dir)" || return
 	for file in "$admin/HEAD" "$admin/logs/HEAD"; do
 		[[ -e $file ]] || continue
 		stamp="$(mtime "$file")" || return
@@ -130,7 +141,7 @@ existing_ancestor() {
 }
 
 home_trash() {
-	if [[ "$(uname -s)" == Darwin ]]; then
+	if [[ "$os_name" == Darwin ]]; then
 		printf '%s\n' "$HOME/.Trash"
 	else
 		printf '%s\n' "${XDG_DATA_HOME:-$HOME/.local/share}/Trash"
@@ -146,7 +157,7 @@ trash_dir() {
 	home="$(home_trash)"
 	if [[ "$mount" == "$(mount_point "$(existing_ancestor "$home")")" ]]; then
 		printf '%s\n' "$home"
-	elif [[ "$(uname -s)" != Darwin && -w $mount ]]; then
+	elif [[ "$os_name" != Darwin && -w $mount ]]; then
 		printf '%s/.Trash-%s\n' "${mount%/}" "$(id -u)"
 	else
 		return 1
@@ -157,10 +168,10 @@ trash_dir() {
 # which disables errexit, so every step returns on failure.
 trash() {
 	local path="$1" trash="$2" files="$2" name info=""
-	[[ "$(uname -s)" == Darwin ]] || files="$trash/files"
+	[[ "$os_name" == Darwin ]] || files="$trash/files"
 	name="$(basename "$path")-$(date +%Y%m%d%H%M%S)-$$"
 	mkdir -p "$files" || return 1
-	if [[ "$(uname -s)" != Darwin ]]; then
+	if [[ "$os_name" != Darwin ]]; then
 		# The trash spec records the origin before the move.
 		info="$trash/info/$name.trashinfo"
 		mkdir -p "$trash/info" || return 1
@@ -173,6 +184,12 @@ trash() {
 	fi
 	printf '%s\n' "$files/$name"
 }
+
+sizes_dir=""
+cleanup() {
+	[[ -n $sizes_dir ]] && rm -rf "$sizes_dir"
+}
+trap cleanup EXIT
 
 main() {
 	git rev-parse --git-dir >/dev/null
@@ -206,9 +223,30 @@ main() {
 	done < <(git worktree list --porcelain && printf '\n')
 	main_worktree="${paths[0]}"
 
+	# Measure existing linked worktree sizes in parallel up front.
+	local -a size_paths=()
+	local index
+	for index in "${!paths[@]}"; do
+		path="${paths[$index]}"
+		[[ $path == "$main_worktree" ]] && continue
+		[[ -d $path ]] && size_paths+=("$path")
+	done
+	local sizes_file="" jobs
+	if [[ ${#size_paths[@]} -gt 0 ]]; then
+		sizes_dir="$(mktemp -d)"
+		mkdir -p "$sizes_dir/items"
+		sizes_file="$sizes_dir/all"
+		jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+		case "$jobs" in '' | 0 | *[!0-9]*) jobs=4 ;; esac
+		# shellcheck disable=SC2016 # $0, $1, and $$ expand inside the child bash
+		printf '%s\0' "${size_paths[@]}" | xargs -0 -n 1 -P "$jobs" \
+			"$BASH" -c 'du -sk -- "$1" >>"$0/$$" 2>/dev/null' "$sizes_dir/items" || true
+		find "$sizes_dir/items" -type f -exec cat {} + >"$sizes_file" 2>/dev/null || true
+	fi
+
 	printf 'base: %s; stale after %s days%s\n' "$base_ref" "$days" \
 		"$([[ $apply -eq 1 ]] && printf ', applying' || printf ', dry run')"
-	local index status age_days size_kb total_kb=0 count=0 failed=0 activity porcelain trash dest
+	local status age_days size_kb total_kb=0 count=0 failed=0 activity porcelain trash dest
 	for index in "${!paths[@]}"; do
 		path="${paths[$index]}"
 		[[ $path == "$main_worktree" ]] && continue
@@ -223,9 +261,9 @@ main() {
 			status="current"
 		elif [[ ${locked[$index]} -eq 1 ]]; then
 			status="locked"
-		elif ! git merge-base --is-ancestor "$(git -C "$path" rev-parse HEAD)" "$base_ref"; then
+		elif ! git merge-base --is-ancestor "$(git -C "$path" -c core.fsmonitor=false rev-parse HEAD)" "$base_ref"; then
 			status="unmerged"
-		elif ! porcelain="$(git -C "$path" status --porcelain)"; then
+		elif ! porcelain="$(git -C "$path" -c core.fsmonitor=false status --porcelain)"; then
 			status="unknown"
 		elif [[ -n $porcelain ]]; then
 			status="dirty"
@@ -239,8 +277,9 @@ main() {
 		fi
 		age_days="-"
 		[[ -n $activity ]] && age_days=$(((now - activity) / 86400))
-		if [[ -d $path ]]; then
-			size_kb="$(du -sk "$path" 2>/dev/null | awk '{ print $1 }')"
+		if [[ -d $path && -s $sizes_file ]]; then
+			size_kb="$(awk -v p="$path" 'substr($0, index($0, "\t") + 1) == p { print $1; exit }' "$sizes_file")"
+			[[ -n $size_kb ]] || size_kb=0
 		fi
 		if [[ $status == stale ]] && ! trash="$(trash_dir "$path")"; then
 			status="no-trash"

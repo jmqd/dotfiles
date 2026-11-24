@@ -3,6 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_dir="$(mktemp -d)"
+tmp_dir="$(cd -P "$tmp_dir" && pwd)"
+trap 'rm -rf "$tmp_dir"' EXIT
 search_root="$tmp_dir/src"
 state_dir="$tmp_dir/state"
 repo_dir="$search_root/demo"
