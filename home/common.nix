@@ -57,7 +57,9 @@ in
     ./omp-phone.nix
     ./postgresql.nix
     ./nas.nix
+    ./nix.nix
     ./npm.nix
+    ./rust.nix
     ./ssh.nix
     ./tmux.nix
     ./tls.nix
@@ -131,6 +133,7 @@ in
       p7zip
       pkg-config
       plantuml
+      pnpm
       procs
       protobuf
       ripgrep
@@ -146,6 +149,7 @@ in
       tree-sitter
       typescript-language-server
       unzip
+      uv
       wget
       zig
       zip

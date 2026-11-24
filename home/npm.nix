@@ -9,5 +9,10 @@
     YARN_IGNORE_SCRIPTS = "true";
     # Resolve only versions published at least 7 days ago (npm >= 11.10).
     NPM_CONFIG_MIN_RELEASE_AGE = "7";
+    # Avoid extra network round-trips and noisy prompts during installs.
+    NPM_CONFIG_AUDIT = "false";
+    NPM_CONFIG_FUND = "false";
+    NPM_CONFIG_PREFER_OFFLINE = "true";
+    NPM_CONFIG_UPDATE_NOTIFIER = "false";
   };
 }
