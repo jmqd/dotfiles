@@ -27,6 +27,19 @@ class FetchFailed(Exception):
     """The server did not return the file."""
 
 
+def robots_state(status: int, body: str) -> Tuple[str, Optional[str]]:
+    """What a host's robots.txt response means: ("open", None), ("rules", text) or ("closed", reason).
+
+    No robots.txt (404, 410) permits everything. Any other failure closes the
+    host: a 403 or 5xx on robots.txt is the site declining automated visitors.
+    """
+    if status in (404, 410):
+        return "open", None
+    if status == 200:
+        return "rules", body
+    return "closed", "robots.txt returned HTTP %d" % status
+
+
 class Fetcher:
     def __init__(self, delay_seconds: float = 1.0) -> None:
         self.delay_seconds = delay_seconds
@@ -68,13 +81,7 @@ class Fetcher:
             except FetchFailed as error:
                 self._rules[origin] = ("closed", str(error))
             else:
-                if status in (404, 410):
-                    self._rules[origin] = ("open", None)
-                elif status == 200:
-                    self._rules[origin] = ("rules", body.decode("utf-8", errors="replace"))
-                else:
-                    # A 403 or 5xx on robots.txt is the host declining automated visitors.
-                    self._rules[origin] = ("closed", "robots.txt returned HTTP %d" % status)
+                self._rules[origin] = robots_state(status, body.decode("utf-8", errors="replace"))
         return self._rules[origin]
 
     def check(self, url: str) -> None:

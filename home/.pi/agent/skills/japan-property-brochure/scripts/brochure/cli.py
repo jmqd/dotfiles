@@ -7,6 +7,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 from typing import List
+from urllib.parse import urlsplit
 
 import chrome
 import draft
@@ -14,8 +15,9 @@ import ingest
 import maps
 import photos
 import render
+import robots
 import sheets
-from net import Disallowed, FetchFailed, Fetcher
+from net import Disallowed, FetchFailed, Fetcher, robots_state
 from store import BrochureError, Folder, default_home, read_json, slugify
 
 
@@ -141,6 +143,26 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_allowed(args: argparse.Namespace) -> int:
+    """Say whether the saved robots.txt lets an automated browser read each URL; exit 1 if any is refused."""
+    folder = _folder(args)
+    saved = folder.require(folder.robots, "the capture step saves the listing site's robots.txt there before it reads the listing")
+    state, detail = robots_state(int(saved["status"]), saved.get("text") or "")
+    refused = 0
+    for url in args.urls:
+        if urlsplit(url).netloc != urlsplit(saved["origin"]).netloc:
+            reason = "the robots.txt on file is for %s" % saved["origin"]
+        elif state == "closed":
+            reason = detail
+        elif state == "rules" and not robots.allowed(detail, url):
+            reason = "robots.txt disallows it"
+        else:
+            reason = None
+        refused += 1 if reason else 0
+        print("DISALLOW %s: %s" % (url, reason) if reason else "allow %s" % url)
+    return 1 if refused else 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="brochure", description="Build an English PDF brochure from one Japanese property listing.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -190,6 +212,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = with_dir("status", "show which steps are done")
     p.set_defaults(func=_cmd_status)
+
+    p = with_dir("allowed", "check URLs against the listing site's saved robots.txt; exit 1 if any is refused")
+    p.add_argument("urls", nargs="+")
+    p.set_defaults(func=_cmd_allowed)
     return parser
 
 

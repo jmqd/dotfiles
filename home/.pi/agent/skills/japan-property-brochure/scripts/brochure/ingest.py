@@ -10,27 +10,54 @@ from __future__ import annotations
 
 import re
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from store import BrochureError, Folder, read_json, write_json
+
+_IMAGE_FILE = re.compile(r"\.(?:jpe?g|png|webp|gif|avif)$", re.I)
+# Below this many pixels a side, an <img> shows nothing a buyer would look at.
+_SPECK = 50
 
 
 def _photo_key(image: Dict[str, Any]) -> str:
     return (image.get("candidates") or [image["url"]])[0]
 
 
-def _listing_number(listing_url: str, photos: List[Dict[str, Any]]) -> Optional[str]:
+def _file_names(url: str) -> List[str]:
+    """The parts of an image URL that can name its file: the path, and query values that are image files.
+
+    The rest of a query string says nothing about the picture. A tracking
+    pixel echoes the address of the page it sits on there, listing number
+    included.
+    """
+    parts = urlsplit(url)
+    return [parts.path] + [value for _key, value in parse_qsl(parts.query) if _IMAGE_FILE.search(value)]
+
+
+def _is_beacon(image: Dict[str, Any]) -> bool:
+    """A tracking pixel: an <img> that names no image file, loaded no picture and takes no room on the page."""
+    if image.get("how") != "img" or any(_IMAGE_FILE.search(name) for name in _file_names(image["url"])):
+        return False
+    loaded = min(int(image.get("w") or 0), int(image.get("h") or 0))
+    box = [int(side) for side in re.findall(r"\d+", image.get("shown") or "")] or [0]
+    return loaded < _SPECK and min(box) < _SPECK
+
+
+def _names_listing(number: str, photo: Dict[str, Any]) -> bool:
+    return any(number in name for name in _file_names(_photo_key(photo)))
+
+
+def _listing_number(page_url: str, on_page: List[Dict[str, Any]]) -> Optional[str]:
     """The listing's id, when the site also puts it in the URLs of this listing's photos.
 
     A listing page shows other properties too (the agent's other stock,
     recommendations). Where photo URLs carry the listing id, that id tells
     this property's photos from theirs; where they do not, None is returned
-    and nothing is filtered.
+    and nothing is filtered. `on_page` are the photos found on that page.
     """
-    for number in reversed(re.findall(r"\d{6,}", urlsplit(listing_url).path)):
-        on_main = [p for p in photos if p["page"] == 1]
-        carrying = [p for p in on_main if number in _photo_key(p)]
-        if on_main and len(carrying) >= 3 and len(carrying) * 3 >= len(on_main):
+    for number in reversed(re.findall(r"\d{6,}", urlsplit(page_url).path)):
+        carrying = [p for p in on_page if _names_listing(number, p)]
+        if on_page and len(carrying) >= 3 and len(carrying) * 3 >= len(on_page):
             return number
     return None
 
@@ -68,7 +95,7 @@ def merge(folder: Folder) -> Dict[str, Any]:
                 seen_blocks.add(block.get("text"))
                 blocks.append({"text": block.get("text"), "section": block.get("section") or "", "page": number})
         for image in capture.get("images") or []:
-            if image.get("chrome") or image.get("tiny"):
+            if image.get("chrome") or image.get("tiny") or _is_beacon(image):
                 furniture += 1
                 continue
             key = _photo_key(image)
@@ -81,10 +108,13 @@ def merge(folder: Folder) -> Dict[str, Any]:
                     "caption": image.get("caption") or "",
                     "section": image.get("section") or "",
                     "page": number,
+                    # Pixels of the image as the page loaded it; 0 when it was only referenced.
+                    "page_pixels": int(image.get("w") or 0) * int(image.get("h") or 0),
                 }
             else:
                 for field in ("category", "caption", "section"):
                     known[field] = known[field] or image.get(field) or (image.get("alt") if field == "category" else "") or ""
+                known["page_pixels"] = max(known["page_pixels"], int(image.get("w") or 0) * int(image.get("h") or 0))
         for pdf in capture.get("pdfs") or []:
             pdfs.setdefault(pdf["url"], pdf)
         for sub in capture.get("subpages") or []:
@@ -92,14 +122,32 @@ def merge(folder: Folder) -> Dict[str, Any]:
 
     captured_urls = {p["url"].split("?")[0] for p in pages}
     found = list(photos.values())
-    number = _listing_number(pages[0]["url"], found)
+    # Each site numbers the listing its own way, so the id is worked out once per
+    # site, from its first captured page, and applied to that site's pages only.
+    host_of_page = {page["page"]: urlsplit(page["url"]).netloc for page in pages}
+    number_for_host: Dict[str, Optional[str]] = {}
+    for page in pages:
+        host = host_of_page[page["page"]]
+        if host not in number_for_host:
+            number_for_host[host] = _listing_number(page["url"], [p for p in found if p["page"] == page["page"]])
+    # brochure.json and photos.json name photos by id, so a photo keeps the id an earlier ingest gave
+    # it and an id once issued is never given to another photo. Capturing one more page then adds
+    # photos without making the names already in use point at different pictures.
+    earlier = read_json(folder.listing) or {}
+    issued_to = {_photo_key(photo): photo["id"] for photo in earlier.get("photos") or []}
+    issued = int(earlier.get("photo_ids_issued") or len(issued_to))
     ordered = []
     others = []
     for photo in found:
-        if number is None or number in _photo_key(photo):
-            ordered.append(dict(photo, id="p%03d" % (len(ordered) + 1)))
-        else:
+        number = number_for_host[host_of_page[photo["page"]]]
+        if number is not None and not _names_listing(number, photo):
             others.append({"url": _photo_key(photo), "category": photo["category"], "page": photo["page"]})
+            continue
+        photo_id = issued_to.get(_photo_key(photo))
+        if photo_id is None:
+            issued += 1
+            photo_id = "p%03d" % issued
+        ordered.append(dict(photo, id=photo_id))
     listing = {
         "url": pages[0]["url"],
         "title": pages[0]["title"],
@@ -111,6 +159,7 @@ def merge(folder: Folder) -> Dict[str, Any]:
         "pairs": pairs,
         "blocks": blocks,
         "photos": ordered,
+        "photo_ids_issued": issued,
         # Images on the pages whose URLs do not carry this listing's id: staff, the shop, other properties.
         "other_images": others,
         "pdfs": list(pdfs.values()),

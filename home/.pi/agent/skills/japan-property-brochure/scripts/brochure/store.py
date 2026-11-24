@@ -1,5 +1,6 @@
 """Where one brochure keeps its files.
 
+    <dir>/robots.json            the listing site's robots.txt, read before the listing
     <dir>/capture/NN-name.json   JPX.detail() output of the listing page and its sub-pages
     <dir>/listing.json           the captures merged: the Japanese source of truth
     <dir>/photos/pNNN.jpg        every photo of the listing, largest version
@@ -40,6 +41,7 @@ def slugify(value: str) -> str:
 class Folder:
     def __init__(self, path: Path) -> None:
         self.path = path
+        self.robots = path / "robots.json"
         self.capture_dir = path / "capture"
         self.listing = path / "listing.json"
         self.photos_dir = path / "photos"
