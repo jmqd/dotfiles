@@ -227,7 +227,11 @@
 
   // Site furniture and placeholders, by file name: "No_Photo", a lazy-load
   // "Dummy_Photo", a map spinner. A placeholder must not pass for a photo.
-  const CHROME_IMG = /(logo|sprite|icon|ico_|_ico|btn|button|banner|bnr|spacer|spinner|blank|loading|arrow|pixel|tracking|favicon|noimage|no_?image|no_?photo|dummy|pagetop|page_top|recruit|qr|badge|line_|twitter|facebook|instagram)/i;
+  // The short words count only where they stand alone (qr.png, btn_search.gif,
+  // bnr01.jpg): inside a hashed name such as a8qr3f.jpg they are chance, and
+  // a photo would be lost.
+  const CHROME_IMG =
+    /logo|sprite|icon|ico_|_ico|button|banner|spacer|spinner|blank|loading|arrow|pixel|tracking|favicon|noimage|no_?image|no_?photo|dummy|pagetop|page_top|recruit|badge|line_|twitter|facebook|instagram|(?:^|[^a-z0-9])(?:btn|bnr|qr(?:code)?)(?![a-z])/i;
 
   const largestFromSrcset = (srcset) => {
     let best = null;
