@@ -611,13 +611,13 @@ flow pin bump omp claude-code
 flow pin bump
 ```
 
-Managed pins: Antigravity CLI, Claude Code, Codex desktop, Gemini, OMP,
-Spotify, Tailscale, WhatsApp, Wispr Flow and xcodes. Gemini's and Spotify's
-URLs are unversioned, so checking them downloads the DMG and reads the version
-from its `Info.plist`. A release whose artifact changes without a new version
-fails instead of moving the pin. `notion-cli`, `oracle`, and `voxtype` are
-reported but need lock-file work, so `flow pin` prints the manual step instead
-of bumping them.
+Managed pins: Antigravity CLI, Claude Code, Codex desktop, Gemini, Gemini CLI,
+OMP, Spotify, Tailscale, WhatsApp, Wispr Flow and xcodes. Gemini's and
+Spotify's URLs are unversioned, so checking them downloads the DMG and reads
+the version from its `Info.plist`. A release whose artifact changes without a
+new version fails instead of moving the pin. `notion-cli`, `oracle`, and
+`voxtype` are reported but need lock-file work, so `flow pin` prints the manual
+step instead of bumping them.
 `just audit-deps` runs `flow pin check`. Bumped apps reach the machine on the
 next `bin/hm-switch.sh`.
 

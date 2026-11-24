@@ -159,6 +159,14 @@
         in
         pkgs.callPackage ./pkgs/claude-code { };
 
+      # Manually pinned Gemini CLI (nixpkgs lags behind upstream releases).
+      mkGeminiCliPkg =
+        system:
+        let
+          pkgs = pkgsBySystem.${system};
+        in
+        pkgs.callPackage ./pkgs/gemini-cli { };
+
       mkCodexDesktopPkg =
         system:
         let
@@ -255,6 +263,7 @@
           oraclePkg = mkOraclePkg system;
           antigravityCliPkg = mkAntigravityCliPkg system;
           claudeCodePkg = mkClaudeCodePkg system;
+          geminiCliPkg = mkGeminiCliPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           flowPkg = mkFlowPkg system;
           ompPhonePkg = mkOmpPhonePkg system;
@@ -284,6 +293,7 @@
               home.packages = [
                 claudeCodePkg
                 flowPkg
+                geminiCliPkg
                 pkgs.gws
                 notionCliPkg
                 oraclePkg
@@ -335,6 +345,7 @@
           oraclePkg = mkOraclePkg system;
           antigravityCliPkg = mkAntigravityCliPkg system;
           claudeCodePkg = mkClaudeCodePkg system;
+          geminiCliPkg = mkGeminiCliPkg system;
           codexDesktopPkg = mkCodexDesktopPkg system;
           wisprFlowPkg = mkWisprFlowPkg system;
           flowPkg = mkFlowPkg system;
@@ -656,6 +667,7 @@
             antigravity-cli = antigravityCliPkg;
             claude-code = claudeCodePkg;
             flow = flowPkg;
+            gemini-cli = geminiCliPkg;
             gogcli = pkgs.gogcli;
             googleworkspace-cli = pkgs.gws;
             home-manager = home-manager.packages.${system}.home-manager;
@@ -686,6 +698,7 @@
             clean-stale-tests = cleanStaleTests;
             flow = flowPkg;
             flow-smoke-tests = flowSmokeTests;
+            gemini-cli = geminiCliPkg;
             googleworkspace-cli = pkgs.gws;
             git-clean-stale-tests = gitCleanStaleTests;
             hm-switch-tests = hmSwitchTests;

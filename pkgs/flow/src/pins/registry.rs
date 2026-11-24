@@ -149,6 +149,23 @@ pub const PINS: &[Pin] = &[
         }),
     },
     Pin {
+        name: "gemini-cli",
+        kind: Kind::Managed(Managed {
+            // One platform-independent JavaScript bundle serves every system.
+            upstream: Upstream::GithubRelease {
+                repo: "google-gemini/gemini-cli",
+                tag_prefix: "v",
+                assets: &[
+                    ("aarch64-darwin", "gemini-cli-bundle.zip"),
+                    ("aarch64-linux", "gemini-cli-bundle.zip"),
+                    ("x86_64-linux", "gemini-cli-bundle.zip"),
+                ],
+            },
+            artifact: Artifact::File,
+            flake_attr: Some("gemini-cli"),
+        }),
+    },
+    Pin {
         name: "omp",
         kind: Kind::Managed(Managed {
             upstream: Upstream::GithubRelease {

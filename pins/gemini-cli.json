@@ -1,0 +1,17 @@
+{
+  "version": "0.71.0",
+  "sources": {
+    "aarch64-darwin": {
+      "url": "https://github.com/google-gemini/gemini-cli/releases/download/v0.71.0/gemini-cli-bundle.zip",
+      "hash": "sha256-G3+/13+JqJJXbvRe763f93aMgGuNy8dB3TR7ZIVuTWQ="
+    },
+    "aarch64-linux": {
+      "url": "https://github.com/google-gemini/gemini-cli/releases/download/v0.71.0/gemini-cli-bundle.zip",
+      "hash": "sha256-G3+/13+JqJJXbvRe763f93aMgGuNy8dB3TR7ZIVuTWQ="
+    },
+    "x86_64-linux": {
+      "url": "https://github.com/google-gemini/gemini-cli/releases/download/v0.71.0/gemini-cli-bundle.zip",
+      "hash": "sha256-G3+/13+JqJJXbvRe763f93aMgGuNy8dB3TR7ZIVuTWQ="
+    }
+  }
+}
