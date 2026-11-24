@@ -227,29 +227,36 @@ _FLAG_PATTERNS = [
 ]
 assert all(name in criteria.FLAGS for name, _pattern in _FLAG_PATTERNS), "every flag needs its wording in criteria.FLAGS"
 
-# A use, named as what the property is, that is not a house to live in. The word must end
-# its phrase: 保養所 does in 熊坂中古保養所, and does not in 保養所などにおすすめ, 事務所利用にも,
-# 倉庫付住宅 or ビルトインガレージ, where a house is being described. A room added to a layout
-# (8LDK+事務所) is not the property's use either.
-_NOT_A_DWELLING = re.compile(
-    r"(?<![+])(?:倉庫|工場|作業所|事務所|保養所|社員寮|研修所|旅館|ホテル|ペンション|民宿|診療所|医院|クリニック|ビル|アパート)"
-    r"(?:用)?(?=$|[\s、。,」』)!♪・])|一棟",
-    re.M,
-)
+_OTHER_USE = r"(?:倉庫|工場|作業所|事務所|保養所|社員寮|研修所|旅館|ホテル|ペンション|民宿|診療所|医院|クリニック|ビル|アパート)"
+# A use, named as what the property is, that is not a house to live in. The word must end its
+# phrase or be what the title says the property is: 保養所 counts in 熊坂中古保養所 and in
+# 大型保養所です, and does not in 保養所などにおすすめ, 事務所利用にも, 倉庫付住宅 or ビルトインガレージ,
+# where a house is being described. A room added to a layout (8LDK+事務所) is not the property's
+# use either.
+_NOT_A_DWELLING = re.compile(r"(?<![+])" + _OTHER_USE + r"(?:用)?(?=$|[\s、。,」』)!♪・]|です)|一棟", re.M)
+# The same, said in a page's description: 大型保養所です, 売りペンションです, RCビルのご紹介です. Only a
+# sentence that introduces the property counts there, since a description goes on to name the
+# hotels and clinics nearby.
+_INTRODUCED_AS_OTHER_USE = re.compile(_OTHER_USE + r"(?:施設)?(?:のご紹介|をご紹介|です(?:[。!♪]|$)|でございます)", re.M)
+# A page opens with its description of the property. Further down it describes other things in
+# the same words, among them the other properties it recommends.
+_LEAD_BLOCKS = 4
 # File names of the pictures a site shows when a listing has no photo.
 _PLACEHOLDER_IMAGE = re.compile(r"no_?photo|no_?image|dummy|spacer|blank\.", re.I)
 
 
 def _flags(listing: Dict[str, Any], haystack: str) -> List[str]:
+    """Flags that the listing's own words raise.
+
+    Flags that follow from fields every agent types in (the build date, the
+    layout) are drawn once per property, from the merged values: see
+    dedupe.merge.
+    """
     flags = [name for name, pattern in _FLAG_PATTERNS if re.search(pattern, haystack, re.I)]
     right = listing.get("land_right") or ""
     if "leasehold" in flags and re.search(r"所有権|freehold", right, re.I) and not re.search(r"借地|地上権|賃借権", right):
         # The tenure field says freehold; the word came from a remark about something else.
         flags.remove("leasehold")
-    year, month = listing.get("built_year"), listing.get("built_month")
-    if year is not None and (year < 1981 or (year == 1981 and (month or 12) <= 5)):
-        # Building permits before June 1981 followed the old seismic code (旧耐震).
-        flags.append("pre_1981_seismic_code")
     if _NOT_A_DWELLING.search("%s\n%s" % (listing.get("title") or "", listing.get("kind") or "")):
         flags.append("not_a_dwelling")
     return flags
@@ -507,4 +514,8 @@ def from_detail_capture(source: str, listing_type: str, capture: Dict[str, Any],
         record["coords"] = {"lat": coords[0]["lat"], "lon": coords[0]["lon"], "datum": coords[0].get("datum", "unknown")}
     record["image_count"] = len({(i.get("candidates") or [i["url"]])[0] for i in images})
     record["has_detail"] = True
+    lead = "\n".join(text.nfkc(block.get("text")) for block in (capture.get("blocks") or [])[:_LEAD_BLOCKS])
+    if "not_a_dwelling" not in record["flags"] and _INTRODUCED_AS_OTHER_USE.search(lead):
+        # Where a site titles its listings with the address, the description is where the agent says what is for sale.
+        record["flags"].append("not_a_dwelling")
     return record

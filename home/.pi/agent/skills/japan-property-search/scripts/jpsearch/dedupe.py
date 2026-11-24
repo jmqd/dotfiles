@@ -175,6 +175,11 @@ def _one_big_room(group: List[Listing], building_m2: Optional[float]) -> bool:
     return bool(layouts) and all(re.fullmatch(r"ワンルーム|1R", layout) for layout in layouts) and (building_m2 or 0) >= _ONE_ROOM_HOUSE_M2
 
 
+def _built_under_old_seismic_code(year: Optional[int], month: Optional[int]) -> bool:
+    """Building permits before June 1981 followed the old seismic code (旧耐震)."""
+    return year is not None and (year < 1981 or (year == 1981 and (month or 12) <= 5))
+
+
 def merge(group: List[Listing]) -> Dict[str, Any]:
     """One property record from the listings that advertise it.
 
@@ -217,13 +222,18 @@ def merge(group: List[Listing]) -> Dict[str, Any]:
     prop["price_jpy"] = prices[0] if prices else None
     prop["price_max_jpy"] = prices[-1] if prices and prices[-1] != prices[0] else None
     prop["price_undisclosed"] = not prices and any(l.get("price_undisclosed") for l in group)
+    # A disclosure counts from any one listing: agents leave out a tenant or a leasehold, they do not
+    # invent one. A flag that follows from a field every agent types in is drawn from the merged
+    # value, so one agent's slip (ワンルーム for a 4LDK house, 1980 for 1985) does not mark the property.
     flags = {f for l in group for f in l.get("flags") or []}
     if _one_big_room(group, prop["building_m2"]):
         flags.add("not_a_dwelling")
+    if _built_under_old_seismic_code(prop["built_year"], prop["built_month"]):
+        flags.add("pre_1981_seismic_code")
     prop["flags"] = sorted(flags)
     prop["has_detail"] = any(l.get("has_detail") for l in group)
     prop["image_count"] = max((l.get("image_count") or 0 for l in group), default=0)
-    for field in ("building_m2", "land_m2"):
+    for field in ("building_m2", "land_m2", "built_year"):
         stated = sorted({l[field] for l in group if l.get(field)})
         if len(stated) > 1:
             prop[field + "_variants"] = stated

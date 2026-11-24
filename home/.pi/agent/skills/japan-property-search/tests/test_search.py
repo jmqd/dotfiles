@@ -271,7 +271,6 @@ class ReadingListingText(unittest.TestCase):
             "urbanisation_control": listing(用途地域="市街化調整区域"),
             "tenant_occupied": listing(備考="１世帯月額70万円で賃貸中"),
             "leasehold": listing(土地権利="借地権（旧法）"),
-            "pre_1981_seismic_code": listing(築年月="1979年3月"),
         }
         for flag, record in cases.items():
             with self.subTest(flag):
@@ -279,7 +278,8 @@ class ReadingListingText(unittest.TestCase):
         self.assertNotIn("leasehold", listing(土地権利="所有権", 備考="隣地は借地")["flags"])
 
     def test_a_listing_that_is_not_a_house_to_live_in_is_flagged(self) -> None:
-        for title in ("伊豆市熊坂中古保養所", "倉庫、物置用", "伊豆高原の「ペンション ノエル」です", "下北沢の社員寮"):
+        titles = ("伊豆市熊坂中古保養所", "倉庫、物置用", "伊豆高原の「ペンション ノエル」です", "下北沢の社員寮", "360坪の敷地に建つ大型保養所です。ぜひ一度ご覧下さい。")
+        for title in titles:
             with self.subTest(title):
                 self.assertIn("not_a_dwelling", listing(title=title)["flags"])
         self.assertIn("not_a_dwelling", listing(物件種目="一棟売りマンション")["flags"])
@@ -289,6 +289,18 @@ class ReadingListingText(unittest.TestCase):
         for title in titles:
             with self.subTest(title):
                 self.assertNotIn("not_a_dwelling", listing(title=title, 間取り="5LDK", 建物面積="300m2")["flags"])
+
+    def test_a_page_that_introduces_the_property_as_another_use_is_flagged(self) -> None:
+        def flags(*blocks: str) -> list:
+            page = {"url": "https://x/1", "h1": "中野区本町2丁目", "pairs": pairs(価格="11億5,000万円"), "blocks": [{"text": b} for b in blocks]}
+            return listings.from_detail_capture("a", "used_house", page, "2026-11-25")["flags"]
+
+        self.assertIn("not_a_dwelling", flags("中古一戸建て > 中野区", "落ち着いた住宅街に、重厚感ある大型RC（鉄筋コンクリート）ビルのご紹介です。邸宅兼事務所など多目的に。"))
+        # Hotels and clinics nearby are not what is for sale.
+        self.assertNotIn("not_a_dwelling", flags("徒歩圏にホテル、クリニック、スーパーが揃う邸宅です。"))
+        # Further down, the same words describe something else: here another property the page recommends.
+        rest = ["設備 %d" % n for n in range(8)]
+        self.assertNotIn("not_a_dwelling", flags("南東向きの明るい4LDKの別荘です。", *rest, "8LDKの大型保養所です。プライベート感のあるバルコニーが魅力の物件です。"))
 
     def test_a_structure_stated_in_the_storeys_field_is_read(self) -> None:
         record = listing(**{"構造・工法": "-", "建物階": "木造瓦葺2階建て"})
@@ -506,6 +518,19 @@ class RecognisingOneHouseAcrossListings(unittest.TestCase):
         # Another agent lists the rooms of the same house: the one room was a slip of the first, not a hall.
         [(status, prop)] = self.judged([one_room, listing("https://x/2", **dict(base, 間取り="4LLDDKK+3S(納戸)"))])
         self.assertEqual((status, prop["flags"]), (criteria.MATCH, []))
+
+    def test_a_house_built_before_june_1981_is_marked_as_under_the_old_seismic_code(self) -> None:
+        base = {"所在地": "東京都世田谷区成城6", "土地面積": "330.00m2", "建物面積": "260.00m2", "販売価格": "3億円", "構造": "RC造"}
+        for built, old_code in (("1979年3月", True), ("1981年5月", True), ("1981年6月", False), ("1995年3月", False)):
+            with self.subTest(built):
+                [(_status, prop)] = self.judged([listing("https://x/1", **dict(base, 築年月=built))])
+                self.assertEqual("pre_1981_seismic_code" in prop["flags"], old_code)
+
+    def test_a_build_year_one_agent_mistypes_shows_as_a_disagreement_not_as_an_old_house(self) -> None:
+        base = {"所在地": "東京都大田区中馬込1丁目", "土地面積": "182.18m2", "建物面積": "266.07m2", "販売価格": "1億7480万円", "構造": "RC造3階建"}
+        records = [listing("https://x/%d" % n, **dict(base, 築年月=built)) for n, built in enumerate(("1985年3月", "1985年3月", "1980年3月"))]
+        [(_status, prop)] = self.judged(records)
+        self.assertEqual((prop["built_year"], prop["built_year_variants"], prop["flags"]), (1985, [1980, 1985], []))
 
     def test_listings_that_disagree_on_the_structure_go_to_review_with_both_statements(self) -> None:
         base = {"所在地": "東京都世田谷区成城6", "土地面積": "330.00m2", "建物面積": "260.00m2", "築年月": "2006年6月", "販売価格": "3億円"}

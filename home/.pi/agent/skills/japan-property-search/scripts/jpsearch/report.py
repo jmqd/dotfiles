@@ -75,7 +75,11 @@ def built_label(prop: Dict[str, Any], run_year: int) -> str:
         return "not stated"
     month = "-%02d" % prop["built_month"] if prop.get("built_month") else ""
     approx = "about " if prop.get("built_approximate") else ""
-    return "%s%d%s (%d years old)" % (approx, year, month, max(0, run_year - year))
+    stated = "%s%d%s (%d years old)" % (approx, year, month, max(0, run_year - year))
+    others = [v for v in prop.get("built_year_variants") or [] if v != year]
+    if others:
+        stated += "; other listings say " + ", ".join(str(v) for v in others)
+    return stated
 
 
 def location_label(prop: Dict[str, Any]) -> str:
