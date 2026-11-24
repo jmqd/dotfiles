@@ -73,14 +73,27 @@ def _fetch_best(
     return {"ok": False, "errors": errors, "disallowed": blocked}
 
 
+def _still_valid(records: Dict[str, Dict[str, Any]], listing: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """The records that still stand for a photo of this listing.
+
+    A later ingest can set a photo aside, and a listing rebuilt from other
+    captures can give an id to another picture. A record kept through either
+    would be reported as a failure nobody can fix, or put the wrong picture
+    under a caption. Photos added by hand are not the listing's to drop.
+    """
+    source = {p["id"]: p["url"] for p in listing["photos"]}
+    kept = {pid: r for pid, r in records.items() if r.get("added_from") or (pid in source and r.get("source_url") == source[pid])}
+    holder = {r["sha256"]: pid for pid, r in kept.items() if r.get("status") == "ok"}
+    # A duplicate points at the photo that holds its picture; once that one is gone it is fetched again.
+    return {pid: r for pid, r in kept.items() if r.get("status") != "duplicate" or holder.get(r.get("sha256")) == r.get("duplicate_of")}
+
+
 def download(folder: Folder, fetcher: Optional[Fetcher] = None) -> Dict[str, int]:
     """Fetch the photos listing.json names that are not on disk yet. Safe to run again."""
     listing = folder.require(folder.listing, "run `brochure ingest` first")
     fetcher = fetcher or Fetcher()
     order = [p["id"] for p in listing["photos"]]
-    # A record of a photo the listing no longer has (a later ingest set it aside) would be reported
-    # as a failure nobody can fix. Photos added by hand are not the listing's to drop.
-    records = {pid: r for pid, r in _load(folder).items() if pid in order or r.get("added_from")}
+    records = _still_valid(_load(folder), listing)
     by_hash = {r["sha256"]: pid for pid, r in records.items() if r.get("status") == "ok"}
     placeholders: Set[str] = set()
     folder.photos_dir.mkdir(parents=True, exist_ok=True)

@@ -265,6 +265,23 @@ class DownloadingThePhotos(FolderCase):
         self.assertEqual(photos.download(self.folder, FakeFetcher({})), {"ok": 0, "kept": 1, "duplicate": 0, "failed": 0})
         self.assertEqual(sorted(self.records()), ["p001", extra["id"]])
 
+    def test_a_file_saved_for_one_picture_is_not_kept_for_another_that_took_its_id(self) -> None:
+        def entry(name: str) -> dict:
+            return {"url": "https://i.example/%s.jpg" % name, "candidates": ["https://i.example/%s.jpg" % name]}
+
+        pictures = {entry(name)["url"]: png(1000, 750, name.encode()) for name in ("a", "b", "c")}
+        self.listing(entry("a"), entry("b"), entry("b"))
+        photos.download(self.folder, FakeFetcher(pictures))
+        self.assertEqual(self.records()["p003"]["duplicate_of"], "p002")
+        # The folder's listing is rebuilt from other captures: the middle photo is gone and the ids close up.
+        self.listing(entry("a"), entry("c"), entry("b"))
+        again = FakeFetcher(pictures)
+        self.assertEqual(photos.download(self.folder, again), {"ok": 2, "kept": 1, "duplicate": 0, "failed": 0})
+        saved = self.records()
+        self.assertEqual([saved[pid]["source_url"][-5:] for pid in ("p001", "p002", "p003")], ["a.jpg", "c.jpg", "b.jpg"])
+        for pid, name in (("p002", b"c"), ("p003", b"b")):
+            self.assertEqual((self.folder.path / saved[pid]["file"]).read_bytes(), png(1000, 750, name))
+
 
 def content(**changes: object) -> dict:
     base = {
