@@ -40,6 +40,7 @@ in
     ".claude/skills/japan-property-brochure".source = ./.pi/agent/skills/japan-property-brochure;
     ".claude/skills/japan-property-search".source = ./.pi/agent/skills/japan-property-search;
     ".claude/skills/shell-scripts".source = ./.pi/agent/skills/shell-scripts;
+    ".claude/skills/socratic-tutor".source = ./.pi/agent/skills/socratic-tutor;
     ".codex/AGENTS.md".source = agentInstructions;
     ".codex/config.toml".source = ./codex/config.toml;
     ".codex/prompts/commit.md".source = "${agentPrompts}/commit.md";
@@ -48,6 +49,7 @@ in
     ".codex/skills/japan-property-brochure".source = ./.pi/agent/skills/japan-property-brochure;
     ".codex/skills/japan-property-search".source = ./.pi/agent/skills/japan-property-search;
     ".codex/skills/shell-scripts".source = ./.pi/agent/skills/shell-scripts;
+    ".codex/skills/socratic-tutor".source = ./.pi/agent/skills/socratic-tutor;
     ".omp/agent/AGENTS.md".source = agentInstructions;
     ".omp/agent/commands/suggest.md".source = "${agentPrompts}/suggest.md";
     ".omp/agent/PERSONALITY.md".text = "${writingStyle}\n";
@@ -56,6 +58,7 @@ in
     ".omp/agent/skills/japan-property-brochure".source = ./.pi/agent/skills/japan-property-brochure;
     ".omp/agent/skills/japan-property-search".source = ./.pi/agent/skills/japan-property-search;
     ".omp/agent/skills/shell-scripts".source = ./.pi/agent/skills/shell-scripts;
+    ".omp/agent/skills/socratic-tutor".source = ./.pi/agent/skills/socratic-tutor;
     ".omp/agent/extensions".source = ./.pi/agent/extensions;
     ".omp/agent/extensions".recursive = true;
     ".pi/agent/AGENTS.md".source = agentInstructions;
